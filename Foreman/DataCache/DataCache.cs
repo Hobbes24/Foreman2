@@ -1014,15 +1014,26 @@ namespace Foreman
 				return;
 			}
 
-			if (objJToken["required_fluid"] != null && (double)objJToken["fluid_amount"] != 0)
-			{
-				ItemPrototype reqLiquid = (ItemPrototype)items[(string)objJToken["required_fluid"]];
-				recipe.InternalOneWayAddIngredient(reqLiquid, (double)objJToken["fluid_amount"]);
-				reqLiquid.consumptionRecipes.Add(recipe);
-				miningWithFluidRecipes.Add(recipe);
-			}
+            if (objJToken["required_fluid"] != null && (double)objJToken["fluid_amount"] != 0)
+            {
+                string reqFluidName = (string)objJToken["required_fluid"];
+                if (items.ContainsKey(reqFluidName))
+                {
+                    ItemPrototype reqLiquid = (ItemPrototype)items[reqFluidName];
+                    recipe.InternalOneWayAddIngredient(reqLiquid, (double)objJToken["fluid_amount"]);
+                    reqLiquid.consumptionRecipes.Add(recipe);
+                    miningWithFluidRecipes.Add(recipe);
+                }
+                else
+                {
+                    ErrorLogging.LogLine(string.Format(
+                        "ProcessResource: required_fluid '{0}' for resource '{1}' not found in items dict — " +
+                        "fluid ingredient omitted. Check Lua export (2.0: required_fluid may need .name).",
+                        reqFluidName, (string)objJToken["name"]));
+                }
+            }
 
-			foreach (ModulePrototype module in modules.Values.Cast<ModulePrototype>()) //we will let the assembler sort out which module can be used with this recipe
+            foreach (ModulePrototype module in modules.Values.Cast<ModulePrototype>()) //we will let the assembler sort out which module can be used with this recipe
 			{
 				module.recipes.Add(recipe);
 				recipe.assemblerModules.Add(module);
@@ -1448,9 +1459,7 @@ namespace Foreman
 					{
 						if (TestRecipeEntityPipeFit(recipe, objJToken))
 						{
-							if(!miningWithFluidRecipes.Contains(recipe))
-								ProcessEntityRecipeTechlink(aEntity, recipe);
-
+							ProcessEntityRecipeTechlink(aEntity, recipe);
 							recipe.assemblers.Add(aEntity);
 							aEntity.recipes.Add(recipe);
 						}
