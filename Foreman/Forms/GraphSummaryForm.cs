@@ -537,11 +537,19 @@ namespace Foreman
 				else
 					result = -((double)a.SubItems[column].Tag).CompareTo((double)b.SubItems[column].Tag);
 
-				if (result == 0)
-					result = ((DataObjectBase)a.Tag).LFriendlyName.CompareTo(((DataObjectBase)b.Tag).LFriendlyName);
-				if (result == 0)
-					result = ((DataObjectBase)a.Tag).Name.CompareTo(((DataObjectBase)b.Tag).Name);
-				return result * reverseSortLamda;
+                if (result == 0)
+                {
+                    string aName = a.Tag is ItemQualityPair iqpA ? iqpA.Item.LFriendlyName : ((DataObjectBase)a.Tag).LFriendlyName;
+                    string bName = b.Tag is ItemQualityPair iqpB ? iqpB.Item.LFriendlyName : ((DataObjectBase)b.Tag).LFriendlyName;
+                    result = aName.CompareTo(bName);
+                }
+                if (result == 0)
+                {
+                    string aName = a.Tag is ItemQualityPair iqpA2 ? iqpA2.Item.Name : ((DataObjectBase)a.Tag).Name;
+                    string bName = b.Tag is ItemQualityPair iqpB2 ? iqpB2.Item.Name : ((DataObjectBase)b.Tag).Name;
+                    result = aName.CompareTo(bName);
+                }
+                return result * reverseSortLamda;
 			});
 
 			UpdateFilteredItemsList(unfilteredList, filteredList, owner);
