@@ -49,6 +49,9 @@ namespace Foreman
             this.QualitySelectorTable = new System.Windows.Forms.TableLayoutPanel();
             this.QualitySelector = new System.Windows.Forms.ComboBox();
             this.QualityLabel = new System.Windows.Forms.Label();
+            this.TechTierSelectorTable = new System.Windows.Forms.TableLayoutPanel();
+            this.TechTierLabel = new System.Windows.Forms.Label();
+            this.TechTierButton = new System.Windows.Forms.Button();
             this.OtherNodeOptionsATable = new System.Windows.Forms.TableLayoutPanel();
             this.AddSupplyButton = new System.Windows.Forms.Button();
             this.AddPassthroughButton = new System.Windows.Forms.Button();
@@ -61,6 +64,7 @@ namespace Foreman
             this.TopOptionsTable.SuspendLayout();
             this.tableLayoutPanel2.SuspendLayout();
             this.QualitySelectorTable.SuspendLayout();
+            this.TechTierSelectorTable.SuspendLayout();
             this.OtherNodeOptionsATable.SuspendLayout();
             this.IRTable.SuspendLayout();
             this.SuspendLayout();
@@ -183,16 +187,18 @@ namespace Foreman
             this.TopOptionsTable.Controls.Add(this.IgnoreAssemblerCheckBox, 1, 1);
             this.TopOptionsTable.Controls.Add(this.ShowHiddenCheckBox, 2, 1);
             this.TopOptionsTable.Controls.Add(this.QualitySelectorTable, 1, 3);
+            this.TopOptionsTable.Controls.Add(this.TechTierSelectorTable, 1, 4);
             this.TopOptionsTable.Dock = System.Windows.Forms.DockStyle.Fill;
             this.TopOptionsTable.ForeColor = System.Drawing.Color.White;
             this.TopOptionsTable.Location = new System.Drawing.Point(3, 5);
             this.TopOptionsTable.Name = "TopOptionsTable";
-            this.TopOptionsTable.RowCount = 4;
+            this.TopOptionsTable.Padding = new System.Windows.Forms.Padding(0, 0, 0, 6);
+            this.TopOptionsTable.RowCount = 5;
             this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
-            this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
+            this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle()); 
             this.TopOptionsTable.Size = new System.Drawing.Size(281, 93);
             this.TopOptionsTable.TabIndex = 1;
             // 
@@ -366,6 +372,46 @@ namespace Foreman
             this.QualityLabel.TabIndex = 10;
             this.QualityLabel.Text = "Quality:";
             // 
+            // TechTierSelectorTable
+            // 
+            this.TechTierSelectorTable.AutoSize = true;
+            this.TechTierSelectorTable.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            this.TechTierSelectorTable.ColumnCount = 2;
+            this.TopOptionsTable.SetColumnSpan(this.TechTierSelectorTable, 2);
+            this.TechTierSelectorTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 80F));
+            this.TechTierSelectorTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
+            this.TechTierSelectorTable.Controls.Add(this.TechTierButton, 1, 0);
+            this.TechTierSelectorTable.Controls.Add(this.TechTierLabel, 0, 0);
+            this.TechTierSelectorTable.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.TechTierSelectorTable.Margin = new System.Windows.Forms.Padding(0, 0, 0, 0);
+            this.TechTierSelectorTable.Name = "TechTierSelectorTable";
+            this.TechTierSelectorTable.RowCount = 1;
+            this.TechTierSelectorTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            this.TechTierSelectorTable.TabIndex = 11;
+            this.TechTierSelectorTable.Visible = false;
+            // 
+            // TechTierLabel
+            // 
+            this.TechTierLabel.Anchor = System.Windows.Forms.AnchorStyles.Right;
+            this.TechTierLabel.AutoSize = true;
+            this.TechTierLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.TechTierLabel.Name = "TechTierLabel";
+            this.TechTierLabel.TabIndex = 12;
+            this.TechTierLabel.Text = "Tech Tiers:";
+            // 
+            // TechTierButton
+            // 
+            this.TechTierButton.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.TechTierButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.TechTierButton.BackColor = System.Drawing.Color.DimGray;
+            this.TechTierButton.ForeColor = System.Drawing.Color.White;
+            this.TechTierButton.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.TechTierButton.Name = "TechTierButton";
+            this.TechTierButton.TabIndex = 13;
+            this.TechTierButton.Text = "All Tiers";
+            this.TechTierButton.UseVisualStyleBackColor = false;
+
+            // 
             // OtherNodeOptionsATable
             // 
             this.OtherNodeOptionsATable.AutoSize = true;
@@ -515,6 +561,8 @@ namespace Foreman
             this.tableLayoutPanel2.PerformLayout();
             this.QualitySelectorTable.ResumeLayout(false);
             this.QualitySelectorTable.PerformLayout();
+            this.TechTierSelectorTable.ResumeLayout(false);
+            this.TechTierSelectorTable.PerformLayout();
             this.OtherNodeOptionsATable.ResumeLayout(false);
             this.OtherNodeOptionsATable.PerformLayout();
             this.IRTable.ResumeLayout(false);
@@ -552,5 +600,8 @@ namespace Foreman
         protected System.Windows.Forms.Label QualityLabel;
         internal System.Windows.Forms.TableLayoutPanel QualitySelectorTable;
         internal System.Windows.Forms.ComboBox QualitySelector;
+        protected System.Windows.Forms.TableLayoutPanel TechTierSelectorTable;
+        protected System.Windows.Forms.Label TechTierLabel;
+        protected System.Windows.Forms.Button TechTierButton;
     }
 }

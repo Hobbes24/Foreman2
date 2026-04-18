@@ -435,14 +435,8 @@ namespace Foreman
 				requestedItemList = new HashSet<Item>(itemList);
 		}
 
-		protected override void IRChooserPanel_Disposed(object sender, EventArgs e)
-		{
-			base.IRChooserPanel_Disposed(sender, e);
-			if (selectedItem)
-				ItemRequested?.Invoke(this, new ItemRequestArgs(selectedItem));
-		}
 
-		protected override List<Group> GetSortedGroups()
+        protected override List<Group> GetSortedGroups()
 		{
 			List<Group> groups = new List<Group>();
 
@@ -566,15 +560,25 @@ namespace Foreman
 
 		private List<Quality> qualitySelectorIndexSet;
 
-		public RecipeChooserPanel(ProductionGraphViewer parent, Point originPoint, ItemQualityPair item, fRange tempRange, NewNodeType nodeType) : base(parent, originPoint)
+        private HashSet<string> enabledSciencePacks;  // null = all packs (no filter). stores Item.Name keys
+        private List<Item> sciencePackValues;          // ordered list of science packs, maps listbox index → Item
+        private ToolStripDropDown techTierDropDown;
+        private CheckedListBox techTierListBox;
+
+        public RecipeChooserPanel(ProductionGraphViewer parent, Point originPoint, ItemQualityPair item, fRange tempRange, NewNodeType nodeType) : base(parent, originPoint)
 		{
 			DCache = parent.DCache;
 			qualitySelectorIndexSet = new List<Quality>();
 
+            TechTierSelectorTable.Visible = true;
+            enabledSciencePacks = LoadTechTierSettings();
+            TechTierButton.Click += TechTierButton_Click;
+            UpdateTechTierButtonText();
+
             if (!item)
             {
                 QualitySelectorTable.Visible = true;
-				foreach (Quality quality in parent.DCache.AvailableQualities.Where(q => q.Enabled))
+                foreach (Quality quality in parent.DCache.AvailableQualities.Where(q => q.Enabled))
 				{
 					QualitySelector.Items.Add(quality.FriendlyName);
                     qualitySelectorIndexSet.Add(quality);
@@ -667,7 +671,137 @@ namespace Foreman
             }
 		}
 
-		protected override List<Group> GetSortedGroups()
+        protected override void IRChooserPanel_Disposed(object sender, EventArgs e)
+        {
+            Properties.Settings.Default.EnabledTechTiers = enabledSciencePacks == null
+                ? ""
+                : string.Join(",", sciencePackValues
+                    .Where(p => enabledSciencePacks.Contains(p.Name))
+                    .Select(p => p.Name));
+            base.IRChooserPanel_Disposed(sender, e);  // ← was missing
+        }
+
+        private HashSet<string> LoadTechTierSettings()
+        {
+            string saved = Properties.Settings.Default.EnabledTechTiers;
+            if (string.IsNullOrEmpty(saved))
+                return null;
+
+            HashSet<string> result = new HashSet<string>();
+            foreach (string part in saved.Split(','))
+            {
+                string name = part.Trim();
+                if (!string.IsNullOrEmpty(name))
+                    result.Add(name);
+            }
+            return result.Count == 0 ? null : result;
+        }
+
+
+        private void BuildTechTierDropDown()
+        {
+            sciencePackValues = DCache.SciencePacks.ToList();
+
+            techTierListBox = new CheckedListBox();
+            techTierListBox.CheckOnClick = true;
+            techTierListBox.BorderStyle = BorderStyle.None;
+            techTierListBox.BackColor = Color.FromArgb(255, 70, 70, 70);
+            techTierListBox.ForeColor = Color.White;
+
+            foreach (Item sciPack in sciencePackValues)
+            {
+                int recipeCount = DCache.Recipes.Values
+                    .Count(r => r.Available && r.MyUnlockSciencePacks
+                        .Any(packList => packList.Count > 0 && packList[packList.Count - 1] == sciPack));
+                bool isChecked = enabledSciencePacks == null || enabledSciencePacks.Contains(sciPack.Name);
+                techTierListBox.Items.Add(
+                    string.Format("{0}  ({1} recipes)", sciPack.FriendlyName, recipeCount), isChecked);
+            }
+
+            techTierListBox.ItemCheck += TechTierListBox_ItemCheck;
+            techTierListBox.Width = 245;
+            techTierListBox.Height = Math.Min(300, techTierListBox.Items.Count * techTierListBox.ItemHeight + 4);
+
+            ToolStripControlHost host = new ToolStripControlHost(techTierListBox);
+            host.Margin = Padding.Empty;
+            host.Padding = Padding.Empty;
+            host.AutoSize = false;
+            host.Size = techTierListBox.Size;
+
+            techTierDropDown = new ToolStripDropDown();
+            techTierDropDown.Padding = Padding.Empty;
+            techTierDropDown.AutoSize = false;
+            techTierDropDown.Size = techTierListBox.Size;
+            techTierDropDown.Items.Add(host);
+        }
+
+        private void TechTierButton_Click(object sender, EventArgs e)
+{
+    if (techTierDropDown == null)
+        BuildTechTierDropDown();
+    techTierDropDown.Show(TechTierButton, new Point(0, TechTierButton.Height));
+}
+
+        private void TechTierListBox_ItemCheck(object sender, ItemCheckEventArgs e)
+        {
+            this.BeginInvoke((MethodInvoker)delegate
+            {
+                HashSet<string> newSet = new HashSet<string>();
+                for (int i = 0; i < techTierListBox.Items.Count; i++)
+                    if (techTierListBox.GetItemChecked(i))
+                        newSet.Add(sciencePackValues[i].Name);
+
+                enabledSciencePacks = (newSet.Count == sciencePackValues.Count) ? null : newSet;
+                UpdateTechTierButtonText();
+                UpdateIRButtons();
+            });
+        }
+
+        private void UpdateTechTierButtonText()
+        {
+            if (enabledSciencePacks == null)
+            {
+                TechTierButton.Text = "All Tiers";
+                return;
+            }
+            if (enabledSciencePacks.Count == 0)
+            {
+                TechTierButton.Text = "No Tiers";
+                return;
+            }
+            // Show count if too many to list, otherwise friendly names
+            if (enabledSciencePacks.Count <= 2)
+            {
+                if (sciencePackValues == null)  // ← add this guard
+                {
+                    TechTierButton.Text = string.Format("{0} packs selected", enabledSciencePacks.Count);
+                    return;
+                }
+                List<string> names = sciencePackValues
+                    .Where(p => enabledSciencePacks.Contains(p.Name))
+                    .Select(p => p.FriendlyName)
+                    .ToList();
+                TechTierButton.Text = string.Join(", ", names);
+            }
+            else
+            {
+                TechTierButton.Text = string.Format("{0} packs selected", enabledSciencePacks.Count);
+            }
+        }
+
+        private bool PassesSciencePackFilter(Recipe recipe)
+        {
+            if (enabledSciencePacks == null)
+                return true;
+
+            if (recipe.MyUnlockSciencePacks.Count == 0 || recipe.MyUnlockSciencePacks.All(packList => packList.Count == 0))
+                return true;
+
+            return recipe.MyUnlockSciencePacks.Any(packList =>
+                packList.All(pack => enabledSciencePacks.Contains(pack.Name)));
+        }
+
+        protected override List<Group> GetSortedGroups()
 		{
 			List<Group> groups = new List<Group>();
 			foreach (Group group in ShowUnavailable ? PGViewer.DCache.Groups.Values : PGViewer.DCache.AvailableGroups)
@@ -710,9 +844,9 @@ namespace Foreman
 						(includeConsumers && includeFuel && KeyItem.Item.FuelsEntities.Count > 0 && r.Assemblers.Any(a => a.Fuels.Contains(KeyItem.Item) && (a.Enabled || ignoreAssemblerStatus))) || //consumers of item (as fuel) -> have to check assembler status here for this specific assembler that accepts this fuel
 						(includeSuppliers && includeFuel && KeyItem.Item.FuelOrigin != null && r.Assemblers.Any(a => a.Fuels.Contains(KeyItem.Item.FuelOrigin) && (a.Enabled || ignoreAssemblerStatus))))) //producers of item (as fuel remains) -> check assembler status here as well for same reason
 					{
-						//quick hidden / enabled / available assembler check (done prior to name check for speed)
-						if ((recipe.Enabled || showHidden) && (recipe.Assemblers.Any(a => a.Enabled) || ignoreAssemblerStatus) && (recipe.Available || ShowUnavailable))
-						{
+                        //quick hidden / enabled / available assembler check (done prior to name check for speed)
+                        if ((recipe.Enabled || showHidden) && (recipe.Assemblers.Any(a => a.Enabled) || ignoreAssemblerStatus) && (recipe.Available || ShowUnavailable) && PassesSciencePackFilter(recipe))
+                        {
 							//name check - have to check recipe name along with all ingredients and products (both friendly name and base name) - if selected
 							if (recipe.LFriendlyName.Contains(filterString) ||
 								recipe.Name.IndexOf(filterString, StringComparison.OrdinalIgnoreCase) != -1 || (checkRecipeIPs && (
