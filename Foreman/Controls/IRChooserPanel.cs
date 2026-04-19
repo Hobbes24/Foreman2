@@ -544,7 +544,13 @@ namespace Foreman
 				Dispose();
 			}
 		}
-	}
+        protected override void IRChooserPanel_Disposed(object sender, EventArgs e)
+        {
+            base.IRChooserPanel_Disposed(sender, e);
+            if (selectedItem)
+                ItemRequested?.Invoke(this, new ItemRequestArgs(selectedItem));
+        }
+    }
 
 	public class RecipeChooserPanel : IRChooserPanel
 	{
@@ -673,12 +679,12 @@ namespace Foreman
 
         protected override void IRChooserPanel_Disposed(object sender, EventArgs e)
         {
-            Properties.Settings.Default.EnabledTechTiers = enabledSciencePacks == null
+            Properties.Settings.Default.EnabledTechTiers = enabledSciencePacks == null || sciencePackValues == null
                 ? ""
                 : string.Join(",", sciencePackValues
                     .Where(p => enabledSciencePacks.Contains(p.Name))
                     .Select(p => p.Name));
-            base.IRChooserPanel_Disposed(sender, e);  // ← was missing
+            base.IRChooserPanel_Disposed(sender, e);
         }
 
         private HashSet<string> LoadTechTierSettings()
