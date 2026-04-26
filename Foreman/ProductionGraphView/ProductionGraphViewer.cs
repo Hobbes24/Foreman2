@@ -87,6 +87,13 @@ namespace Foreman
 
 		private ContextMenu rightClickMenu = new ContextMenu();
 
+		// -------Find feature fields
+		private Panel findPanel;
+		private TextBox findTextBox;
+		private Label findStatusLabel;
+		private List<BaseNodeElement> findResults = new List<BaseNodeElement>();
+		private int findResultIndex = -1;
+
 		public ProductionGraphViewer()
 		{
 			InitializeComponent();
@@ -124,6 +131,7 @@ namespace Foreman
 			currentSelectionNodes = new HashSet<BaseNodeElement>();
 
 			UpdateGraphBounds();
+			InitFindPanel();
 			Invalidate();
 		}
 
@@ -132,6 +140,10 @@ namespace Foreman
 			DisposeLinkDrag();
 			Graph.ClearGraph();
 			//at this point every node element and link element has been removed.
+
+			findResults.Clear();
+			findResultIndex = -1;
+			lastSearchQuery = "";
 
 			selectedNodes.Clear();
 			currentSelectionNodes.Clear();
@@ -962,10 +974,10 @@ namespace Foreman
 
 		private void ProductionGraphViewer_MouseWheel(object sender, MouseEventArgs e)
 		{
-			if (ContainsFocus && !this.Focused) //currently have a control created within this viewer active (ex: recipe chooser) -> dont want to scroll then
-				return;
+            if (ContainsFocus && !this.Focused && !(findPanel.Visible && findTextBox.Focused)) //currently have a control created within this viewer active (ex: recipe chooser) -> dont want to scroll then
+                return;
 
-			ToolTipRenderer.ClearFloatingControls();
+            ToolTipRenderer.ClearFloatingControls();
 
 			Point oldZoomCenter = ScreenToGraph(e.Location);
 
@@ -1043,6 +1055,13 @@ namespace Foreman
 						TryDeleteSelectedNodes();
 						e.Handled = true;
 						break;
+					case Keys.Escape:
+						if (findPanel.Visible)
+						{
+							CloseFindPanel();
+							e.Handled = true;
+						}
+						break;
 				}
 			}
 			else if (currentDragOperation == DragOperation.Selection) //possible changes to selection type
@@ -1063,7 +1082,12 @@ namespace Foreman
 
 		protected override bool ProcessCmdKey(ref Message msg, Keys keyData) //arrow keys to move the current selection
 		{
-			bool processed = true;
+
+            // Don't intercept any keys while the find panel is open and focused
+            if (findPanel.Visible && findTextBox.Focused)
+                return base.ProcessCmdKey(ref msg, keyData);
+
+            bool processed = true;
 			int moveUnit = (Grid.CurrentGridUnit > 0) ? Grid.CurrentGridUnit : 6;
 			int panUnit = (int)(10 / ViewScale);
 			if ((Control.ModifierKeys & Keys.Shift) == Keys.Shift) //large move
@@ -1112,6 +1136,11 @@ namespace Foreman
 				ViewOffset += new Size(-panUnit, 0);
 				UpdateGraphBounds();
 			}
+			else if ((keyData & Keys.KeyCode) == Keys.F && (keyData & Keys.Control) == Keys.Control && !SubwindowOpen)
+			{
+				OpenFindPanel();
+				return true;
+			}
 			else
 				processed = false;
 
@@ -1139,6 +1168,55 @@ namespace Foreman
 		private void ProductionGraphViewer_LostFocus(object sender, EventArgs e)
 		{
 			Invalidate();
+		}
+
+		private void InitFindPanel()
+		{
+			findPanel = new Panel();
+			findPanel.Height = 30;
+			findPanel.Dock = DockStyle.Bottom;
+			findPanel.BackColor = Color.FromArgb(240, 240, 240);
+			findPanel.Visible = false;
+			findPanel.TabStop = false;
+
+			var findLabel = new Label();
+			findLabel.Text = "Find:";
+			findLabel.AutoSize = true;
+			findLabel.Location = new Point(6, 7);
+
+			findTextBox = new TextBox();
+			findTextBox.Location = new Point(45, 4);
+			findTextBox.Width = 200;
+			findTextBox.KeyDown += FindTextBox_KeyDown;
+
+			var btnNext = new Button();
+			btnNext.Text = "Find Next";
+			btnNext.Location = new Point(252, 3);
+			btnNext.Width = 75;
+			btnNext.Height = 23;
+			btnNext.TabStop = false;
+			btnNext.Click += (s, e) => FindNext();
+
+			var btnClose = new Button();
+			btnClose.Text = "✕";
+			btnClose.Location = new Point(334, 3);
+			btnClose.Width = 26;
+			btnClose.Height = 23;
+			btnClose.TabStop = false;
+			btnClose.Click += (s, e) => CloseFindPanel();
+
+			findStatusLabel = new Label();
+			findStatusLabel.AutoSize = true;
+			findStatusLabel.Location = new Point(367, 7);
+			findStatusLabel.ForeColor = Color.DimGray;
+
+			findPanel.Controls.Add(findLabel);
+			findPanel.Controls.Add(findTextBox);
+			findPanel.Controls.Add(btnNext);
+			findPanel.Controls.Add(btnClose);
+			findPanel.Controls.Add(findStatusLabel);
+
+			this.Controls.Add(findPanel);
 		}
 
 		public void UpdateGraphBounds(bool limitView = true)
@@ -1460,6 +1538,155 @@ namespace Foreman
 			rightClickMenu.Dispose();
 
 			base.Dispose(disposing);
+		}
+
+		//----------------------------------------------Find feature
+
+		private void OpenFindPanel()
+		{
+			findPanel.Visible = true;
+			findTextBox.Focus();
+			findTextBox.SelectAll();
+		}
+
+		private void CloseFindPanel()
+		{
+			findPanel.Visible = false;
+			findResults.Clear();
+			findResultIndex = -1;
+			findStatusLabel.Text = "";
+			lastSearchQuery = "";
+			this.Focus();
+			Invalidate();
+		}
+
+		private string lastSearchQuery = "";
+
+		private void FindTextBox_KeyDown(object sender, KeyEventArgs e)
+		{
+			if (e.KeyCode == Keys.Enter || e.KeyCode == Keys.Return)
+			{
+				if (findResults.Count > 0 && findTextBox.Text.Trim().ToLowerInvariant() == lastSearchQuery.ToLowerInvariant())
+					FindNext();  // same query, just advance
+				else
+					ExecuteFind(findTextBox.Text);  // new or changed query, fresh search
+				e.SuppressKeyPress = true;
+			}
+			else if (e.KeyCode == Keys.Escape)
+			{
+				CloseFindPanel();
+				e.SuppressKeyPress = true;
+			}
+		}
+		private void ExecuteFind(string query)
+		{
+			findResults.Clear();
+			findResultIndex = -1;
+			lastSearchQuery = query.Trim().ToLowerInvariant();
+			findStatusLabel.ForeColor = Color.DimGray;
+
+			if (string.IsNullOrWhiteSpace(query))
+			{
+				findStatusLabel.Text = "";
+				return;
+			}
+
+			string q = query.Trim().ToLowerInvariant();
+
+			foreach (BaseNodeElement ne in nodeElements)
+			{
+				string nodeName = GetNodeSearchText(ne.DisplayedNode);
+				if (nodeName != null && nodeName.ToLowerInvariant().Contains(q))
+					findResults.Add(ne);
+			}
+
+			if (findResults.Count == 0)
+			{
+				findStatusLabel.Text = "No results";
+				findStatusLabel.ForeColor = Color.DarkRed;
+				return;
+			}
+
+			findResultIndex = 0;
+			CenterOnNode(findResults[0]);
+			UpdateFindStatus();
+		}
+
+		private void FindNext()
+		{
+			if (findResults.Count == 0)
+			{
+				ExecuteFind(findTextBox.Text);
+				return;
+			}
+
+		    // Remove any stale results (nodes that have since been deleted)
+		    findResults.RemoveAll(n => !nodeElements.Contains(n));
+
+			if (findResults.Count == 0)
+			{
+				findStatusLabel.Text = "No results";
+				findStatusLabel.ForeColor = Color.DarkRed;
+				return;
+			}
+
+            // Clamp index in case RemoveAll shifted things, then advance
+            findResultIndex = Math.Min(findResultIndex, findResults.Count - 1);
+            findResultIndex = (findResultIndex + 1) % findResults.Count;
+
+            // Clear previous highlight before centering on new node
+            foreach (BaseNodeElement element in selectedNodes)
+                element.Highlighted = false;
+            selectedNodes.Clear();
+
+            CenterOnNode(findResults[findResultIndex]);
+            UpdateFindStatus();
+        }
+
+        private void UpdateFindStatus()
+		{
+			findStatusLabel.ForeColor = Color.DimGray;
+			findStatusLabel.Text = string.Format("{0} of {1}", findResultIndex + 1, findResults.Count);
+		}
+
+		private static string GetNodeSearchText(ReadOnlyBaseNode node)
+		{
+			if (node is ReadOnlyRecipeNode rNode)
+				return rNode.BaseRecipe.FriendlyName;
+			if (node is ReadOnlySupplierNode sNode)
+				return sNode.SuppliedItem.FriendlyName;
+			if (node is ReadOnlyConsumerNode cNode)
+				return cNode.ConsumedItem.FriendlyName;
+			if (node is ReadOnlyPassthroughNode pNode)
+				return pNode.PassthroughItem.FriendlyName;
+			if (node is ReadOnlySpoilNode spNode)
+				return spNode.InputItem.FriendlyName;
+			if (node is ReadOnlyPlantNode plNode)
+				return plNode.Seed.FriendlyName;
+			return null;
+		}
+
+		private void CenterOnNode(BaseNodeElement node)
+		{
+			if (!nodeElements.Contains(node))
+				return; // node was deleted, skip it
+			// node.X, node.Y is the center of the node in graph space.
+			// GraphToScreen formula: screen = ((graph + ViewOffset) * ViewScale) + (Width/2, Height/2)
+			// To make node center map to screen center, solve for ViewOffset:
+			//   Width/2 = ((node.X + ViewOffset.X) * ViewScale) + Width/2  =>  ViewOffset.X = -node.X
+			ViewOffset = new Point(-node.X, -node.Y);
+
+			// Sync Highlighted flag with selectedNodes (same pattern as SetSelection)
+			foreach (BaseNodeElement element in selectedNodes)
+				element.Highlighted = false;
+
+			// Also select the node so it gets the blue highlight for free
+			selectedNodes.Clear();
+			selectedNodes.Add(node);
+			node.Highlighted = true;
+
+			UpdateGraphBounds(false);
+			Invalidate();
 		}
 	}
 }
