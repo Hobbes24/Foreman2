@@ -566,8 +566,8 @@ namespace Foreman
 
 		private List<Quality> qualitySelectorIndexSet;
 
-        private HashSet<string> enabledSciencePacks;  // null = all packs (no filter). stores Item.Name keys
-        private List<Item> sciencePackValues;          // ordered list of science packs, maps listbox index → Item
+        private static HashSet<string> enabledSciencePacks;  // null = all packs (no filter). stores Item.Name keys
+        private static List<Item> sciencePackValues;          // ordered list of science packs, maps listbox index → Item
         private ToolStripDropDown techTierDropDown;
         private CheckedListBox techTierListBox;
 
@@ -706,7 +706,8 @@ namespace Foreman
 
         private void BuildTechTierDropDown()
         {
-            sciencePackValues = DCache.SciencePacks.ToList();
+            if (sciencePackValues == null)
+                sciencePackValues = DCache.SciencePacks.ToList();
 
             techTierListBox = new CheckedListBox();
             techTierListBox.CheckOnClick = true;
@@ -758,6 +759,15 @@ namespace Foreman
                         newSet.Add(sciencePackValues[i].Name);
 
                 enabledSciencePacks = (newSet.Count == sciencePackValues.Count) ? null : newSet;
+
+                // Save immediately so crash won't lose the selection
+                Properties.Settings.Default.EnabledTechTiers = enabledSciencePacks == null || sciencePackValues == null
+                    ? ""
+                    : string.Join(",", sciencePackValues
+                        .Where(p => enabledSciencePacks.Contains(p.Name))
+                        .Select(p => p.Name));
+                Properties.Settings.Default.Save();
+
                 UpdateTechTierButtonText();
                 UpdateIRButtons();
             });
