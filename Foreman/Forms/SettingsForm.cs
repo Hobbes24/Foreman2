@@ -187,9 +187,9 @@ namespace Foreman
 
 			ShowProductivityBonusOnAllCheckBox.Checked = Options.EnableExtraProductivityForNonMiners;
 			ShowUnavailablesCheckBox.Checked = Options.DEV_ShowUnavailableItems;
-			LoadBarrelingCheckBox.Checked = !Options.DEV_UseRecipeBWFilters;
+            LoadBarrelingCheckBox.Checked = false;  // deprecated - barreling now handled automatically
 
-			LowPriorityPowerInput.Value = Math.Min(LowPriorityPowerInput.Maximum, (decimal)Options.Solver_LowPriorityPower);
+            LowPriorityPowerInput.Value = Math.Min(LowPriorityPowerInput.Maximum, (decimal)Options.Solver_LowPriorityPower);
 			PullConsumerNodesCheckBox.Checked = Options.Solver_PullConsumerNodes;
 			PullConsumerNodesPowerInput.Value = Math.Min(PullConsumerNodesPowerInput.Maximum, (decimal)Options.Solver_PullConsumerNodesPower);
 
@@ -527,9 +527,10 @@ namespace Foreman
 
 			Options.EnableExtraProductivityForNonMiners = ShowProductivityBonusOnAllCheckBox.Checked;
 			Options.DEV_ShowUnavailableItems = ShowUnavailablesCheckBox.Checked;
-			Options.DEV_UseRecipeBWFilters = !LoadBarrelingCheckBox.Checked;
+            // No longer needed, barreling filter is now automatic
+            // Options.DEV_UseRecipeBWFilters = !LoadBarrelingCheckBox.Checked;
 
-			Options.Solver_LowPriorityPower = (double)LowPriorityPowerInput.Value;
+            Options.Solver_LowPriorityPower = (double)LowPriorityPowerInput.Value;
 			Options.Solver_PullConsumerNodes = PullConsumerNodesCheckBox.Checked;
 			Options.Solver_PullConsumerNodesPower = (double)PullConsumerNodesPowerInput.Value;
 

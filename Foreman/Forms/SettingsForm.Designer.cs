@@ -1097,8 +1097,10 @@
             this.LoadBarrelingCheckBox.Name = "LoadBarrelingCheckBox";
             this.LoadBarrelingCheckBox.Size = new System.Drawing.Size(199, 17);
             this.LoadBarrelingCheckBox.TabIndex = 1;
-            this.LoadBarrelingCheckBox.Text = "Load barreling & crating recipes (DEV)";
+            this.LoadBarrelingCheckBox.Text = "Load barreling & crating recipes (DEPRECATED - now automatic)";
+            this.LoadBarrelingCheckBox.Enabled = false;  // add this line
             this.LoadBarrelingCheckBox.UseVisualStyleBackColor = true;
+
             // 
             // ShowProductivityBonusOnAllCheckBox
             // 

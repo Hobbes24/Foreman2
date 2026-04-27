@@ -231,11 +231,13 @@ namespace Foreman
                 {
                     if (nNodeType == NewNodeType.Consumer) //need to check all nodes down to recipes for range of temperatures being produced
                         tempRange = LinkChecker.GetTemperatureRange(fluid, originElement.DisplayedNode, LinkType.Output, true);
-                    else if (nNodeType == NewNodeType.Supplier) //need to check all nodes up to recipes for range of temperatures being consumed (guaranteed to be in a SINGLE [] range)
-                        tempRange = LinkChecker.GetTemperatureRange(fluid, originElement.DisplayedNode, LinkType.Input, true);
-                }
+					//This else if statement might have been interfering with Coke Oven Gas, pulled it out to see.
+					//It was not, but removing it does allow hidden recipes to be viewd, so we might want to remove it in the future.
+					else if (nNodeType == NewNodeType.Supplier) //need to check all nodes up to recipes for range of temperatures being consumed (guaranteed to be in a SINGLE [] range)
+						tempRange = LinkChecker.GetTemperatureRange(fluid, originElement.DisplayedNode, LinkType.Input, true);
+				}
 
-                RecipeChooserPanel recipeChooser = new RecipeChooserPanel(this, drawOrigin, baseItem, tempRange, nNodeType); //QUALITY UPDATE
+				RecipeChooserPanel recipeChooser = new RecipeChooserPanel(this, drawOrigin, baseItem, tempRange, nNodeType); //QUALITY UPDATE
                 recipeChooser.RecipeRequested += ProcessNodeRequest;
                 recipeChooser.PanelClosed += (o, e) =>
                 {
@@ -1507,10 +1509,16 @@ namespace Foreman
 				foreach (string recipe in json["EnabledRecipes"].Select(t => (string)t).ToList())
 					if (DCache.Recipes.ContainsKey(recipe))
 						DCache.Recipes[recipe].Enabled = true;
-			}
 
-			//add all nodes
-			ProductionGraph.NewNodeCollection collection = Graph.InsertNodesFromJson(DCache, (JObject)json["ProductionGraph"], true);
+                foreach (Recipe recipe in DCache.Recipes.Values)
+                    if (recipe.Available && !recipe.Enabled)
+                        recipe.Enabled = true;
+
+
+            }
+
+            //add all nodes
+            ProductionGraph.NewNodeCollection collection = Graph.InsertNodesFromJson(DCache, (JObject)json["ProductionGraph"], true);
 
 			//check for old import
 			if (json["OldImport"] != null)

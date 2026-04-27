@@ -1961,24 +1961,56 @@ namespace Foreman
 			foreach (RecipePrototype recipe in recipes.Values)
 			recipe.Available = recipe.myUnlockTechnologies.Any(t => t.Available);
 
+			// Redid this to make Step 2 smart to allow for pyanodon's mod options which requires barreling for various options.
 			//step 2: mark any recipe for barelling / crating as unavailable
-			if (UseRecipeBWLists)
+			//if (UseRecipeBWLists)
+			//{
+			//	foreach (RecipePrototype recipe in recipes.Values)
+			//	{
+			//		//part 1: make unavailable if recipe fits the black & doesnt fit the white recipe black lists (these should be the 'barelling' and 'unbarelling' recipes)
+			//		if (!recipeWhiteList.Any(white => white.IsMatch(recipe.Name)) && recipeBlackList.Any(black => black.IsMatch(recipe.Name))) //if we dont match a whitelist and match a blacklist...
+			//			recipe.Available = false;
+			//              //part 2: make unavailable if recipe fits the recyclingItemNameBlackList (should remove any of the barel recycling recipes added by 2.0 SA)
+			//		foreach(KeyValuePair<string, Regex> recycleBL in recyclingItemNameBlackList)
+			//			if (recipe.productList.Count == 1 && (Item)recipe.productList[0] == items[recycleBL.Key] && recipe.ingredientList.Count == 1 && recycleBL.Value.IsMatch(recipe.ingredientList[0].Name))
+			//				recipe.Available = false;
+			//	}
+			//         }
+			//step 2: mark any recipe for barreling / crating as unavailable if its barreled product
+			//isn't actually used by any non-barreling recipe (i.e. it's not needed by the mod set).
+			//This allows mods like Pyanodon's that require specific barrels to work automatically,
+			//while still suppressing pointless vanilla barreling (e.g. water barrels).
+			foreach (RecipePrototype recipe in recipes.Values)
 			{
-				foreach (RecipePrototype recipe in recipes.Values)
+				//part 1: smart barreling filter - suppress barrel fill/unfill recipes only if the
+				//barreled item is not consumed by any recipe outside the barreling system itself.
+				if (!recipeWhiteList.Any(white => white.IsMatch(recipe.Name)) && recipeBlackList.Any(black => black.IsMatch(recipe.Name)))
 				{
-					//part 1: make unavailable if recipe fits the black & doesnt fit the white recipe black lists (these should be the 'barelling' and 'unbarelling' recipes)
-					if (!recipeWhiteList.Any(white => white.IsMatch(recipe.Name)) && recipeBlackList.Any(black => black.IsMatch(recipe.Name))) //if we dont match a whitelist and match a blacklist...
+					bool isNeeded = recipe.productList.Any(product =>
+						((ItemPrototype)product).consumptionRecipes.Any(r =>
+							recipeWhiteList.Any(white => white.IsMatch(r.Name)) ||
+							!recipeBlackList.Any(black => black.IsMatch(r.Name))));
+
+					if (!isNeeded)
 						recipe.Available = false;
-	                //part 2: make unavailable if recipe fits the recyclingItemNameBlackList (should remove any of the barel recycling recipes added by 2.0 SA)
-					foreach(KeyValuePair<string, Regex> recycleBL in recyclingItemNameBlackList)
-						if (recipe.productList.Count == 1 && (Item)recipe.productList[0] == items[recycleBL.Key] && recipe.ingredientList.Count == 1 && recycleBL.Value.IsMatch(recipe.ingredientList[0].Name))
-							recipe.Available = false;
 				}
-            }
+			}
 
+                //part 2: always suppress recycler-generated barrel recycling recipes (SA 2.0).
+                //these are junk recipes regardless of whether barreling is needed.
+                foreach (RecipePrototype recipe in recipes.Values)
+                {
+                    foreach (KeyValuePair<string, Regex> recycleBL in recyclingItemNameBlackList)
+                        if (recipe.productList.Count == 1
+                            && items.TryGetValue(recycleBL.Key, out Item barrelItem)
+                            && (Item)recipe.productList[0] == barrelItem
+                            && recipe.ingredientList.Count == 1
+                            && recycleBL.Value.IsMatch(recipe.ingredientList[0].Name))
+                            recipe.Available = false;
+                }
 
-            //step 3: mark any recipe with no unlocks, or 0->0 recipes (industrial revolution... what are those aetheric glow recipes?) as unavailable.
-            foreach (RecipePrototype recipe in recipes.Values)
+                //step 3: mark any recipe with no unlocks, or 0->0 recipes (industrial revolution... what are those aetheric glow recipes?) as unavailable.
+                foreach (RecipePrototype recipe in recipes.Values)
 				if (recipe.myUnlockTechnologies.Count == 0 || (recipe.productList.Count == 0 && recipe.ingredientList.Count == 0 && !recipe.Name.StartsWith("§§"))) //§§ denotes foreman added recipes. ignored during this pass (but not during the assembler check pass)
 					recipe.Available = false;
 
