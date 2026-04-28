@@ -17,8 +17,9 @@ namespace Foreman
 		internal const string DefaultPreset = "Factorio 2.0 Vanilla";
 		internal string DefaultAppName;
 		private string savefilePath = null;
+        private string lastSavedGraphJson = null;
 
-		public MainForm()
+        public MainForm()
 		{
 			InitializeComponent();
 			this.DoubleBuffered = true;
@@ -182,82 +183,95 @@ namespace Foreman
 			SaveGraph(dialog.FileName);
 		}
 
-		private bool SaveGraph(string path)
-		{
-			var serialiser = JsonSerializer.Create();
-			serialiser.Formatting = Formatting.Indented;
-			var writer = new JsonTextWriter(new StreamWriter(path));
-			try
-			{
-				GraphViewer.Graph.SerializeNodeIdSet = null; //we want to save everything.
-				serialiser.Serialize(writer, GraphViewer);
+        // Helper to extract just the ProductionGraph JSON from a full serialization
+        private string GetCurrentGraphJson()
+        {
+            StringBuilder sb = new StringBuilder();
+            var writer = new JsonTextWriter(new StringWriter(sb));
+            JsonSerializer serialiser = JsonSerializer.Create();
+            serialiser.Formatting = Formatting.Indented;
+            GraphViewer.Graph.SerializeNodeIdSet = null;
+            serialiser.Serialize(writer, GraphViewer);
+            writer.Close();
+            return JObject.Parse(sb.ToString())["ProductionGraph"].ToString();
+        }
+
+        private bool SaveGraph(string path)
+        {
+            try
+            {
+                // Serialize to string first, capturing the snapshot in one pass
+                StringBuilder sb = new StringBuilder();
+                var sbWriter = new JsonTextWriter(new StringWriter(sb));
+                JsonSerializer serialiser = JsonSerializer.Create();
+                serialiser.Formatting = Formatting.Indented;
+                GraphViewer.Graph.SerializeNodeIdSet = null;
+                serialiser.Serialize(sbWriter, GraphViewer);
+                sbWriter.Close();
+
+                // Write that string to disk
+                File.WriteAllText(path, sb.ToString());
+
                 savefilePath = path;
-                Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
-                Properties.Settings.Default.Save();
+                lastSavedGraphJson = JObject.Parse(sb.ToString())["ProductionGraph"].ToString();
                 this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
-				return true;
-			}
-			catch (Exception exception)
-			{
-				MessageBox.Show("Could not save this file. See log for more details");
-				ErrorLogging.LogLine(String.Format("Error saving file '{0}'. Error: '{1}'", path, exception.Message));
-				ErrorLogging.LogLine(string.Format("Full error output: {0}", exception.ToString()));
-				return false;
-			}
-			finally
-			{
-				writer.Close();
-			}
-		}
+                return true;
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show("Could not save this file. See log for more details");
+                ErrorLogging.LogLine(String.Format("Error saving file '{0}'. Error: '{1}'", path, exception.Message));
+                ErrorLogging.LogLine(string.Format("Full error output: {0}", exception.ToString()));
+                return false;
+            }
+        }
 
-		private void LoadGraph()
-		{
-			if (!TestGraphSavedStatus())
-				return;
+        private void LoadGraph()
+        {
+            if (!TestGraphSavedStatus())
+                return;
 
-			OpenFileDialog dialog = new OpenFileDialog();
-			dialog.Filter = "Foreman files (*.fjson)|*.fjson|Old Foreman files (*.json)|*.json";
-			if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
-				Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
+            OpenFileDialog dialog = new OpenFileDialog();
+            dialog.Filter = "Foreman files (*.fjson)|*.fjson|Old Foreman files (*.json)|*.json";
+            if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
+                Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
             string lastLoadDir = Properties.Settings.Default.LastSaveFileLocation;
             dialog.InitialDirectory = (!string.IsNullOrEmpty(lastLoadDir) && Directory.Exists(lastLoadDir))
                 ? lastLoadDir
                 : Path.Combine(Application.StartupPath, "Saved Graphs");
-			dialog.CheckFileExists = true;
-			if (dialog.ShowDialog() != DialogResult.OK)
-				return;
+            dialog.CheckFileExists = true;
+            if (dialog.ShowDialog() != DialogResult.OK)
+                return;
 
-			LoadGraph(dialog.FileName);
-		}
+            LoadGraph(dialog.FileName);
+        }
 
-		private async void LoadGraph(string path)
-		{
-			try
-			{
-				await GraphViewer.LoadFromJson(JObject.Parse(File.ReadAllText(path)), false, true);
-				savefilePath = path;
-                Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
+        private async void LoadGraph(string path)
+        {
+            try
+            {
+                await GraphViewer.LoadFromJson(JObject.Parse(File.ReadAllText(path)), false, true);
+                savefilePath = path;
+                lastSavedGraphJson = GetCurrentGraphJson(); // snapshot after successful load
             }
-			catch (Exception exception)
-			{
-				MessageBox.Show("Could not load this file. See log for more details");
-				ErrorLogging.LogLine(string.Format("Error loading file '{0}'. Error: '{1}'", path, exception.Message));
-				ErrorLogging.LogLine(string.Format("Full error output: {0}", exception.ToString()));
-			}
+            catch (Exception exception)
+            {
+                MessageBox.Show("Could not load this file. See log for more details");
+                ErrorLogging.LogLine(string.Format("Error loading file '{0}'. Error: '{1}'", path, exception.Message));
+                ErrorLogging.LogLine(string.Format("Full error output: {0}", exception.ToString()));
+            }
 
-			RateOptionsDropDown.SelectedIndex = (int)GraphViewer.Graph.SelectedRateUnit;
-			Properties.Settings.Default.EnableExtraProductivityForNonMiners = GraphViewer.Graph.EnableExtraProductivityForNonMiners;
-			Properties.Settings.Default.DefaultRateUnit = (int)GraphViewer.Graph.SelectedRateUnit;
-			Properties.Settings.Default.DefaultAssemblerOption = (int)GraphViewer.Graph.AssemblerSelector.DefaultSelectionStyle;
-			Properties.Settings.Default.DefaultModuleOption = (int)GraphViewer.Graph.ModuleSelector.DefaultSelectionStyle;
-			Properties.Settings.Default.DefaultNodeDirection = (int)GraphViewer.Graph.DefaultNodeDirection;
-
-			Properties.Settings.Default.EnableExtraProductivityForNonMiners = GraphViewer.Graph.EnableExtraProductivityForNonMiners;
-
-			Properties.Settings.Default.Save();
-			GraphViewer.Invalidate();
-			this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
-		}
+            RateOptionsDropDown.SelectedIndex = (int)GraphViewer.Graph.SelectedRateUnit;
+            Properties.Settings.Default.EnableExtraProductivityForNonMiners = GraphViewer.Graph.EnableExtraProductivityForNonMiners;
+            Properties.Settings.Default.DefaultRateUnit = (int)GraphViewer.Graph.SelectedRateUnit;
+            Properties.Settings.Default.DefaultAssemblerOption = (int)GraphViewer.Graph.AssemblerSelector.DefaultSelectionStyle;
+            Properties.Settings.Default.DefaultModuleOption = (int)GraphViewer.Graph.ModuleSelector.DefaultSelectionStyle;
+            Properties.Settings.Default.DefaultNodeDirection = (int)GraphViewer.Graph.DefaultNodeDirection;
+            Properties.Settings.Default.EnableExtraProductivityForNonMiners = GraphViewer.Graph.EnableExtraProductivityForNonMiners;
+            Properties.Settings.Default.Save();
+            GraphViewer.Invalidate();
+            this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+        }
 
 		private void NewGraph()
 		{
@@ -318,42 +332,34 @@ namespace Foreman
 			}
 		}
 
-		private bool TestGraphSavedStatus()
-		{
-			if (savefilePath == null)
-			{
-				if (GraphViewer.Graph.Nodes.Any())
-					return MessageBox.Show("The current graph hasnt been saved!\nIf you continue, you will loose it forever!", "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
-				else
-					return true;
-			}
+        private bool TestGraphSavedStatus()
+        {
+            if (savefilePath == null)
+            {
+                if (GraphViewer.Graph.Nodes.Any())
+                    return MessageBox.Show("The current graph hasnt been saved!\nIf you continue, you will loose it forever!", "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
+                else
+                    return true;
+            }
 
-			if (!File.Exists(savefilePath))
-				return MessageBox.Show("The current graph's save file has been deleted!\nIf you continue, you will loose it forever!", "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
+            if (!File.Exists(savefilePath))
+                return MessageBox.Show("The current graph's save file has been deleted!\nIf you continue, you will loose it forever!", "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
 
-			StringBuilder stringBuilder = new StringBuilder();
-			var writer = new JsonTextWriter(new StringWriter(stringBuilder));
+            if (lastSavedGraphJson == null || GetCurrentGraphJson() != lastSavedGraphJson)
+            {
+                DialogResult result = MessageBox.Show("The current graph has been modified!\nDo you wish to save before continuing?", "Are you sure?", MessageBoxButtons.YesNoCancel);
+                if (result == DialogResult.Cancel)
+                    return false;
+                if (result == DialogResult.Yes) // was incorrectly DialogResult.OK before
+                    SaveGraph(savefilePath);
+            }
 
-			JsonSerializer serialiser = JsonSerializer.Create();
-			serialiser.Formatting = Formatting.Indented;
-			GraphViewer.Graph.SerializeNodeIdSet = null; //we want to save everything.
-			serialiser.Serialize(writer, GraphViewer);
+            return true;
+        }
 
-			if (File.ReadAllText(savefilePath) != stringBuilder.ToString())
-			{
-				DialogResult result = MessageBox.Show("The current graph has been modified!\nDo you wish to save before continuing?", "Are you sure?", MessageBoxButtons.YesNoCancel);
-				if (result == DialogResult.Cancel)
-					return false;
-				if (result == DialogResult.OK)
-					SaveGraph(savefilePath);
-			}
+        //---------------------------------------------------------Settings/export/additem/addrecipe
 
-			return true;
-		}
-
-		//---------------------------------------------------------Settings/export/additem/addrecipe
-
-		public static List<Preset> GetValidPresetsList()
+        public static List<Preset> GetValidPresetsList()
 		{
 			List<Preset> presets = new List<Preset>();
 			List<string> existingPresetFiles = new List<string>();
@@ -447,10 +453,11 @@ namespace Foreman
 						Properties.Settings.Default.CurrentPresetName = form.Options.SelectedPreset.Name;
 						Properties.Settings.Default.UseRecipeBWfilters = true;  //Deprecated, this should work now.
 
-						List<Preset> validPresets = GetValidPresetsList();
-						await GraphViewer.LoadFromJson(JObject.Parse(JsonConvert.SerializeObject(GraphViewer)), true, false);
-						this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
-					}
+                        List<Preset> validPresets = GetValidPresetsList();
+                        await GraphViewer.LoadFromJson(JObject.Parse(JsonConvert.SerializeObject(GraphViewer)), true, false);
+                        lastSavedGraphJson = GetCurrentGraphJson(); // re-snapshot after preset reload
+                        this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+                    }
 					else //not loading a new preset -> update the enabled statuses
 					{
 						foreach (Recipe recipe in GraphViewer.DCache.Recipes.Values)
