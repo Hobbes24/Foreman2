@@ -448,7 +448,7 @@ local function ExportResources()
 				amount = amount * ( (product.probability == nil) and 1 or product.probability)
 				tproduct['amount'] = amount
 
-				if product.type == 'fluid' and product.temperate ~= nil then
+				if product.type == 'fluid' and product.temperature ~= nil then
 					tproduct['temperature'] = ProcessTemperature(product.temperature)
 				end
 				table.insert(tresource['products'], tproduct)
