@@ -10,7 +10,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Foreman</RootNamespace>
     <AssemblyName>Foreman</AssemblyName>
-    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <TargetFrameworkProfile>
     </TargetFrameworkProfile>
     <FileAlignment>512</FileAlignment>
@@ -272,6 +272,7 @@
     <Compile Include="ProductionGraphView\FloatingTooltipRenderer.cs" />
     <Compile Include="ProductionGraphView\NodeCopyOptions.cs" />
     <Compile Include="ProductionGraphView\PointingArrowRenderer.cs" />
+    <Compile Include="Settings.cs" />
     <Compile Include="VersionUpdater.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Forms\DataReloadForm.cs">

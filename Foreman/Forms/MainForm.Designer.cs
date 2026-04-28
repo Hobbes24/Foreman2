@@ -619,7 +619,7 @@
 		private System.Windows.Forms.CheckBox IconViewCheckBox;
 		private System.Windows.Forms.Label VersionLabel;
 		private System.Windows.Forms.Button SaveButton;
-		private System.Windows.Forms.Button HelpButton;
+		private new System.Windows.Forms.Button HelpButton;
 	}
 }
 

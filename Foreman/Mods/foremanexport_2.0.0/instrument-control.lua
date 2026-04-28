@@ -73,7 +73,7 @@ local function ProcessProductList(products)
 		tproduct['amount'] = amount + amount_added_by_extra_fraction
 		tproduct['p_amount'] = amount - amount_ignored_by_productivity + amount_added_by_extra_fraction
 
-		if product.type == 'fluid' and product.temperate ~= nil then
+		if product.type == 'fluid' and product.temperature ~= nil then
 			tproduct['temperature'] = ProcessTemperature(product.temperature)
 		end
 		table.insert(productlist, tproduct)
@@ -491,7 +491,7 @@ local function ExportEntities()
 			tentity['q_max_energy_usage'] = ProcessQualityValue(entity.get_max_energy_usage, 60)
 			tentity['q_energy_production'] = ProcessQualityValue(entity.get_max_energy_production, 60)
 
-			if entity.burner_prototype ~= null then
+			if entity.burner_prototype ~= nil then
 				tentity['fuel_type'] = 'item'
 				tentity['fuel_effectivity'] = entity.burner_prototype.effectivity
 
@@ -609,7 +609,7 @@ local function ExportWaterResources()
 				tproduct['name'] = wresource.fluid.name
 				tproduct['type'] = 'fluid'
 				tproduct['amount'] = 60
-				tproduct['temperate'] = ProcessTemperature(wresource.fluid.default_temperature)
+				tproduct['temperature'] = ProcessTemperature(wresource.fluid.default_temperature)
 				table.insert(twresource['products'], tproduct)
 
 				twresource['lid'] = '$'..localindex

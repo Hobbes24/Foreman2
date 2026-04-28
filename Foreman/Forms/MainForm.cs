@@ -431,7 +431,7 @@ namespace Foreman
 					if (options.SelectedPreset != options.Presets[0] || options.DEV_UseRecipeBWFilters != Properties.Settings.Default.UseRecipeBWfilters || options.RequireReload) //different preset or recipeBWFilter change -> need to reload datacache
 					{
 						Properties.Settings.Default.CurrentPresetName = form.Options.SelectedPreset.Name;
-						Properties.Settings.Default.UseRecipeBWfilters = options.DEV_UseRecipeBWFilters;
+						Properties.Settings.Default.UseRecipeBWfilters = true;  //Deprecated, this should work now.
 
 						List<Preset> validPresets = GetValidPresetsList();
 						await GraphViewer.LoadFromJson(JObject.Parse(JsonConvert.SerializeObject(GraphViewer)), true, false);
