@@ -169,8 +169,11 @@ namespace Foreman
 			dialog.Filter = "Foreman files (*.fjson)|*.fjson|All files|*.*";
 			if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
 				Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
-			dialog.InitialDirectory = Path.Combine(Application.StartupPath, "Saved Graphs");
-			dialog.AddExtension = true;
+            string lastSaveDir = Properties.Settings.Default.LastSaveFileLocation;
+            dialog.InitialDirectory = (!string.IsNullOrEmpty(lastSaveDir) && Directory.Exists(lastSaveDir))
+                ? lastSaveDir
+                : Path.Combine(Application.StartupPath, "Saved Graphs");
+            dialog.AddExtension = true;
 			dialog.OverwritePrompt = true;
 			dialog.FileName = "Flowchart.fjson";
 			if (dialog.ShowDialog() != DialogResult.OK)
@@ -188,8 +191,10 @@ namespace Foreman
 			{
 				GraphViewer.Graph.SerializeNodeIdSet = null; //we want to save everything.
 				serialiser.Serialize(writer, GraphViewer);
-				savefilePath = path;
-				this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+                savefilePath = path;
+                Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
+                Properties.Settings.Default.Save();
+                this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
 				return true;
 			}
 			catch (Exception exception)
@@ -214,7 +219,10 @@ namespace Foreman
 			dialog.Filter = "Foreman files (*.fjson)|*.fjson|Old Foreman files (*.json)|*.json";
 			if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
 				Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
-			dialog.InitialDirectory = Path.Combine(Application.StartupPath, "Saved Graphs");
+            string lastLoadDir = Properties.Settings.Default.LastSaveFileLocation;
+            dialog.InitialDirectory = (!string.IsNullOrEmpty(lastLoadDir) && Directory.Exists(lastLoadDir))
+                ? lastLoadDir
+                : Path.Combine(Application.StartupPath, "Saved Graphs");
 			dialog.CheckFileExists = true;
 			if (dialog.ShowDialog() != DialogResult.OK)
 				return;
@@ -228,7 +236,8 @@ namespace Foreman
 			{
 				await GraphViewer.LoadFromJson(JObject.Parse(File.ReadAllText(path)), false, true);
 				savefilePath = path;
-			}
+                Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
+            }
 			catch (Exception exception)
 			{
 				MessageBox.Show("Could not load this file. See log for more details");
@@ -282,8 +291,11 @@ namespace Foreman
 			dialog.Filter = "Foreman files (*.fjson)|*.fjson|Old Foreman files (*.json)|*.json";
 			if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
 				Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
-			dialog.InitialDirectory = Path.Combine(Application.StartupPath, "Saved Graphs");
-			dialog.CheckFileExists = true;
+            string lastLoadDir = Properties.Settings.Default.LastSaveFileLocation;
+            dialog.InitialDirectory = (!string.IsNullOrEmpty(lastLoadDir) && Directory.Exists(lastLoadDir))
+                ? lastLoadDir
+                : Path.Combine(Application.StartupPath, "Saved Graphs");
+            dialog.CheckFileExists = true;
 			if (dialog.ShowDialog() != DialogResult.OK)
 				return;
 
@@ -295,7 +307,9 @@ namespace Foreman
 			try
 			{
 				GraphViewer.ImportNodesFromJson((JObject)JObject.Parse(File.ReadAllText(path))["ProductionGraph"], GraphViewer.ScreenToGraph(new Point(GraphViewer.Width / 2, GraphViewer.Height / 2)), true);
-			}
+                Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
+                Properties.Settings.Default.Save();
+            }
 			catch (Exception exception)
 			{
 				MessageBox.Show("Could not import from this file. See log for more details");
