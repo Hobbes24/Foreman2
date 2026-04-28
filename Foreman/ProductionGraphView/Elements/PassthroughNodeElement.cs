@@ -132,6 +132,17 @@ namespace Foreman
 						})));
 				}
 			}
-		}
-	}
+
+            if (graphViewer.ConversionSnapshots.ContainsKey(DisplayedNode))
+            {
+                RightClickMenu.Items.Add(new ToolStripSeparator());
+                RightClickMenu.Items.Add(new ToolStripMenuItem("Restore original node", null,
+                    new EventHandler((o, e) =>
+                    {
+                        RightClickMenu.Close();
+                        graphViewer.RestoreFromSnapshot(DisplayedNode);
+                    })));
+            }
+        }
+    }
 }

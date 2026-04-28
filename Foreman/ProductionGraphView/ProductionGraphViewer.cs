@@ -87,8 +87,10 @@ namespace Foreman
 
 		private ContextMenu rightClickMenu = new ContextMenu();
 
-		// -------Find feature fields
-		private Panel findPanel;
+        internal Dictionary<ReadOnlyPassthroughNode, RecipeNodeSnapshot> ConversionSnapshots
+			= new Dictionary<ReadOnlyPassthroughNode, RecipeNodeSnapshot>();
+        // -------Find feature fields
+        private Panel findPanel;
 		private TextBox findTextBox;
 		private Label findStatusLabel;
 		private List<BaseNodeElement> findResults = new List<BaseNodeElement>();
@@ -455,7 +457,92 @@ namespace Foreman
 			Invalidate();
 		}
 
-		public void SetSelectedPassthroughNodesSimpleDraw(bool simpleDraw)
+        public void ConvertNodeToPassthrough(ReadOnlyBaseNode node, ItemQualityPair item)
+        {
+            // Capture snapshot before anything is deleted
+            RecipeNodeSnapshot snapshot = null;
+            if (node is ReadOnlyRecipeNode recipeNode)
+                snapshot = new RecipeNodeSnapshot(recipeNode);
+
+            // Snapshot existing connections for this item before we delete anything
+            List<ReadOnlyBaseNode> suppliers = node.InputLinks
+                .Where(l => l.Item == item)
+                .Select(l => l.Supplier)
+                .ToList();
+            List<ReadOnlyBaseNode> consumers = node.OutputLinks
+                .Where(l => l.Item == item)
+                .Select(l => l.Consumer)
+                .ToList();
+
+            // Create the passthrough at the same spot, same direction
+            ReadOnlyPassthroughNode passthrough = Graph.CreatePassthroughNode(item, node.Location);
+            ((PassthroughNodeController)Graph.RequestNodeController(passthrough))
+                .SetDirection(node.NodeDirection);
+
+            // Delete the original node first (clears all its links cleanly)
+            Graph.DeleteNode(node);
+
+            // Re-wire: suppliers → passthrough → consumers
+            foreach (ReadOnlyBaseNode supplier in suppliers)
+                Graph.CreateLink(supplier, passthrough, item);
+            foreach (ReadOnlyBaseNode consumer in consumers)
+                Graph.CreateLink(passthrough, consumer, item);
+
+            // Store snapshot keyed to the new passthrough
+            if (snapshot != null)
+                ConversionSnapshots[passthrough] = snapshot;
+
+            Graph.UpdateNodeValues();
+            Graph.UpdateNodeStates(false);
+            Invalidate();
+        }
+
+        public void RestoreFromSnapshot(ReadOnlyPassthroughNode passthrough)
+        {
+            if (!ConversionSnapshots.TryGetValue(passthrough, out RecipeNodeSnapshot snapshot))
+                return;
+
+            ReadOnlyRecipeNode restored = Graph.CreateRecipeNode(snapshot.BaseRecipe, snapshot.Location);
+            RecipeNodeController controller = (RecipeNodeController)Graph.RequestNodeController(restored);
+
+            controller.SetAssembler(snapshot.SelectedAssembler);
+            if (snapshot.Fuel != null)
+                controller.SetFuel(snapshot.Fuel);
+            controller.SetAssemblerModules(snapshot.AssemblerModules, true);
+            controller.SetNeighbourCount(snapshot.NeighbourCount);
+            controller.SetExtraProductivityBonus(snapshot.ExtraProductivityBonus);
+
+            if (snapshot.SelectedBeacon)
+            {
+                controller.SetBeacon(snapshot.SelectedBeacon);
+                controller.SetBeaconModules(snapshot.BeaconModules, true);
+                controller.SetBeaconCount(snapshot.BeaconCount);
+                controller.SetBeaconsPerAssembler(snapshot.BeaconsPerAssembler);
+                controller.SetBeaconsCont(snapshot.BeaconsConst);
+            }
+
+            controller.SetDirection(snapshot.NodeDirection);
+            controller.SetPriority(snapshot.LowPriority);
+            controller.SetKeyNode(snapshot.KeyNode);
+            controller.SetKeyNodeTitle(snapshot.KeyNodeTitle);
+
+            // Delete passthrough (also cleans up snapshot via Graph_NodeDeleted)
+            Graph.DeleteNode(passthrough);
+
+            // Re-wire only links whose nodes still exist
+            foreach (var (supplierNode, item) in snapshot.InputLinks)
+                if (nodeElementDictionary.ContainsKey(supplierNode))
+                    Graph.CreateLink(supplierNode, restored, item);
+
+            foreach (var (consumerNode, item) in snapshot.OutputLinks)
+                if (nodeElementDictionary.ContainsKey(consumerNode))
+                    Graph.CreateLink(restored, consumerNode, item);
+
+            Graph.UpdateNodeValues();
+            Graph.UpdateNodeStates(false);
+            Invalidate();
+        }
+        public void SetSelectedPassthroughNodesSimpleDraw(bool simpleDraw)
 		{
 			foreach (PassthroughNodeElement node in selectedNodes.Where(n => n is PassthroughNodeElement).ToList())
 				((PassthroughNodeController)Graph.RequestNodeController(node.DisplayedNode)).SetSimpleDraw(simpleDraw);
@@ -745,17 +832,20 @@ namespace Foreman
 			Invalidate();
 		}
 
-		private void Graph_NodeDeleted(object sender, NodeEventArgs e)
-		{
-			BaseNodeElement element = nodeElementDictionary[e.node];
-			nodeElementDictionary.Remove(e.node);
-			nodeElements.Remove(element);
-			selectedNodes.Remove(element);
-			element.Dispose();
-			Invalidate();
-		}
+        private void Graph_NodeDeleted(object sender, NodeEventArgs e)
+        {
+            // Clean up any snapshot stored for this node
+            if (e.node is ReadOnlyPassthroughNode passthroughNode)
+                ConversionSnapshots.Remove(passthroughNode);
 
-		private void Graph_NodeAdded(object sender, NodeEventArgs e)
+            BaseNodeElement element = nodeElementDictionary[e.node];
+            nodeElementDictionary.Remove(e.node);
+            nodeElements.Remove(element);
+            selectedNodes.Remove(element);
+            element.Dispose();
+            Invalidate();
+        }
+        private void Graph_NodeAdded(object sender, NodeEventArgs e)
 		{
 			BaseNodeElement element = null;
 			if (e.node is ReadOnlySupplierNode supplierNode)
@@ -1585,8 +1675,14 @@ namespace Foreman
 				CloseFindPanel();
 				e.SuppressKeyPress = true;
 			}
-		}
-		private void ExecuteFind(string query)
+            else if ((e.KeyCode == Keys.C || e.KeyCode == Keys.X || e.KeyCode == Keys.V) && e.Control)
+            {
+                // Route Ctrl+C/X/V to the graph instead of the text box
+                e.SuppressKeyPress = true;
+                ProductionGraphViewer_KeyDown(this, new KeyEventArgs(e.KeyCode | Keys.Control));
+            }
+        }
+        private void ExecuteFind(string query)
 		{
 			findResults.Clear();
 			findResultIndex = -1;

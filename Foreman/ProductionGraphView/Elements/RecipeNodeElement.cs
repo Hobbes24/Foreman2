@@ -281,6 +281,32 @@ namespace Foreman
 					Clipboard.SetText(stringBuilder.ToString());
 
 				})));
+            RightClickMenu.Items.Add(new ToolStripSeparator());
+            var allItems = DisplayedNode.Inputs.Concat(DisplayedNode.Outputs).Distinct().ToList();
+            if (allItems.Count == 1)
+            {
+                RightClickMenu.Items.Add(new ToolStripMenuItem("Convert to passthrough", null,
+                    new EventHandler((o, e) =>
+                    {
+                        RightClickMenu.Close();
+                        graphViewer.ConvertNodeToPassthrough(DisplayedNode, allItems[0]);
+                    })));
+            }
+            else
+            {
+                var passthroughMenu = new ToolStripMenuItem("Convert to passthrough");
+                foreach (ItemQualityPair item in allItems)
+                {
+                    ItemQualityPair capturedItem = item;
+                    passthroughMenu.DropDownItems.Add(new ToolStripMenuItem(capturedItem.FriendlyName, null,
+                        new EventHandler((o, e) =>
+                        {
+                            RightClickMenu.Close();
+                            graphViewer.ConvertNodeToPassthrough(DisplayedNode, capturedItem);
+                        })));
+                }
+                RightClickMenu.Items.Add(passthroughMenu);
+            }
 		}
 
 		protected override List<TooltipInfo> GetMyToolTips(Point graph_point, bool exclusive)

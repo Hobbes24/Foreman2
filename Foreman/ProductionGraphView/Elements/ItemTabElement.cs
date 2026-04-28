@@ -126,9 +126,9 @@ namespace Foreman
 			if (parentNode.DisplayedNode is ReadOnlyRecipeNode rNode)
 			{
 				if (LinkType == LinkType.Input)
-					tti.Text = Item.Item is Fluid? rNode.BaseRecipe.Recipe.GetIngredientFriendlyName(Item.Item) : Item.FriendlyName;
+					tti.Text = Item.Item is Fluid ? rNode.BaseRecipe.Recipe.GetIngredientFriendlyName(Item.Item) : Item.FriendlyName;
 				else //if(LinkType == LinkType.Output)
-					tti.Text = Item.Item is Fluid? rNode.BaseRecipe.Recipe.GetProductFriendlyName(Item.Item) : Item.FriendlyName;
+					tti.Text = Item.Item is Fluid ? rNode.BaseRecipe.Recipe.GetProductFriendlyName(Item.Item) : Item.FriendlyName;
 			}
 			else if ((Item.Item is Fluid fluid) && fluid.IsTemperatureDependent)
 			{
@@ -160,7 +160,7 @@ namespace Foreman
 				List<ReadOnlyNodeLink> connections = new List<ReadOnlyNodeLink>();
 				if (LinkType == LinkType.Input)
 					connections.AddRange(DisplayedNode.InputLinks.Where(l => l.Item == Item));
-				else //if (LinkType == LinkType.Output)
+				else
 					connections.AddRange(DisplayedNode.OutputLinks.Where(l => l.Item == Item));
 
 				RightClickMenu.Items.Add(new ToolStripMenuItem("Delete connections", null,
@@ -172,6 +172,15 @@ namespace Foreman
 						graphViewer.Graph.UpdateNodeValues();
 					}))
 				{ Enabled = connections.Count > 0 });
+
+				// *** ADD THIS BLOCK ***
+				RightClickMenu.Items.Add(new ToolStripMenuItem("Convert node to passthrough", null,
+					new EventHandler((o, e) =>
+					{
+						RightClickMenu.Close();
+						graphViewer.ConvertNodeToPassthrough(DisplayedNode, Item);
+					})));
+				// *** END ADD ***
 
 				RightClickMenu.Show(graphViewer, graphViewer.GraphToScreen(graph_point));
 			}
