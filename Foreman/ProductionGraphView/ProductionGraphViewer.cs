@@ -437,7 +437,82 @@ namespace Foreman
 			Invalidate();
 		}
 
-		public void TryDeleteSelectedNodes()
+        // ---------------------------------------------------------------------------------
+        // ADD THESE TWO METHODS to ProductionGraphViewer.cs
+        // Place them immediately after the closing brace of AddPassthroughNodesFromSelection
+        // ---------------------------------------------------------------------------------
+
+        // Ctrl + drag from any node tab to empty space:
+        // Creates a passthrough node for every item on that side of the origin node,
+        // spaced 80px apart horizontally starting at the drop location.
+        public void AddPassthroughNodesForAllItems(LinkType linkType, BaseNodeElement originElement, Point dropLocation)
+        {
+            IEnumerable<ItemQualityPair> items = linkType == LinkType.Input
+                ? originElement.DisplayedNode.Inputs
+                : originElement.DisplayedNode.Outputs;
+
+            List<BaseNodeElement> newPassthroughNodes = new List<BaseNodeElement>();
+            int index = 0;
+
+            foreach (ItemQualityPair item in items)
+            {
+                Point nodeLocation = new Point(dropLocation.X + index * 80, dropLocation.Y);
+                if (Grid.ShowGrid)
+                    nodeLocation = Grid.AlignToGrid(nodeLocation);
+
+                NodeDirection newNodeDirection = !SmartNodeDirection ? Graph.DefaultNodeDirection :
+                    draggedLinkElement.Type != BaseLinkElement.LineType.UShape ? originElement.DisplayedNode.NodeDirection :
+                    originElement.DisplayedNode.NodeDirection == NodeDirection.Up ? NodeDirection.Down : NodeDirection.Up;
+
+                ReadOnlyPassthroughNode newNode = Graph.CreatePassthroughNode(item, nodeLocation);
+                PassthroughNodeController controller = (PassthroughNodeController)Graph.RequestNodeController(newNode);
+                controller.SetDirection(newNodeDirection);
+
+                if (linkType == LinkType.Input)
+                    Graph.CreateLink(newNode, originElement.DisplayedNode, item);
+                else
+                    Graph.CreateLink(originElement.DisplayedNode, newNode, item);
+
+                newPassthroughNodes.Add(nodeElementDictionary[newNode]);
+                index++;
+            }
+
+            SetSelection(newPassthroughNodes);
+            DisposeLinkDrag();
+            Graph.UpdateNodeStates(false);
+            Invalidate();
+        }
+
+        // Ctrl + drag from one node directly onto another matching node:
+        // Inserts a single passthrough node at the midpoint and links both ends through it,
+        // rather than connecting them directly.
+        public void AddPassthroughNodeBetween(BaseNodeElement supplierElement, BaseNodeElement consumerElement, ItemQualityPair item)
+        {
+            Point midpoint = new Point(
+                (supplierElement.Location.X + consumerElement.Location.X) / 2,
+                (supplierElement.Location.Y + consumerElement.Location.Y) / 2);
+            if (Grid.ShowGrid)
+                midpoint = Grid.AlignToGrid(midpoint);
+
+            NodeDirection newNodeDirection = !SmartNodeDirection ? Graph.DefaultNodeDirection :
+                draggedLinkElement.Type != BaseLinkElement.LineType.UShape ? supplierElement.DisplayedNode.NodeDirection :
+                supplierElement.DisplayedNode.NodeDirection == NodeDirection.Up ? NodeDirection.Down : NodeDirection.Up;
+
+            ReadOnlyPassthroughNode newNode = Graph.CreatePassthroughNode(item, midpoint);
+            PassthroughNodeController controller = (PassthroughNodeController)Graph.RequestNodeController(newNode);
+            controller.SetDirection(newNodeDirection);
+
+            Graph.CreateLink(supplierElement.DisplayedNode, newNode, item);
+            Graph.CreateLink(newNode, consumerElement.DisplayedNode, item);
+
+            SetSelection(new List<BaseNodeElement> { nodeElementDictionary[newNode] });
+            DisposeLinkDrag();
+            Graph.UpdateNodeValues();
+            Graph.UpdateNodeStates(false);
+            Invalidate();
+        }
+
+        public void TryDeleteSelectedNodes()
 		{
 			bool proceed = true;
 			if (selectedNodes.Count > 10)
