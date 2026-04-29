@@ -45,7 +45,11 @@ namespace Foreman
 						graphics.FillEllipse(brush, inputPoint.X - 6, Math.Min(outputPoint.Y, inputPoint.Y) - 6 + (ItemTabElement.TabWidth / 2), 12, 12);
 						graphics.FillEllipse(brush, inputPoint.X - 6, Math.Max(outputPoint.Y, inputPoint.Y) - 6 - (ItemTabElement.TabWidth / 2), 12, 12);
 					}
-					if (Highlighted)
+
+                    if (FindHighlighted)
+                        using (Pen pen = new Pen(findOverlayBrush, Math.Max(30, maxLineWidth + 10)) { EndCap = System.Drawing.Drawing2D.LineCap.Round, StartCap = System.Drawing.Drawing2D.LineCap.Round })
+                            graphics.DrawLine(pen, inputPoint, outputPoint);
+                    if (Highlighted)
 						using (Pen pen = new Pen(selectionOverlayBrush, Math.Max(30, maxLineWidth + 10)) { EndCap = System.Drawing.Drawing2D.LineCap.Round, StartCap = System.Drawing.Drawing2D.LineCap.Round })
 							graphics.DrawLine(pen, inputPoint, outputPoint);
 				}

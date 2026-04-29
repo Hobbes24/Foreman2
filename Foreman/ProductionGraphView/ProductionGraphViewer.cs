@@ -95,8 +95,9 @@ namespace Foreman
 		private Label findStatusLabel;
 		private List<BaseNodeElement> findResults = new List<BaseNodeElement>();
 		private int findResultIndex = -1;
+        private CheckBox autoZoomCheckBox;
 
-		public ProductionGraphViewer()
+        public ProductionGraphViewer()
 		{
 			InitializeComponent();
 			MouseWheel += new MouseEventHandler(ProductionGraphViewer_MouseWheel);
@@ -1280,35 +1281,45 @@ namespace Foreman
 			findTextBox.Location = new Point(45, 4);
 			findTextBox.Width = 200;
 			findTextBox.KeyDown += FindTextBox_KeyDown;
+            findTextBox.MouseWheel += ProductionGraphViewer_MouseWheel;
 
-			var btnNext = new Button();
-			btnNext.Text = "Find Next";
-			btnNext.Location = new Point(252, 3);
-			btnNext.Width = 75;
-			btnNext.Height = 23;
-			btnNext.TabStop = false;
-			btnNext.Click += (s, e) => FindNext();
 
-			var btnClose = new Button();
-			btnClose.Text = "✕";
-			btnClose.Location = new Point(334, 3);
-			btnClose.Width = 26;
-			btnClose.Height = 23;
-			btnClose.TabStop = false;
-			btnClose.Click += (s, e) => CloseFindPanel();
+            var btnNext = new Button();
+            btnNext.Text = "Go to Next";  // renamed
+            btnNext.Location = new Point(252, 3);
+            btnNext.Width = 80;           // slightly wider for new text
+            btnNext.Height = 23;
+            btnNext.TabStop = false;
+            btnNext.Click += (s, e) => FindNext();
 
-			findStatusLabel = new Label();
-			findStatusLabel.AutoSize = true;
-			findStatusLabel.Location = new Point(367, 7);
-			findStatusLabel.ForeColor = Color.DimGray;
+            var btnClose = new Button();
+            btnClose.Text = "✕";
+            btnClose.Location = new Point(339, 3);  // shifted right slightly
+            btnClose.Width = 26;
+            btnClose.Height = 23;
+            btnClose.TabStop = false;
+            btnClose.Click += (s, e) => CloseFindPanel();
 
-			findPanel.Controls.Add(findLabel);
-			findPanel.Controls.Add(findTextBox);
-			findPanel.Controls.Add(btnNext);
-			findPanel.Controls.Add(btnClose);
-			findPanel.Controls.Add(findStatusLabel);
+            findStatusLabel = new Label();
+            findStatusLabel.AutoSize = true;
+            findStatusLabel.Location = new Point(372, 7);
+            findStatusLabel.ForeColor = Color.DimGray;
 
-			this.Controls.Add(findPanel);
+            autoZoomCheckBox = new CheckBox();
+            autoZoomCheckBox.Text = "Fit all results";
+            autoZoomCheckBox.AutoSize = true;
+            autoZoomCheckBox.Location = new Point(490, 6);
+            autoZoomCheckBox.Checked = true;  // default on
+            autoZoomCheckBox.TabStop = false;
+
+            findPanel.Controls.Add(findLabel);
+            findPanel.Controls.Add(findTextBox);
+            findPanel.Controls.Add(btnNext);
+            findPanel.Controls.Add(btnClose);
+            findPanel.Controls.Add(findStatusLabel);
+            findPanel.Controls.Add(autoZoomCheckBox);  // add checkbox
+
+            this.Controls.Add(findPanel);
 		}
 
 		public void UpdateGraphBounds(bool limitView = true)
@@ -1647,18 +1658,48 @@ namespace Foreman
 			findTextBox.SelectAll();
 		}
 
-		private void CloseFindPanel()
-		{
-			findPanel.Visible = false;
-			findResults.Clear();
-			findResultIndex = -1;
-			findStatusLabel.Text = "";
-			lastSearchQuery = "";
-			this.Focus();
-			Invalidate();
-		}
+        private void CloseFindPanel()
+        {
+            foreach (BaseNodeElement ne in nodeElements)
+                ne.FindHighlighted = false;
 
-		private string lastSearchQuery = "";
+            findPanel.Visible = false;
+            findResults.Clear();
+            findResultIndex = -1;
+            findStatusLabel.Text = "";
+            lastSearchQuery = "";
+            this.Focus();
+            Invalidate();
+        }
+
+        private void ZoomToFitResults()
+        {
+            if (findResults.Count == 0) return;
+
+            int minX = findResults.Min(n => n.X - n.Width / 2);
+            int maxX = findResults.Max(n => n.X + n.Width / 2);
+            int minY = findResults.Min(n => n.Y - n.Height / 2);
+            int maxY = findResults.Max(n => n.Y + n.Height / 2);
+
+            int centerX = (minX + maxX) / 2;
+            int centerY = (minY + maxY) / 2;
+
+            int padding = 150; // graph-space padding around results
+            int boundsWidth = Math.Max(maxX - minX + padding * 2, 1);
+            int boundsHeight = Math.Max(maxY - minY + padding * 2, 1);
+
+            float scaleX = (float)Width / boundsWidth;
+            float scaleY = (float)(Height - findPanel.Height) / boundsHeight;
+            ViewScale = Math.Min(Math.Min(scaleX, scaleY), 2f);
+            ViewScale = Math.Max(ViewScale, 0.01f);
+
+            ViewOffset = new Point(-centerX, -centerY);
+
+            UpdateGraphBounds(false);
+            Invalidate();
+        }
+
+        private string lastSearchQuery = "";
 
 		private void FindTextBox_KeyDown(object sender, KeyEventArgs e)
 		{
@@ -1683,40 +1724,54 @@ namespace Foreman
             }
         }
         private void ExecuteFind(string query)
-		{
-			findResults.Clear();
-			findResultIndex = -1;
-			lastSearchQuery = query.Trim().ToLowerInvariant();
-			findStatusLabel.ForeColor = Color.DimGray;
+        {
+            // Clear previous find highlights
+            foreach (BaseNodeElement ne in nodeElements)
+                ne.FindHighlighted = false;
 
-			if (string.IsNullOrWhiteSpace(query))
-			{
-				findStatusLabel.Text = "";
-				return;
-			}
+            findResults.Clear();
+            findResultIndex = -1;
+            lastSearchQuery = query.Trim().ToLowerInvariant();
+            findStatusLabel.ForeColor = Color.DimGray;
 
-			string q = query.Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(query))
+            {
+                findStatusLabel.Text = "";
+                Invalidate();
+                return;
+            }
 
-			foreach (BaseNodeElement ne in nodeElements)
-			{
-				string nodeName = GetNodeSearchText(ne.DisplayedNode);
-				if (nodeName != null && nodeName.ToLowerInvariant().Contains(q))
-					findResults.Add(ne);
-			}
+            string q = query.Trim().ToLowerInvariant();
 
-			if (findResults.Count == 0)
-			{
-				findStatusLabel.Text = "No results";
-				findStatusLabel.ForeColor = Color.DarkRed;
-				return;
-			}
+            foreach (BaseNodeElement ne in nodeElements)
+            {
+                string nodeName = GetNodeSearchText(ne.DisplayedNode);
+                if (nodeName != null && nodeName.ToLowerInvariant().Contains(q))
+                    findResults.Add(ne);
+            }
 
-			findResultIndex = 0;
-			CenterOnNode(findResults[0]);
-			UpdateFindStatus();
-		}
+            if (findResults.Count == 0)
+            {
+                findStatusLabel.Text = "No results";
+                findStatusLabel.ForeColor = Color.DarkRed;
+                Invalidate();
+                return;
+            }
 
-		private void FindNext()
+            // Yellow highlight all results
+            foreach (BaseNodeElement ne in findResults)
+                ne.FindHighlighted = true;
+
+            findResultIndex = 0;
+            CenterOnNode(findResults[0]);  // blue highlight + center on first
+
+            if (autoZoomCheckBox.Checked)
+                ZoomToFitResults();  // override view to show all results
+
+            UpdateFindStatus();
+        }
+
+        private void FindNext()
 		{
 			if (findResults.Count == 0)
 			{

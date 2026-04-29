@@ -15,7 +15,8 @@ namespace Foreman
 	public abstract class BaseNodeElement : GraphElement
 	{
 		public bool Highlighted = false; //selection - note that this doesnt mean it is or isnt in selection (at least not during drag operation - ex: dragging a not-selection over a group of selected nodes will change their highlight status, but wont add them to the 'selected' set until you let go of the drag)
-		public ReadOnlyBaseNode DisplayedNode { get; private set; }
+        public bool FindHighlighted = false; // search result highlight
+        public ReadOnlyBaseNode DisplayedNode { get; private set; }
 
 		public override int X { get { return DisplayedNode.Location.X; } set { Trace.Fail("Base node element location cant be set through X parameter! Use SetLocation(Point)"); } }
 		public override int Y { get { return DisplayedNode.Location.Y; } set { Trace.Fail("Base node element location cant be set through Y parameter! Use SetLocation(Point)"); } }
@@ -43,8 +44,9 @@ namespace Foreman
 		private static readonly Brush undersuppliedFlowBorderBrush = Brushes.DarkRed;
 
 		protected static readonly Brush selectionOverlayBrush = new SolidBrush(Color.FromArgb(100, 100, 100, 200));
+        protected static readonly Brush findOverlayBrush = new SolidBrush(Color.FromArgb(120, 255, 60, 60)); // light red
 
-		protected static readonly Brush TextBrush = Brushes.Black;
+        protected static readonly Brush TextBrush = Brushes.Black;
 		protected static readonly Font BaseFont = new Font(FontFamily.GenericSansSerif, 10f);
         protected static readonly Font CounterBaseFont = new Font(FontFamily.GenericSansSerif, 14f);
         protected static readonly Font TitleFont = new Font(FontFamily.GenericSansSerif, 9.2f, FontStyle.Bold);
@@ -241,9 +243,13 @@ namespace Foreman
 				if (style == NodeDrawingStyle.Regular || style == NodeDrawingStyle.PrintStyle)
 					DetailsDraw(graphics, trans);
 
-				//highlight
-				if (Highlighted)
-					GraphicsStuff.FillRoundRect(trans.X - (Width / 2), trans.Y - (Height / 2), Width, Height, 8, graphics, selectionOverlayBrush);
+                //find highlight (drawn before selection so blue appears on top)
+                if (FindHighlighted)
+                    GraphicsStuff.FillRoundRect(trans.X - (Width / 2), trans.Y - (Height / 2), Width, Height, 8, graphics, findOverlayBrush);
+
+                //highlight
+                if (Highlighted)
+                    GraphicsStuff.FillRoundRect(trans.X - (Width / 2), trans.Y - (Height / 2), Width, Height, 8, graphics, selectionOverlayBrush);              //highlight
 			}
 		}
 
