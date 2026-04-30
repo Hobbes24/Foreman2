@@ -37,6 +37,8 @@
             this.SaveButton = new System.Windows.Forms.Button();
             this.AddItemButton = new System.Windows.Forms.Button();
             this.AddRecipeButton = new System.Windows.Forms.Button();
+            this.AddShapeButton = new System.Windows.Forms.Button();
+            this.AddTextButton = new System.Windows.Forms.Button();
             this.ExportImageButton = new System.Windows.Forms.Button();
             this.EnableDisableButton = new System.Windows.Forms.Button();
             this.ImportGraphButton = new System.Windows.Forms.Button();
@@ -144,6 +146,8 @@
             this.MenuButtonsTable.Controls.Add(this.SaveButton, 0, 1);
             this.MenuButtonsTable.Controls.Add(this.AddItemButton, 1, 1);
             this.MenuButtonsTable.Controls.Add(this.AddRecipeButton, 1, 2);
+            this.MenuButtonsTable.Controls.Add(this.AddShapeButton, 1, 3);
+            this.MenuButtonsTable.Controls.Add(this.AddTextButton, 2, 3);
             this.MenuButtonsTable.Controls.Add(this.ExportImageButton, 2, 1);
             this.MenuButtonsTable.Controls.Add(this.EnableDisableButton, 2, 0);
             this.MenuButtonsTable.Controls.Add(this.ImportGraphButton, 1, 0);
@@ -220,6 +224,34 @@
             this.AddRecipeButton.Text = "Add Recipe";
             this.AddRecipeButton.UseVisualStyleBackColor = true;
             this.AddRecipeButton.Click += new System.EventHandler(this.AddRecipeButton_Click);
+            // 
+            // AddShapeButton
+            // 
+            this.AddShapeButton.AutoSize = true;
+            this.AddShapeButton.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            this.AddShapeButton.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.AddShapeButton.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.AddShapeButton.Margin = new System.Windows.Forms.Padding(2);
+            this.AddShapeButton.Name = "AddShapeButton";
+            this.AddShapeButton.Size = new System.Drawing.Size(83, 26);
+            this.AddShapeButton.TabIndex = 20;
+            this.AddShapeButton.Text = "Add Shape";
+            this.AddShapeButton.UseVisualStyleBackColor = true;
+            this.AddShapeButton.Click += new System.EventHandler(this.AddShapeButton_Click);
+            // 
+            // AddTextButton
+            // 
+            this.AddTextButton.AutoSize = true;
+            this.AddTextButton.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            this.AddTextButton.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.AddTextButton.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.AddTextButton.Margin = new System.Windows.Forms.Padding(2);
+            this.AddTextButton.Name = "AddTextButton";
+            this.AddTextButton.Size = new System.Drawing.Size(83, 26);
+            this.AddTextButton.TabIndex = 21;
+            this.AddTextButton.Text = "Add Text";
+            this.AddTextButton.UseVisualStyleBackColor = true;
+            this.AddTextButton.Click += new System.EventHandler(this.AddTextButton_Click);
             // 
             // ExportImageButton
             // 
@@ -610,6 +642,8 @@
         private ProductionGraphViewer GraphViewer;
         private System.Windows.Forms.Button AddItemButton;
         private System.Windows.Forms.Button AddRecipeButton;
+        private System.Windows.Forms.Button AddShapeButton;
+        private System.Windows.Forms.Button AddTextButton;
         private System.Windows.Forms.Label label4;
 		private System.Windows.Forms.TableLayoutPanel MenuTable;
 		private System.Windows.Forms.TableLayoutPanel MenuButtonsTable;

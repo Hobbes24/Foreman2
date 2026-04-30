@@ -214,6 +214,16 @@
     <Compile Include="Forms\SciencePacksLoadForm.Designer.cs">
       <DependentUpon>SciencePacksLoadForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Forms\Shapepropertiesform.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\Shapepropertiesform.designer.cs">
+      <DependentUpon>Shapepropertiesform.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Forms\Textpropertiesform .cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\Textpropertiesform.designer.cs" />
     <Compile Include="Models\AssemblerSelector.cs" />
     <Compile Include="Models\FuelSelector.cs" />
     <Compile Include="Models\LinkChecker.cs" />
@@ -233,16 +243,19 @@
     </Compile>
     <Compile Include="Models\QualityPairs.cs" />
     <Compile Include="NativeMethods.cs" />
+    <Compile Include="ProductionGraphView\Elements\AnnotationElement.cs" />
     <Compile Include="ProductionGraphView\Elements\AssemblerElement.cs" />
     <Compile Include="ProductionGraphView\Elements\BaseLinkElement.cs" />
     <Compile Include="ProductionGraphView\Elements\BeaconElement.cs" />
     <Compile Include="ProductionGraphView\Elements\ConsumerNodeElement.cs" />
     <Compile Include="ProductionGraphView\Elements\ErrorNoticeElement.cs" />
     <Compile Include="ProductionGraphView\Elements\PlantNodeElement.cs" />
+    <Compile Include="ProductionGraphView\Elements\ShapeAnnotationElement.cs" />
     <Compile Include="ProductionGraphView\Elements\SpoilNodeElement.cs" />
     <Compile Include="ProductionGraphView\Elements\PassthroughNodeElement.cs" />
     <Compile Include="ProductionGraphView\Elements\RecipeNodeElement.cs" />
     <Compile Include="ProductionGraphView\Elements\SupplierNodeElement.cs" />
+    <Compile Include="ProductionGraphView\Elements\TextAnnotationElement.cs" />
     <Compile Include="ProductionGraphView\FloatingTooltipControl.cs" />
     <Compile Include="ProductionGraphView\Elements\DraggedLinkElement.cs" />
     <Compile Include="DataCache\ErrorLogging.cs" />
@@ -272,6 +285,7 @@
     <Compile Include="ProductionGraphView\FloatingTooltipRenderer.cs" />
     <Compile Include="ProductionGraphView\NodeCopyOptions.cs" />
     <Compile Include="ProductionGraphView\PointingArrowRenderer.cs" />
+    <Compile Include="ProductionGraphView\RecipeNodeSnapshot.cs" />
     <Compile Include="Settings.cs" />
     <Compile Include="VersionUpdater.cs" />
     <Compile Include="Program.cs" />

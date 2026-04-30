@@ -343,7 +343,7 @@ namespace Foreman
             }
 
             if (!File.Exists(savefilePath))
-                return MessageBox.Show("The current graph's save file has been deleted!\nIf you continue, you will loose it forever!", "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
+                return MessageBox.Show("The current graph's save file has been deleted!\nIf you continue, you will lose it forever!", "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
 
             if (lastSavedGraphJson == null || GetCurrentGraphJson() != lastSavedGraphJson)
             {
@@ -554,7 +554,19 @@ namespace Foreman
 			GraphViewer.AddNewNode(new Point(15, 15), new ItemQualityPair("adding disconnected recipe node"), location, NewNodeType.Disconnected);
 		}
 
-		private void AddItemButton_Click(object sender, EventArgs e)
+        private void AddShapeButton_Click(object sender, EventArgs e)
+        {
+            Point location = GraphViewer.ScreenToGraph(new Point(GraphViewer.Width / 2, GraphViewer.Height / 2));
+            GraphViewer.AddShapeAnnotation(location);
+        }
+
+        private void AddTextButton_Click(object sender, EventArgs e)
+        {
+            Point location = GraphViewer.ScreenToGraph(new Point(GraphViewer.Width / 2, GraphViewer.Height / 2));
+            GraphViewer.AddTextAnnotation(location);
+        }
+
+        private void AddItemButton_Click(object sender, EventArgs e)
 		{
 			Point location = GraphViewer.ScreenToGraph(new Point(GraphViewer.Width / 2, GraphViewer.Height / 2));
 			GraphViewer.AddItem(new Point(15, 15), location);

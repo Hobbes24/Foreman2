@@ -82,10 +82,13 @@ namespace Foreman
 		private Rectangle SelectionZone;
 		private Point SelectionZoneOriginPoint;
 
-		private HashSet<BaseNodeElement> selectedNodes; //main list of selected nodes
-		private HashSet<BaseNodeElement> currentSelectionNodes; //list of nodes currently under the selection zone (which can be added/removed/replace the full list)
+        private HashSet<BaseNodeElement> selectedNodes; //main list of selected nodes
+        private HashSet<BaseNodeElement> currentSelectionNodes; //list of nodes currently under the selection zone (which can be added/removed/replace the full list)
 
-		private ContextMenu rightClickMenu = new ContextMenu();
+        private List<AnnotationElement> annotationElements;
+        private HashSet<AnnotationElement> selectedAnnotations;
+
+        private ContextMenu rightClickMenu = new ContextMenu();
 
         internal Dictionary<ReadOnlyPassthroughNode, RecipeNodeSnapshot> ConversionSnapshots
 			= new Dictionary<ReadOnlyPassthroughNode, RecipeNodeSnapshot>();
@@ -130,27 +133,35 @@ namespace Foreman
 			linkElementDictionary = new Dictionary<ReadOnlyNodeLink, LinkElement>();
 			linkElements = new List<LinkElement>();
 
-			selectedNodes = new HashSet<BaseNodeElement>();
-			currentSelectionNodes = new HashSet<BaseNodeElement>();
+            selectedNodes = new HashSet<BaseNodeElement>();
+            currentSelectionNodes = new HashSet<BaseNodeElement>();
 
-			UpdateGraphBounds();
-			InitFindPanel();
-			Invalidate();
-		}
+            annotationElements = new List<AnnotationElement>();
+            selectedAnnotations = new HashSet<AnnotationElement>();
+
+            UpdateGraphBounds();
+            InitFindPanel();
+            Invalidate();
+        }
 
 		public void ClearGraph()
 		{
 			DisposeLinkDrag();
 			Graph.ClearGraph();
-			//at this point every node element and link element has been removed.
+            //at this point every node element and link element has been removed.
 
-			findResults.Clear();
-			findResultIndex = -1;
-			lastSearchQuery = "";
+            findResults.Clear();
+            findResultIndex = -1;
+            lastSearchQuery = "";
 
-			selectedNodes.Clear();
-			currentSelectionNodes.Clear();
-		}
+            foreach (AnnotationElement ann in annotationElements.ToList())
+                ann.Dispose();
+            annotationElements.Clear();
+            selectedAnnotations.Clear();
+
+            selectedNodes.Clear();
+            currentSelectionNodes.Clear();
+        }
 
 		public BaseNodeElement GetNodeAtPoint(Point point) //returns first such node (in case of stacking)
 		{
@@ -164,12 +175,46 @@ namespace Foreman
 					if (nodeElements[i].ContainsPoint(point))
 						return nodeElements[i];
 			}
-			return null;
-		}
+            return null;
+        }
 
-		//----------------------------------------------Adding new node functions (including link dragging) + Node edit
+        public AnnotationElement GetAnnotationAtPoint(Point point)
+        {
+            // Reverse order: most-recently-added annotation is tested first (topmost in render order).
+            for (int i = annotationElements.Count - 1; i >= 0; i--)
+                if (annotationElements[i].ContainsPoint(point))
+                    return annotationElements[i];
+            return null;
+        }
 
-		public void StartLinkDrag(BaseNodeElement startNode, LinkType linkType, ItemQualityPair item)
+        //----------------------------------------------Annotation add/remove/create
+
+        public void AddAnnotationElement(AnnotationElement element)
+        {
+            annotationElements.Add(element);
+            Invalidate();
+        }
+
+        public void RemoveAnnotationElement(AnnotationElement element)
+        {
+            annotationElements.Remove(element);
+            selectedAnnotations.Remove(element);
+            element.Dispose();
+            Invalidate();
+        }
+
+        public void AddShapeAnnotation(Point graphPoint)
+        {
+            AddAnnotationElement(new ShapeAnnotationElement(this, graphPoint));
+        }
+
+        public void AddTextAnnotation(Point graphPoint)
+        {
+            AddAnnotationElement(new TextAnnotationElement(this, graphPoint));
+        }
+
+        //----------------------------------------------Adding new node functions (including link dragging) + Node edit
+        public void StartLinkDrag(BaseNodeElement startNode, LinkType linkType, ItemQualityPair item)
 		{
 			draggedLinkElement?.Dispose();
 			draggedLinkElement = new DraggedLinkElement(this, startNode, linkType, item);
@@ -734,35 +779,40 @@ namespace Foreman
 			}
 		}
 
-		public void ClearSelection()
-		{
-			foreach (BaseNodeElement element in nodeElements)
-				element.Highlighted = false;
-			selectedNodes.Clear();
-			currentSelectionNodes.Clear();
-			Invalidate();
-		}
+        public void ClearSelection()
+        {
+            foreach (BaseNodeElement element in nodeElements)
+                element.Highlighted = false;
+            selectedNodes.Clear();
+            currentSelectionNodes.Clear();
+            foreach (AnnotationElement ann in selectedAnnotations)
+                ann.IsSelected = false;
+            selectedAnnotations.Clear();
+            Invalidate();
+        }
 
-		public void AlignSelected()
+        public void AlignSelected()
 		{
 			foreach (BaseNodeElement ne in selectedNodes)
 				ne.SetLocation(Grid.AlignToGrid(ne.Location));
 			Invalidate();
 		}
 
-		//----------------------------------------------Paint functions
+        //----------------------------------------------Paint functions
 
-		protected IEnumerable<GraphElement> GetPaintingOrder()
-		{
-			if (draggedLinkElement != null)
-				yield return draggedLinkElement;
-			foreach (LinkElement element in linkElements)
-				yield return element;
-			foreach (BaseNodeElement element in nodeElements)
-				yield return element;
-		}
+        protected IEnumerable<GraphElement> GetPaintingOrder()
+        {
+            if (draggedLinkElement != null)
+                yield return draggedLinkElement;
+            foreach (AnnotationElement element in annotationElements)  // annotations render first (background layer)
+                yield return element;
+            foreach (LinkElement element in linkElements)
+                yield return element;
+            foreach (BaseNodeElement element in nodeElements)
+                yield return element;
+        }
 
-		public void UpdateNodeVisuals()
+        public void UpdateNodeVisuals()
 		{
 			try
 			{
@@ -788,16 +838,21 @@ namespace Foreman
 
 		public new void Paint(Graphics graphics, bool FullGraph = false)
 		{
-			//update visibility of all elements
-			if (FullGraph)
-				foreach (GraphElement element in GetPaintingOrder())
-					element.UpdateVisibility(Graph.Bounds);
-			else
-				foreach (GraphElement element in GetPaintingOrder())
-					element.UpdateVisibility(VisibleGraphBounds);
+            //update visibility of all elements
+            if (FullGraph)
+            {
+                foreach (GraphElement element in GetPaintingOrder())
+                    element.UpdateVisibility(Graph.Bounds);
+                // Annotations are viewer-side and may live outside Graph.Bounds — force them visible
+                foreach (AnnotationElement ann in annotationElements)
+                    ann.ForceVisible();
+            }
+            else
+                foreach (GraphElement element in GetPaintingOrder())
+                    element.UpdateVisibility(VisibleGraphBounds);
 
-			//ensure width of selection is correct
-			selectionPen.Width = 2 / ViewScale;
+            //ensure width of selection is correct
+            selectionPen.Width = 2 / ViewScale;
 
 			//grid
 			if(!FullGraph)
@@ -956,25 +1011,37 @@ namespace Foreman
 			mouseDownStartScreenPoint = Control.MousePosition;
 			Point graph_location = ScreenToGraph(e.Location);
 
-			GraphElement clickedElement = (GraphElement)draggedLinkElement ?? GetNodeAtPoint(ScreenToGraph(e.Location));
-			clickedElement?.MouseDown(graph_location, e.Button);
+            GraphElement clickedElement = (GraphElement)draggedLinkElement
+                                        ?? (GraphElement)GetNodeAtPoint(ScreenToGraph(e.Location))
+                                        ?? GetAnnotationAtPoint(ScreenToGraph(e.Location));
 
-			if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Right))
+            // Double-click on an annotation opens its properties dialog
+            if (e.Clicks == 2 && e.Button == MouseButtons.Left && clickedElement is AnnotationElement doubleClickedAnnotation)
+            {
+                doubleClickedAnnotation.ShowPropertiesDialog();
+                return;
+            }
+
+            clickedElement?.MouseDown(graph_location, e.Button);
+            if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Right))
 			{
 				ViewDragOriginPoint = graph_location;
 			}
-			else if (e.Button == MouseButtons.Left && clickedElement == null) //selection
-			{
-				SelectionZoneOriginPoint = graph_location;
-				SelectionZone = new Rectangle();
-				if ((Control.ModifierKeys & Keys.Control) == 0 && (Control.ModifierKeys & Keys.Alt) == 0) //clear all selected nodes if we arent using modifier keys
-				{
-					foreach (BaseNodeElement ne in selectedNodes)
-						ne.Highlighted = false;
-					selectedNodes.Clear();
-				}
-			}
-		}
+            else if (e.Button == MouseButtons.Left && clickedElement == null) //selection
+            {
+                SelectionZoneOriginPoint = graph_location;
+                SelectionZone = new Rectangle();
+                if ((Control.ModifierKeys & Keys.Control) == 0 && (Control.ModifierKeys & Keys.Alt) == 0) //clear all selected nodes if we arent using modifier keys
+                {
+                    foreach (BaseNodeElement ne in selectedNodes)
+                        ne.Highlighted = false;
+                    selectedNodes.Clear();
+                    foreach (AnnotationElement ann in selectedAnnotations)
+                        ann.IsSelected = false;
+                    selectedAnnotations.Clear();
+                }
+            }
+        }
 
 		private void ProductionGraphViewer_MouseUp(object sender, MouseEventArgs e)
 		{
@@ -982,9 +1049,10 @@ namespace Foreman
 
 			ToolTipRenderer.ClearFloatingControls();
 			Point graph_location = ScreenToGraph(e.Location);
-			GraphElement element = (GraphElement)draggedLinkElement ?? GetNodeAtPoint(graph_location);
-
-			switch (e.Button)
+            GraphElement element = (GraphElement)draggedLinkElement
+                            ?? (GraphElement)GetNodeAtPoint(graph_location)
+                            ?? GetAnnotationAtPoint(graph_location);
+            switch (e.Button)
 			{
 				case MouseButtons.Right:
 					if (viewBeingDragged)
@@ -995,18 +1063,28 @@ namespace Foreman
 						screenPoint.X = Math.Max(15, Math.Min(Width - 650, screenPoint.X)); //want to position the recipe selector such that it is well visible.
 
 						rightClickMenu.MenuItems.Clear();
-						rightClickMenu.MenuItems.Add(new MenuItem("Add Item",
-							new EventHandler((o, ee) =>
-							{
-								AddItem(screenPoint, ScreenToGraph(e.Location));
-							})));
-						rightClickMenu.MenuItems.Add(new MenuItem("Add Recipe",
-							new EventHandler((o, ee) =>
-							{
-								AddNewNode(screenPoint, new ItemQualityPair("adding disconnected recipe"), ScreenToGraph(e.Location), NewNodeType.Disconnected);
-							})));
-						rightClickMenu.Show(this, e.Location);
-					}
+                        rightClickMenu.MenuItems.Add(new MenuItem("Add Item",
+                                                new EventHandler((o, ee) =>
+                                                {
+                                                    AddItem(screenPoint, ScreenToGraph(e.Location));
+                                                })));
+                        rightClickMenu.MenuItems.Add(new MenuItem("Add Recipe",
+                            new EventHandler((o, ee) =>
+                            {
+                                AddNewNode(screenPoint, new ItemQualityPair("adding disconnected recipe"), ScreenToGraph(e.Location), NewNodeType.Disconnected);
+                            })));
+                        rightClickMenu.MenuItems.Add(new MenuItem("Add Shape",
+                            new EventHandler((o, ee) =>
+                            {
+                                AddShapeAnnotation(ScreenToGraph(e.Location));
+                            })));
+                        rightClickMenu.MenuItems.Add(new MenuItem("Add Text",
+                            new EventHandler((o, ee) =>
+                            {
+                                AddTextAnnotation(ScreenToGraph(e.Location));
+                            })));
+                        rightClickMenu.Show(this, e.Location);
+                    }
 					else if(currentDragOperation != DragOperation.Selection)
 						element?.MouseUp(graph_location, e.Button, (currentDragOperation == DragOperation.Item));
 					break;
@@ -1014,21 +1092,37 @@ namespace Foreman
 					viewBeingDragged = false;
 					break;
 				case MouseButtons.Left:
-					//finished selecting the given zone (process selected nodes)
-					if (currentDragOperation == DragOperation.Selection)
-					{
-						if ((Control.ModifierKeys & Keys.Alt) != 0) //removal zone processing
-							selectedNodes.ExceptWith(currentSelectionNodes);
-						else
-						{
-							if ((Control.ModifierKeys & Keys.Control) == 0) //if we arent using control, then we are just selecting
-								selectedNodes.Clear();
-							selectedNodes.UnionWith(currentSelectionNodes);
-						}
-						currentSelectionNodes.Clear();
-					}
-					//this is a release of a left click (non-drag operation) -> modify selection if clicking on node & using modifier keys
-					else if (currentDragOperation == DragOperation.None && MouseDownElement is BaseNodeElement clickedNode)
+                    //finished selecting the given zone (process selected nodes)
+                    if (currentDragOperation == DragOperation.Selection)
+                    {
+                        HashSet<AnnotationElement> zoneAnnotations = new HashSet<AnnotationElement>(
+                            annotationElements.Where(a => a.IntersectsWithZone(SelectionZone, 0, 0)));
+
+                        if ((Control.ModifierKeys & Keys.Alt) != 0) //removal zone processing
+                        {
+                            selectedNodes.ExceptWith(currentSelectionNodes);
+                            selectedAnnotations.ExceptWith(zoneAnnotations);
+                        }
+                        else
+                        {
+                            if ((Control.ModifierKeys & Keys.Control) == 0) //if we arent using control, then we are just selecting
+                            {
+                                selectedNodes.Clear();
+                                selectedAnnotations.Clear();
+                            }
+                            selectedNodes.UnionWith(currentSelectionNodes);
+                            selectedAnnotations.UnionWith(zoneAnnotations);
+                        }
+
+                        // Sync IsSelected flags to the now-committed selectedAnnotations state
+                        foreach (AnnotationElement ann in annotationElements)
+                            ann.IsSelected = selectedAnnotations.Contains(ann);
+
+                        currentSelectionNodes.Clear();
+                    }
+
+                    //this is a release of a left click (non-drag operation) -> modify selection if clicking on node & using modifier keys
+                    else if (currentDragOperation == DragOperation.None && MouseDownElement is BaseNodeElement clickedNode)
 					{
 						if ((Control.ModifierKeys & Keys.Alt) != 0) //remove
 						{
@@ -1048,16 +1142,46 @@ namespace Foreman
 							MouseDownElement = null;
 							Invalidate();
 						}
-						else if (!viewBeingDragged) //left click without modifier keys -> pass click to node
-						{
-							clickedNode.MouseUp(graph_location, e.Button, false);
-						}
-					}
-					else if (!viewBeingDragged)
-						element?.MouseUp(graph_location, e.Button, (currentDragOperation == DragOperation.Item));
+                        else if (!viewBeingDragged) //left click without modifier keys -> pass click to node
+                        {
+                            clickedNode.MouseUp(graph_location, e.Button, false);
+                        }
+                    }
+                    else if (currentDragOperation == DragOperation.None && MouseDownElement is AnnotationElement clickedAnnotation)
+                    {
+                        if ((Control.ModifierKeys & Keys.Alt) != 0) // remove from selection
+                        {
+                            selectedAnnotations.Remove(clickedAnnotation);
+                            clickedAnnotation.IsSelected = false;
+                            MouseDownElement = null;
+                            Invalidate();
+                        }
+                        else if ((Control.ModifierKeys & Keys.Control) != 0) // toggle selection
+                        {
+                            if (clickedAnnotation.IsSelected)
+                                selectedAnnotations.Remove(clickedAnnotation);
+                            else
+                                selectedAnnotations.Add(clickedAnnotation);
+                            clickedAnnotation.IsSelected = !clickedAnnotation.IsSelected;
+                            MouseDownElement = null;
+                            Invalidate();
+                        }
+                        else if (!viewBeingDragged) // plain left-click — select only this annotation
+                        {
+                            foreach (BaseNodeElement ne in selectedNodes) ne.Highlighted = false;
+                            selectedNodes.Clear();
+                            foreach (AnnotationElement ann in selectedAnnotations) ann.IsSelected = false;
+                            selectedAnnotations.Clear();
+                            selectedAnnotations.Add(clickedAnnotation);
+                            clickedAnnotation.IsSelected = true;
+                            MouseDownElement = null;
+                            Invalidate();
+                        }
+                    }
+                    else if (!viewBeingDragged)
+                        element?.MouseUp(graph_location, e.Button, (currentDragOperation == DragOperation.Item));
 
-
-					currentDragOperation = DragOperation.None;
+                    currentDragOperation = DragOperation.None;
 					MouseDownElement = null;
 					break;
 			}
@@ -1091,41 +1215,90 @@ namespace Foreman
 					}
 					break;
 
-				case DragOperation.Item:
-					if (selectedNodes.Contains(MouseDownElement)) //dragging a group
-					{
-						Point startPoint = MouseDownElement.Location;
-						GraphElement element = MouseDownElement;
-						MouseDownElement.Dragged(graph_location);
-						if (element == MouseDownElement) //check to ensure that the dragged operation hasnt changed the mousedown element -> as is the case with item tab to dragged link
-						{
-							Point endPoint = MouseDownElement.Location;
-							if (startPoint != endPoint)
-								foreach (BaseNodeElement node in selectedNodes.Where(node => node != MouseDownElement))
-									node.SetLocation(new Point(node.X + endPoint.X - startPoint.X, node.Y + endPoint.Y - startPoint.Y));
-							Invalidate();
-						}
-					}
-					else //dragging single item
-					{
-						MouseDownElement.Dragged(graph_location);
-						Invalidate();
-					}
+                case DragOperation.Item:
+                    if (selectedNodes.Contains(MouseDownElement)) //dragging a selected node (group drag)
+                    {
+                        Point startPoint = MouseDownElement.Location;
+                        GraphElement element = MouseDownElement;
+                        MouseDownElement.Dragged(graph_location);
+                        if (element == MouseDownElement) //check to ensure that the dragged operation hasnt changed the mousedown element -> as is the case with item tab to dragged link
+                        {
+                            Point endPoint = MouseDownElement.Location;
+                            if (startPoint != endPoint)
+                            {
+                                foreach (BaseNodeElement node in selectedNodes.Where(node => node != MouseDownElement))
+                                    node.SetLocation(new Point(node.X + endPoint.X - startPoint.X, node.Y + endPoint.Y - startPoint.Y));
+                                // Also drag any selected annotations as part of the group
+                                foreach (AnnotationElement ann in selectedAnnotations)
+                                {
+                                    ann.X += endPoint.X - startPoint.X;
+                                    ann.Y += endPoint.Y - startPoint.Y;
+                                }
+                            }
+                            Invalidate();
+                        }
+                    }
+                    else if (MouseDownElement is AnnotationElement draggedAnn && selectedAnnotations.Contains(draggedAnn)) //dragging a selected annotation
+                    {
+                        if (draggedAnn.IsResizing) // resize — don't group-drag other annotations
+                        {
+                            MouseDownElement.Dragged(graph_location);
+                            Invalidate();
+                        }
+                        else // move — group drag all selected annotations together
+                        {
+                            Point startPoint = draggedAnn.Location;
+                            MouseDownElement.Dragged(graph_location);
+                            Point endPoint = draggedAnn.Location;
+                            if (startPoint != endPoint)
+                                foreach (AnnotationElement ann in selectedAnnotations.Where(a => a != draggedAnn))
+                                {
+                                    ann.X += endPoint.X - startPoint.X;
+                                    ann.Y += endPoint.Y - startPoint.Y;
+                                }
+                            Invalidate();
+                        }
+                    }
+                    else //dragging a single unselected item
+                    {
+                        MouseDownElement.Dragged(graph_location);
+                        Invalidate();
+                    }
 
-					//accept middle mouse button for view dragging purposes (while dragging item or selection)
-					if ((downButtons & MouseButtons.Middle) == MouseButtons.Middle)
+                    //accept middle mouse button for view dragging purposes (while dragging item or selection)
+                    if ((downButtons & MouseButtons.Middle) == MouseButtons.Middle)
 						viewBeingDragged = true;
 					break;
 
-				case DragOperation.Selection:
-					SelectionZone = new Rectangle(Math.Min(SelectionZoneOriginPoint.X, graph_location.X), Math.Min(SelectionZoneOriginPoint.Y, graph_location.Y), Math.Abs(SelectionZoneOriginPoint.X - graph_location.X), Math.Abs(SelectionZoneOriginPoint.Y - graph_location.Y));
-					currentSelectionNodes.Clear();
-					currentSelectionNodes.UnionWith(nodeElements.Where(element => element.IntersectsWithZone(SelectionZone, -20, -20)));
+                case DragOperation.Selection:
+                    SelectionZone = new Rectangle(Math.Min(SelectionZoneOriginPoint.X, graph_location.X), Math.Min(SelectionZoneOriginPoint.Y, graph_location.Y), Math.Abs(SelectionZoneOriginPoint.X - graph_location.X), Math.Abs(SelectionZoneOriginPoint.Y - graph_location.Y));
+                    currentSelectionNodes.Clear();
+                    currentSelectionNodes.UnionWith(nodeElements.Where(element => element.IntersectsWithZone(SelectionZone, -20, -20)));
 
-					UpdateSelection();
+                    // Live visual preview for annotations — do NOT modify selectedAnnotations here.
+                    // selectedAnnotations is the committed set; only MouseUp commits changes.
+                    HashSet<AnnotationElement> zoneAnnotations = new HashSet<AnnotationElement>(
+                        annotationElements.Where(a => a.IntersectsWithZone(SelectionZone, 0, 0)));
 
-					//accept middle mouse button for view dragging purposes (while dragging item or selection)
-					if ((downButtons & MouseButtons.Middle) == MouseButtons.Middle)
+                    if ((Control.ModifierKeys & Keys.Alt) != 0) // remove preview
+                    {
+                        foreach (AnnotationElement ann in annotationElements)
+                            ann.IsSelected = selectedAnnotations.Contains(ann) && !zoneAnnotations.Contains(ann);
+                    }
+                    else if ((Control.ModifierKeys & Keys.Control) != 0) // add preview
+                    {
+                        foreach (AnnotationElement ann in annotationElements)
+                            ann.IsSelected = selectedAnnotations.Contains(ann) || zoneAnnotations.Contains(ann);
+                    }
+                    else // simple selection preview
+                    {
+                        foreach (AnnotationElement ann in annotationElements)
+                            ann.IsSelected = zoneAnnotations.Contains(ann);
+                    }
+
+                    UpdateSelection();
+                    //accept middle mouse button for view dragging purposes (while dragging item or selection)
+                    if ((downButtons & MouseButtons.Middle) == MouseButtons.Middle)
 						viewBeingDragged = true;
 					break;
 			}
@@ -1168,37 +1341,53 @@ namespace Foreman
 		{
 			if (currentDragOperation == DragOperation.None)
 			{
-				if ((e.KeyCode == Keys.C || e.KeyCode == Keys.X) && (e.Modifiers & Keys.Control) == Keys.Control) //copy or cut
-				{
-					StringBuilder stringBuilder = new StringBuilder();
-					var writer = new JsonTextWriter(new StringWriter(stringBuilder));
+                if ((e.KeyCode == Keys.C || e.KeyCode == Keys.X) && (e.Modifiers & Keys.Control) == Keys.Control) //copy or cut
+                {
+                    StringBuilder stringBuilder = new StringBuilder();
+                    var writer = new JsonTextWriter(new StringWriter(stringBuilder));
 
-					Graph.SerializeNodeIdSet = new HashSet<int>();
-					Graph.SerializeNodeIdSet.UnionWith(selectedNodes.Select(n => n.DisplayedNode.NodeID));
+                    Graph.SerializeNodeIdSet = new HashSet<int>();
+                    Graph.SerializeNodeIdSet.UnionWith(selectedNodes.Select(n => n.DisplayedNode.NodeID));
 
-					JsonSerializer serialiser = JsonSerializer.Create();
-					serialiser.Formatting = Formatting.None;
-					serialiser.Serialize(writer, Graph);
+                    JsonSerializer serialiser = JsonSerializer.Create();
+                    serialiser.Formatting = Formatting.None;
+                    serialiser.Serialize(writer, Graph);
 
-					Graph.SerializeNodeIdSet.Clear();
-					Graph.SerializeNodeIdSet = null;
+                    Graph.SerializeNodeIdSet.Clear();
+                    Graph.SerializeNodeIdSet = null;
 
-					Clipboard.SetText(stringBuilder.ToString());
+                    // Append any selected annotations to the clipboard JSON
+                    if (selectedAnnotations.Count > 0)
+                    {
+                        JObject clipJson = JObject.Parse(stringBuilder.ToString());
+                        clipJson["Annotations"] = new JArray(selectedAnnotations.Select(a => a.ToJson()));
+                        Clipboard.SetText(clipJson.ToString(Formatting.None));
+                    }
+                    else
+                        Clipboard.SetText(stringBuilder.ToString());
 
-					if (e.KeyCode == Keys.X) //cut
-						foreach (BaseNodeElement node in selectedNodes.ToList())
-							Graph.DeleteNode(node.DisplayedNode);
-				}
-				else if (e.KeyCode == Keys.V && (e.Modifiers & Keys.Control) == Keys.Control) //paste
-				{
-					try
-					{
-						JObject json = JObject.Parse(Clipboard.GetText());
-						ImportNodesFromJson(json, ScreenToGraph(PointToClient(Cursor.Position)), false);
-					}
-					catch { Console.WriteLine("Non-Foreman paste detected."); } //clipboard string wasnt a proper json object, or didnt process properly. Likely answer: was a clip NOT from foreman.
-				}
-			}
+                    if (e.KeyCode == Keys.X) //cut
+                    {
+                        foreach (BaseNodeElement node in selectedNodes.ToList())
+                            Graph.DeleteNode(node.DisplayedNode);
+                        foreach (AnnotationElement ann in selectedAnnotations.ToList())
+                            RemoveAnnotationElement(ann);
+                        selectedAnnotations.Clear();
+                    }
+                }
+                else if (e.KeyCode == Keys.V && (e.Modifiers & Keys.Control) == Keys.Control) //paste
+                {
+                    try
+                    {
+                        JObject json = JObject.Parse(Clipboard.GetText());
+                        ImportNodesFromJson(json, ScreenToGraph(PointToClient(Cursor.Position)), false);
+                        // Also paste any annotations that were part of the copied selection
+                        if (json["Annotations"] != null)
+                            ImportAnnotationsFromJson((JArray)json["Annotations"], ScreenToGraph(PointToClient(Cursor.Position)));
+                    }
+                    catch { Console.WriteLine("Non-Foreman paste detected."); } //clipboard string wasnt a proper json object, or didnt process properly. Likely answer: was a clip NOT from foreman.
+                }
+            }
 			else if (currentDragOperation == DragOperation.Selection) //possible changes to selection type
 				UpdateSelection();
 
@@ -1219,11 +1408,14 @@ namespace Foreman
 			{
 				switch (e.KeyCode)
 				{
-					case Keys.Delete:
-						TryDeleteSelectedNodes();
-						e.Handled = true;
-						break;
-					case Keys.Escape:
+                    case Keys.Delete:
+                        TryDeleteSelectedNodes();
+                        foreach (AnnotationElement ann in selectedAnnotations.ToList())
+                            RemoveAnnotationElement(ann);
+                        selectedAnnotations.Clear();
+                        e.Handled = true;
+                        break;
+                    case Keys.Escape:
 						if (findPanel.Visible)
 						{
 							CloseFindPanel();
@@ -1264,27 +1456,36 @@ namespace Foreman
 				panUnit *= 5;
 			}
 
-			if ((keyData & Keys.KeyCode) == Keys.Left)
-			{
-				foreach (BaseNodeElement node in selectedNodes)
-					node.SetLocation(new Point(node.X - moveUnit, node.Y));
-			}
-			else if ((keyData & Keys.KeyCode) == Keys.Right)
-			{
-				foreach (BaseNodeElement node in selectedNodes)
-					node.SetLocation(new Point(node.X + moveUnit, node.Y));
-			}
-			else if ((keyData & Keys.KeyCode) == Keys.Up)
-			{
-				foreach (BaseNodeElement node in selectedNodes)
-					node.SetLocation(new Point(node.X, node.Y - moveUnit));
-			}
-			else if ((keyData & Keys.KeyCode) == Keys.Down)
-			{
-				foreach (BaseNodeElement node in selectedNodes)
-					node.SetLocation(new Point(node.X, node.Y + moveUnit));
-			}
-			else if ((keyData & Keys.KeyCode) == Keys.W && !SubwindowOpen)
+            if ((keyData & Keys.KeyCode) == Keys.Left)
+            {
+                foreach (BaseNodeElement node in selectedNodes)
+                    node.SetLocation(new Point(node.X - moveUnit, node.Y));
+                foreach (AnnotationElement ann in selectedAnnotations)
+                    ann.X -= moveUnit;
+            }
+            else if ((keyData & Keys.KeyCode) == Keys.Right)
+            {
+                foreach (BaseNodeElement node in selectedNodes)
+                    node.SetLocation(new Point(node.X + moveUnit, node.Y));
+                foreach (AnnotationElement ann in selectedAnnotations)
+                    ann.X += moveUnit;
+            }
+            else if ((keyData & Keys.KeyCode) == Keys.Up)
+            {
+                foreach (BaseNodeElement node in selectedNodes)
+                    node.SetLocation(new Point(node.X, node.Y - moveUnit));
+                foreach (AnnotationElement ann in selectedAnnotations)
+                    ann.Y -= moveUnit;
+            }
+            else if ((keyData & Keys.KeyCode) == Keys.Down)
+            {
+                foreach (BaseNodeElement node in selectedNodes)
+                    node.SetLocation(new Point(node.X, node.Y + moveUnit));
+                foreach (AnnotationElement ann in selectedAnnotations)
+                    ann.Y += moveUnit;
+            }
+
+            else if ((keyData & Keys.KeyCode) == Keys.W && !SubwindowOpen)
 			{
 				ViewOffset += new Size(0, panUnit);
 				UpdateGraphBounds();
@@ -1474,11 +1675,15 @@ namespace Foreman
 			info.AddValue("EnabledAssemblers", DCache.Assemblers.Values.Where(a => a.Enabled).Select(a => a.Name));
 			info.AddValue("EnabledModules", DCache.Modules.Values.Where(m => m.Enabled).Select(m => m.Name));
 			info.AddValue("EnabledBeacons", DCache.Beacons.Values.Where(b => b.Enabled).Select(b => b.Name));
-			//planting results are always enabled
+            //planting results are always enabled
 
-			//graph :)
-			info.AddValue("ProductionGraph", Graph);
-		}
+            //graph :)
+            info.AddValue("ProductionGraph", Graph);
+
+            //annotations (viewer-side; not part of the graph model)
+            info.AddValue("Annotations",
+                new JArray(annotationElements.Select(a => a.ToJson())).ToString(Formatting.None));
+        }
 
 		public void ImportNodesFromJson(JObject json, Point origin, bool loadSolverValues)
 		{
@@ -1515,7 +1720,45 @@ namespace Foreman
 			Graph.UpdateNodeValues();
 		}
 
-		public void LoadPreset(Preset preset)
+        public void ImportAnnotationsFromJson(JArray annotationsJson, Point origin)
+        {
+            if (annotationsJson == null || annotationsJson.Count == 0)
+                return;
+
+            // Deserialise all annotations.
+            List<AnnotationElement> newAnnotations = new List<AnnotationElement>();
+            foreach (JObject annJson in annotationsJson)
+            {
+                try { newAnnotations.Add(AnnotationElement.FromJson(annJson, this)); }
+                catch (Exception ex) { Console.WriteLine("Skipping bad annotation: " + ex.Message); }
+            }
+
+            if (newAnnotations.Count == 0)
+                return;
+
+            // Compute centroid of the pasted annotations.
+            long xAve = 0, yAve = 0;
+            foreach (AnnotationElement ann in newAnnotations) { xAve += ann.X; yAve += ann.Y; }
+            xAve /= newAnnotations.Count;
+            yAve /= newAnnotations.Count;
+
+            // Shift so the centroid lands on 'origin' (same logic as ImportNodesFromJson).
+            Point importCenter = new Point((int)xAve, (int)yAve);
+            Point offset = Point.Subtract(origin, (Size)importCenter);
+
+            foreach (AnnotationElement ann in newAnnotations)
+            {
+                ann.X += offset.X;
+                ann.Y += offset.Y;
+                ann.IsSelected = true;
+                AddAnnotationElement(ann);
+                selectedAnnotations.Add(ann);
+            }
+
+            Invalidate();
+        }
+
+        public void LoadPreset(Preset preset)
 		{
 			using (DataLoadForm form = new DataLoadForm(preset))
 			{
@@ -1701,12 +1944,27 @@ namespace Foreman
 				foreach (ReadOnlyRecipeNode rNode in collection.newNodes.Where(node => node is ReadOnlyRecipeNode))
 					((RecipeNodeController)Graph.RequestNodeController(rNode)).AutoSetAssembler(AssemblerSelector.Style.BestNonBurner);
 
-			//upgrade graph & values
-			UpdateGraphBounds();
-			Graph.UpdateNodeValues();
-			this.Focus();
-			Invalidate();
-		}
+            //load annotations (missing key is normal for older save files — treat as empty)
+            if (json["Annotations"] != null)
+            {
+                try
+                {
+                    JArray annotationsJson = JArray.Parse((string)json["Annotations"]);
+                    foreach (JObject annJson in annotationsJson)
+                        AddAnnotationElement(AnnotationElement.FromJson(annJson, this));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Failed to load annotations: " + ex.Message);
+                }
+            }
+
+            //upgrade graph & values
+            UpdateGraphBounds();
+            Graph.UpdateNodeValues();
+            this.Focus();
+            Invalidate();
+        }
 
 		//Stolen from the designer file
 		protected override void Dispose(bool disposing)
