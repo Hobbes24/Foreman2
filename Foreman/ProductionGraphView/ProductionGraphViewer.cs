@@ -1027,7 +1027,7 @@ namespace Foreman
 			{
 				ViewDragOriginPoint = graph_location;
 			}
-            else if (e.Button == MouseButtons.Left && clickedElement == null) //selection
+            else if (e.Button == MouseButtons.Left && (clickedElement == null || (clickedElement is AnnotationElement ua && !ua.IsSelected))) //selection
             {
                 SelectionZoneOriginPoint = graph_location;
                 SelectionZone = new Rectangle();
@@ -1178,13 +1178,34 @@ namespace Foreman
                             Invalidate();
                         }
                     }
+                    else if (currentDragOperation == DragOperation.None && MouseDownElement == null
+                                                 && element is AnnotationElement unselectedAnnotation && !viewBeingDragged)
+                    {
+                        // Click on an unselected annotation — select it
+                        if ((Control.ModifierKeys & Keys.Control) != 0)
+                        {
+                            selectedAnnotations.Add(unselectedAnnotation);
+                            unselectedAnnotation.IsSelected = true;
+                            Invalidate();
+                        }
+                        else if ((Control.ModifierKeys & Keys.Alt) == 0) // plain click
+                        {
+                            foreach (BaseNodeElement ne in selectedNodes) ne.Highlighted = false;
+                            selectedNodes.Clear();
+                            foreach (AnnotationElement ann in selectedAnnotations) ann.IsSelected = false;
+                            selectedAnnotations.Clear();
+                            selectedAnnotations.Add(unselectedAnnotation);
+                            unselectedAnnotation.IsSelected = true;
+                            Invalidate();
+                        }
+                    }
                     else if (!viewBeingDragged)
                         element?.MouseUp(graph_location, e.Button, (currentDragOperation == DragOperation.Item));
 
                     currentDragOperation = DragOperation.None;
-					MouseDownElement = null;
-					break;
-			}
+                    MouseDownElement = null;
+                    break;
+            }
 		}
 
 		private void ProductionGraphViewer_MouseMove(object sender, MouseEventArgs e)

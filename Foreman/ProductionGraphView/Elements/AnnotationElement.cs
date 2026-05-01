@@ -98,7 +98,6 @@ namespace Foreman
         {
             if (button == MouseButtons.Left)
             {
-                graphViewer.MouseDownElement = this;
                 _dragStartMouseLocation = graph_point;
                 _dragStartElementLocation = new Point(X, Y);
                 _dragStartWidth = Width;
@@ -106,6 +105,11 @@ namespace Foreman
                 _dragStarted = false;
                 // Only activate a handle if the annotation is already selected
                 _activeHandle = IsSelected ? GetHandleAtPoint(graph_point) : HandleType.None;
+
+                // Only claim the mouse if already selected — this lets rubber-band
+                // selection start when clicking inside an unselected annotation
+                if (IsSelected)
+                    graphViewer.MouseDownElement = this;
             }
         }
 
