@@ -278,8 +278,9 @@ namespace Foreman
 			if (!TestGraphSavedStatus())
 				return;
 
-			GraphViewer.ClearGraph();
-			GraphViewer.Graph.LowPriorityPower = 2f;
+            GraphViewer.ClearGraph();
+            GraphViewer.SavedPresetNames.Clear();
+            GraphViewer.Graph.LowPriorityPower = 2f;
 			GraphViewer.Graph.PullOutputNodes = false;
 			GraphViewer.Graph.PullOutputNodesPower = 1f;
 
@@ -435,14 +436,18 @@ namespace Foreman
 			options.Solver_PullConsumerNodes = GraphViewer.Graph.PullOutputNodes;
 			options.Solver_PullConsumerNodesPower = GraphViewer.Graph.PullOutputNodesPower;
 
-			options.EnabledObjects.UnionWith(GraphViewer.DCache.Recipes.Values.Where(r => r.Enabled));
-			options.EnabledObjects.UnionWith(GraphViewer.DCache.Assemblers.Values.Where(r => r.Enabled));
-			options.EnabledObjects.UnionWith(GraphViewer.DCache.Beacons.Values.Where(r => r.Enabled));
-			options.EnabledObjects.UnionWith(GraphViewer.DCache.Modules.Values.Where(r => r.Enabled));
-			options.EnabledObjects.UnionWith(GraphViewer.DCache.Qualities.Values.Where(r => r.Enabled));
+            options.EnabledObjects.UnionWith(GraphViewer.DCache.Recipes.Values.Where(r => r.Enabled));
+            options.EnabledObjects.UnionWith(GraphViewer.DCache.Assemblers.Values.Where(r => r.Enabled));
+            options.EnabledObjects.UnionWith(GraphViewer.DCache.Beacons.Values.Where(r => r.Enabled));
+            options.EnabledObjects.UnionWith(GraphViewer.DCache.Modules.Values.Where(r => r.Enabled));
+            options.EnabledObjects.UnionWith(GraphViewer.DCache.Qualities.Values.Where(r => r.Enabled));
 
-			using (SettingsForm form = new SettingsForm(options, this))
-			{
+            options.FilePresetNames = GraphViewer.SavedPresetNames.Count > 0
+                ? new List<string>(GraphViewer.SavedPresetNames)
+                : null;
+
+            using (SettingsForm form = new SettingsForm(options, this))
+            {
 				form.StartPosition = FormStartPosition.Manual;
 				form.Left = this.Left + 50;
 				form.Top = this.Top + 50;
@@ -533,9 +538,12 @@ namespace Foreman
 					GraphViewer.Graph.UpdateNodeStates(true);
 					GraphViewer.Graph.UpdateNodeValues();
 
-					if (options.RequireReload)
-						SettingsButton_Click(this, EventArgs.Empty);
-				}
+                    if (options.RequireReload)
+                        SettingsButton_Click(this, EventArgs.Empty);
+
+                    if (options.FilePresetNames != null)
+                        GraphViewer.SavedPresetNames = new List<string>(options.FilePresetNames);
+                }
 			}
 		}
 

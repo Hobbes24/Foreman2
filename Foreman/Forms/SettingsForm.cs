@@ -15,9 +15,10 @@ namespace Foreman
 
 			public List<Preset> Presets;
 			public Preset SelectedPreset;
-			public bool RequireReload;
+            public List<string> FilePresetNames; // null = no file loaded
+            public bool RequireReload;
 
-			public uint QualitySteps;
+            public uint QualitySteps;
 
 			public ProductionGraphViewer.LOD LevelOfDetail;
 			public int NodeCountForSimpleView;
@@ -83,10 +84,15 @@ namespace Foreman
 		private List<ListViewItem> filteredRecipeList;
 		private List<ListViewItem> filteredQualityList;
 
-		private MouseHoverDetector mhDetector;
-		private MainForm mainForm;
+        private MouseHoverDetector mhDetector;
+        private MainForm mainForm;
 
-		public SettingsForm(SettingsFormOptions options, MainForm mainForm)
+        // File preset alias list controls
+        private GroupBox FilePresetsGroupBox;
+        private ListBox FilePresetListBox;
+        private Button RemoveFilePresetButton;
+
+        public SettingsForm(SettingsFormOptions options, MainForm mainForm)
 		{
 			Options = options;
 
@@ -193,12 +199,12 @@ namespace Foreman
 			PullConsumerNodesCheckBox.Checked = Options.Solver_PullConsumerNodes;
 			PullConsumerNodesPowerInput.Value = Math.Min(PullConsumerNodesPowerInput.Maximum, (decimal)Options.Solver_PullConsumerNodesPower);
 
-			//lists
-			LoadUnfilteredLists();
-			UpdateModList();
-		}
-
-		private void UpdateModList()
+            //lists
+            LoadUnfilteredLists();
+            UpdateModList();
+            InitializeFilePresetsSection();
+        }
+        private void UpdateModList()
 		{
 			Preset selectedPreset = (Preset)PresetListBox.SelectedItem;
 			if (selectedPreset == null)
@@ -217,7 +223,55 @@ namespace Foreman
 
 		}
 
-		private void LoadUnfilteredLists()
+        private void InitializeFilePresetsSection()
+        {
+            FilePresetsGroupBox = new GroupBox();
+            FilePresetsGroupBox.Text = "Default Presets for this File";
+            FilePresetsGroupBox.Dock = DockStyle.Fill;
+            FilePresetsGroupBox.Font = new Font("Microsoft Sans Serif", 8.25f);
+            FilePresetsGroupBox.Padding = new Padding(5);
+
+            FilePresetListBox = new ListBox();
+            FilePresetListBox.Dock = DockStyle.Fill;
+            FilePresetListBox.SelectedIndexChanged += (s, e) =>
+                RemoveFilePresetButton.Enabled = FilePresetListBox.SelectedIndex >= 0;
+
+            RemoveFilePresetButton = new Button();
+            RemoveFilePresetButton.Text = "Remove";
+            RemoveFilePresetButton.Dock = DockStyle.Bottom;
+            RemoveFilePresetButton.Enabled = false;
+            RemoveFilePresetButton.Click += RemoveFilePresetButton_Click;
+
+            FilePresetsGroupBox.Controls.Add(FilePresetListBox);
+            FilePresetsGroupBox.Controls.Add(RemoveFilePresetButton);
+
+            PresetsTable.RowCount++;
+            PresetsTable.RowStyles.Add(new RowStyle(SizeType.Absolute, 120f));
+            PresetsTable.SetColumnSpan(FilePresetsGroupBox, 2);
+            PresetsTable.Controls.Add(FilePresetsGroupBox, 0, PresetsTable.RowCount - 1);
+
+            if (Options.FilePresetNames == null)
+            {
+                FilePresetsGroupBox.Enabled = false;
+                FilePresetListBox.Items.Add("No file loaded");
+            }
+            else
+            {
+                foreach (string name in Options.FilePresetNames)
+                    FilePresetListBox.Items.Add(name);
+            }
+        }
+
+        private void RemoveFilePresetButton_Click(object sender, EventArgs e)
+        {
+            int idx = FilePresetListBox.SelectedIndex;
+            if (idx < 0) return;
+            FilePresetListBox.Items.RemoveAt(idx);
+            Options.FilePresetNames.RemoveAt(idx);
+            RemoveFilePresetButton.Enabled = false;
+        }
+
+        private void LoadUnfilteredLists()
 		{
 			IconList.Images.Clear();
 			IconList.Images.Add(DataCache.UnknownIcon);

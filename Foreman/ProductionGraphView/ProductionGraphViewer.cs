@@ -45,7 +45,8 @@ namespace Foreman
 		public FloatingTooltipRenderer ToolTipRenderer { get; private set; }
 		public PointingArrowRenderer ArrowRenderer { get; private set; }
 
-		public Quality LastAssemblerQuality { get; private set; } //quality of the last-edited recipe's assembler (used when placing new recipe nodes)
+        public List<string> SavedPresetNames = new List<string>();
+        public Quality LastAssemblerQuality { get; private set; } //quality of the last-edited recipe's assembler (used when placing new recipe nodes)
 
 		public GraphElement MouseDownElement { get; set; }
 
@@ -1096,7 +1097,7 @@ namespace Foreman
                     if (currentDragOperation == DragOperation.Selection)
                     {
                         HashSet<AnnotationElement> zoneAnnotations = new HashSet<AnnotationElement>(
-                            annotationElements.Where(a => a.IntersectsWithZone(SelectionZone, 0, 0)));
+                                                    annotationElements.Where(a => a.LassoIntersectsEdge(SelectionZone)));
 
                         if ((Control.ModifierKeys & Keys.Alt) != 0) //removal zone processing
                         {
@@ -1677,8 +1678,10 @@ namespace Foreman
 			//preset options
 			info.AddValue("Version", Properties.Settings.Default.ForemanVersion);
 			info.AddValue("Object", "ProductionGraphViewer");
-			info.AddValue("SavedPresetName", DCache.PresetName);
-			info.AddValue("IncludedMods", DCache.IncludedMods.Select(m => m.Key + "|" + m.Value));
+            if (!SavedPresetNames.Contains(DCache.PresetName))
+                SavedPresetNames.Insert(0, DCache.PresetName);
+            info.AddValue("SavedPresetNames", SavedPresetNames);
+            info.AddValue("IncludedMods", DCache.IncludedMods.Select(m => m.Key + "|" + m.Value));
 
 			//graph viewer options
 			info.AddValue("Unit", Graph.SelectedRateUnit);
@@ -1854,24 +1857,36 @@ namespace Foreman
 				chosenPreset = allPresets[0];
 			else
 			{
-				//test for the preset specified in the json save
-				Preset savedWPreset = allPresets.FirstOrDefault(p => p.Name == (string)json["SavedPresetName"]);
-				if (savedWPreset != null)
-				{
-					var errors = await PresetProcessor.TestPreset(savedWPreset, modSet, itemNames, assemblerNames, qualityNames, recipeShorts, plantShorts);
-					if (errors != null && errors.ErrorCount == 0) //no errors found here. We will then use this exact preset and not search for a different one
-						chosenPreset = savedWPreset;
-					else
-					{
-						//errors found. even though the name fits, but the preset seems to be the wrong one. Proceed with searching for best-fit
-						if(errors != null)
-							presetErrors.Add(errors);
-						allPresets.Remove(savedWPreset);
-					}
-				}
+                // Load alias list — fall back to single SavedPresetName for old files
+                if (json["SavedPresetNames"] != null)
+                    SavedPresetNames = json["SavedPresetNames"].Select(t => (string)t).ToList();
+                else if (json["SavedPresetName"] != null)
+                    SavedPresetNames = new List<string> { (string)json["SavedPresetName"] };
+                else
+                    SavedPresetNames = new List<string>();
 
-				//havent found the preset, or it returned some errors (not good) -> have to search for best fit (and leave the decision to user if we have multiple)
-				if (chosenPreset == null)
+                // Try each candidate name in order before falling back to full search
+                foreach (string candidateName in SavedPresetNames.ToList())
+                {
+                    Preset candidate = allPresets.FirstOrDefault(p => p.Name == candidateName);
+                    if (candidate == null) continue;
+
+                    var errors = await PresetProcessor.TestPreset(candidate, modSet, itemNames, assemblerNames, qualityNames, recipeShorts, plantShorts);
+                    if (errors != null && errors.ErrorCount == 0)
+                    {
+                        chosenPreset = candidate;
+                        break;
+                    }
+                    else
+                    {
+                        if (errors != null)
+                            presetErrors.Add(errors);
+                        allPresets.Remove(candidate);
+                    }
+                }
+
+                //havent found the preset, or it returned some errors (not good) -> have to search for best fit (and leave the decision to user if we have multiple)
+                if (chosenPreset == null)
 				{
 					foreach (Preset preset in allPresets)
 					{
