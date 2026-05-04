@@ -1300,7 +1300,7 @@ namespace Foreman
                     // Live visual preview for annotations — do NOT modify selectedAnnotations here.
                     // selectedAnnotations is the committed set; only MouseUp commits changes.
                     HashSet<AnnotationElement> zoneAnnotations = new HashSet<AnnotationElement>(
-                        annotationElements.Where(a => a.IntersectsWithZone(SelectionZone, 0, 0)));
+                        annotationElements.Where(a => a.LassoIntersectsEdge(SelectionZone)));
 
                     if ((Control.ModifierKeys & Keys.Alt) != 0) // remove preview
                     {

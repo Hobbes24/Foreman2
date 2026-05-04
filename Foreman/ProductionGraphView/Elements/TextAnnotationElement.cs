@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Newtonsoft.Json.Linq;
 
@@ -89,6 +90,18 @@ namespace Foreman
         // ----------------------------------------------------------------
         // Drawing
         // ----------------------------------------------------------------
+
+        public override bool ContainsPoint(Point graph_point)
+        {
+            if (!Visible)
+                return false;
+            // Resize handles sit outside bounds — check them first when selected
+            if (IsSelected && GetHandleAtPoint(graph_point) != HandleType.None)
+                return true;
+            // Text labels respond to clicks anywhere in their full bounds,
+            // not just the edge band — the whole box is interactive.
+            return Bounds.Contains(GraphToLocal(graph_point));
+        }
 
         protected override void Draw(Graphics graphics, NodeDrawingStyle style)
         {

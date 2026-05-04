@@ -1916,5 +1916,7 @@
         private System.Windows.Forms.NumericUpDown QualityStepsInput;
         private System.Windows.Forms.Label label12;
         private System.Windows.Forms.CheckBox FlagDarkModeCheckBox;
+
     }
+
 }

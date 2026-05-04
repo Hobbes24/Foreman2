@@ -19,6 +19,7 @@ namespace Foreman
 
         /// <summary>True when this annotation is part of the current selection set.</summary>
         public bool IsSelected { get; set; }
+        private const float EdgeHitScreenPx = 8f; // clickable border width in screen pixels
 
         // ----------------------------------------------------------------
         // Drag / resize tracking
@@ -32,7 +33,7 @@ namespace Foreman
         // Resize handle state
         // ----------------------------------------------------------------
 
-        private enum HandleType
+        protected enum HandleType
         {
             None,
             TopLeft, TopCenter, TopRight,
@@ -84,10 +85,30 @@ namespace Foreman
         {
             if (!Visible)
                 return false;
-            // Handles sit slightly outside the element bounds — check them first
+
+            // Resize handles sit outside bounds — check them first when selected
             if (IsSelected && GetHandleAtPoint(graph_point) != HandleType.None)
                 return true;
-            return Bounds.Contains(GraphToLocal(graph_point));
+
+            Point local = GraphToLocal(graph_point);
+
+            if (!Bounds.Contains(local))
+                return false;
+
+            // When selected, the full interior is clickable for dragging
+            if (IsSelected)
+                return true;
+
+            // When unselected, only the edge band counts — clicking inside
+            // the hollow interior falls through to rubber-band selection
+            float edge = EdgeHitScreenPx / graphViewer.ViewScale;
+            int halfW = Width / 2;
+            int halfH = Height / 2;
+
+            return local.X <= -halfW + edge ||
+                       local.X >= halfW - edge ||
+                       local.Y <= -halfH + edge ||
+                       local.Y >= halfH - edge;
         }
 
         // ----------------------------------------------------------------
@@ -266,7 +287,7 @@ namespace Foreman
             }
         }
 
-        private HandleType GetHandleAtPoint(Point graphPoint)
+        protected HandleType GetHandleAtPoint(Point graphPoint)
         {
             if (!IsSelected)
                 return HandleType.None;
@@ -406,6 +427,37 @@ namespace Foreman
 
         protected static JObject ColorToJson(Color c)
             => new JObject { ["A"] = c.A, ["R"] = c.R, ["G"] = c.G, ["B"] = c.B };
+
+        /// <summary>
+        /// Returns true if the lasso rectangle intersects the EDGE of this annotation —
+        /// i.e. overlaps the bounding box but is not entirely contained within it.
+        /// This prevents a lasso drawn entirely inside a shape from selecting it.
+        /// </summary>
+        public bool LassoIntersectsEdge(Rectangle lasso)
+        {
+            // Compute annotation bounds in graph space
+            int annLeft = X - Width / 2;
+            int annRight = X + Width / 2;
+            int annTop = Y - Height / 2;
+            int annBottom = Y + Height / 2;
+
+            // Must overlap the annotation at all
+            bool overlaps = lasso.Right > annLeft &&
+                            lasso.Left < annRight &&
+                            lasso.Bottom > annTop &&
+                            lasso.Top < annBottom;
+
+            if (!overlaps)
+                return false;
+
+            // Lasso is entirely inside the annotation — don't select
+            bool lassoInsideAnnotation = lasso.Left >= annLeft &&
+                                         lasso.Right <= annRight &&
+                                         lasso.Top >= annTop &&
+                                         lasso.Bottom <= annBottom;
+
+            return !lassoInsideAnnotation;
+        }
 
         /// <summary>Forces this annotation to be visible regardless of bounds check.
         /// Used during full-graph export so off-graph annotations aren't clipped.</summary>

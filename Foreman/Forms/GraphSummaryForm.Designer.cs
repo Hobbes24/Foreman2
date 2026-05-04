@@ -178,7 +178,7 @@ namespace Foreman
             this.BuildingsTable.Controls.Add(this.label4, 0, 1);
             this.BuildingsTable.Controls.Add(this.BuildingsTabControl, 0, 2);
             this.BuildingsTable.Controls.Add(this.BuildingsExportButton, 2, 1);
-            this.BuildingsTable.Controls.Add(this.ExportToFactorioButton, 3, 1);  // NEW
+            this.BuildingsTable.Controls.Add(this.ExportToFactorioButton, 3, 1);
             this.BuildingsTable.Controls.Add(this.tableLayoutPanel2, 1, 0);
             this.BuildingsTable.Dock = System.Windows.Forms.DockStyle.Fill;
             this.BuildingsTable.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F);
@@ -198,7 +198,7 @@ namespace Foreman
             this.BuildingsFilterTextBox.Location = new System.Drawing.Point(68, 51);
             this.BuildingsFilterTextBox.Margin = new System.Windows.Forms.Padding(3, 3, 10, 3);
             this.BuildingsFilterTextBox.Name = "BuildingsFilterTextBox";
-            this.BuildingsFilterTextBox.Size = new System.Drawing.Size(832, 26);
+            this.BuildingsFilterTextBox.Size = new System.Drawing.Size(748, 26);
             this.BuildingsFilterTextBox.TabIndex = 35;
             this.BuildingsFilterTextBox.TextChanged += new System.EventHandler(this.BuildingsFilterTextBox_TextChanged);
             // 
@@ -209,7 +209,7 @@ namespace Foreman
             this.label4.Location = new System.Drawing.Point(10, 48);
             this.label4.Margin = new System.Windows.Forms.Padding(10, 0, 3, 0);
             this.label4.Name = "label4";
-            this.label4.Size = new System.Drawing.Size(52, 46);
+            this.label4.Size = new System.Drawing.Size(52, 32);
             this.label4.TabIndex = 30;
             this.label4.Text = "Filter:";
             this.label4.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
@@ -223,13 +223,13 @@ namespace Foreman
             this.BuildingsTabControl.Controls.Add(this.BeaconsPage);
             this.BuildingsTabControl.Dock = System.Windows.Forms.DockStyle.Fill;
             this.BuildingsTabControl.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F);
-            this.BuildingsTabControl.Location = new System.Drawing.Point(6, 100);
-            this.BuildingsTabControl.Margin = new System.Windows.Forms.Padding(6, 6, 6, 6);
+            this.BuildingsTabControl.Location = new System.Drawing.Point(6, 86);
+            this.BuildingsTabControl.Margin = new System.Windows.Forms.Padding(6);
             this.BuildingsTabControl.Multiline = true;
             this.BuildingsTabControl.Name = "BuildingsTabControl";
             this.BuildingsTabControl.Padding = new System.Drawing.Point(12, 3);
             this.BuildingsTabControl.SelectedIndex = 0;
-            this.BuildingsTabControl.Size = new System.Drawing.Size(1110, 603);
+            this.BuildingsTabControl.Size = new System.Drawing.Size(1110, 617);
             this.BuildingsTabControl.TabIndex = 27;
             // 
             // AssemblersPage
@@ -238,7 +238,7 @@ namespace Foreman
             this.AssemblersPage.Font = new System.Drawing.Font("Microsoft Sans Serif", 7.8F);
             this.AssemblersPage.Location = new System.Drawing.Point(4, 31);
             this.AssemblersPage.Name = "AssemblersPage";
-            this.AssemblersPage.Size = new System.Drawing.Size(1102, 568);
+            this.AssemblersPage.Size = new System.Drawing.Size(1102, 582);
             this.AssemblersPage.TabIndex = 0;
             this.AssemblersPage.Text = "Assemblers";
             this.AssemblersPage.UseVisualStyleBackColor = true;
@@ -260,7 +260,7 @@ namespace Foreman
             this.AssemblerListView.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.AssemblerListView.MultiSelect = false;
             this.AssemblerListView.Name = "AssemblerListView";
-            this.AssemblerListView.Size = new System.Drawing.Size(1102, 568);
+            this.AssemblerListView.Size = new System.Drawing.Size(1102, 582);
             this.AssemblerListView.SmallImageList = this.IconList;
             this.AssemblerListView.TabIndex = 17;
             this.AssemblerListView.UseCompatibleStateImageBehavior = false;
@@ -301,7 +301,7 @@ namespace Foreman
             this.MinersPage.Font = new System.Drawing.Font("Microsoft Sans Serif", 7.8F);
             this.MinersPage.Location = new System.Drawing.Point(4, 31);
             this.MinersPage.Name = "MinersPage";
-            this.MinersPage.Size = new System.Drawing.Size(1096, 550);
+            this.MinersPage.Size = new System.Drawing.Size(1102, 582);
             this.MinersPage.TabIndex = 2;
             this.MinersPage.Text = "Miners";
             this.MinersPage.UseVisualStyleBackColor = true;
@@ -323,7 +323,7 @@ namespace Foreman
             this.MinerListView.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.MinerListView.MultiSelect = false;
             this.MinerListView.Name = "MinerListView";
-            this.MinerListView.Size = new System.Drawing.Size(1096, 550);
+            this.MinerListView.Size = new System.Drawing.Size(1102, 582);
             this.MinerListView.SmallImageList = this.IconList;
             this.MinerListView.TabIndex = 17;
             this.MinerListView.UseCompatibleStateImageBehavior = false;
@@ -358,7 +358,7 @@ namespace Foreman
             this.PowersPage.Location = new System.Drawing.Point(4, 31);
             this.PowersPage.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.PowersPage.Name = "PowersPage";
-            this.PowersPage.Size = new System.Drawing.Size(1096, 550);
+            this.PowersPage.Size = new System.Drawing.Size(1102, 582);
             this.PowersPage.TabIndex = 5;
             this.PowersPage.Text = "Power";
             this.PowersPage.UseVisualStyleBackColor = true;
@@ -380,7 +380,7 @@ namespace Foreman
             this.PowerListView.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.PowerListView.MultiSelect = false;
             this.PowerListView.Name = "PowerListView";
-            this.PowerListView.Size = new System.Drawing.Size(1096, 550);
+            this.PowerListView.Size = new System.Drawing.Size(1102, 582);
             this.PowerListView.SmallImageList = this.IconList;
             this.PowerListView.TabIndex = 18;
             this.PowerListView.UseCompatibleStateImageBehavior = false;
@@ -415,7 +415,7 @@ namespace Foreman
             this.BeaconsPage.Location = new System.Drawing.Point(4, 31);
             this.BeaconsPage.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.BeaconsPage.Name = "BeaconsPage";
-            this.BeaconsPage.Size = new System.Drawing.Size(1096, 550);
+            this.BeaconsPage.Size = new System.Drawing.Size(1102, 582);
             this.BeaconsPage.TabIndex = 6;
             this.BeaconsPage.Text = "Beacons";
             this.BeaconsPage.UseVisualStyleBackColor = true;
@@ -436,7 +436,7 @@ namespace Foreman
             this.BeaconListView.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.BeaconListView.MultiSelect = false;
             this.BeaconListView.Name = "BeaconListView";
-            this.BeaconListView.Size = new System.Drawing.Size(1096, 550);
+            this.BeaconListView.Size = new System.Drawing.Size(1102, 582);
             this.BeaconListView.SmallImageList = this.IconList;
             this.BeaconListView.TabIndex = 19;
             this.BeaconListView.UseCompatibleStateImageBehavior = false;
@@ -463,10 +463,10 @@ namespace Foreman
             // BuildingsExportButton
             // 
             this.BuildingsExportButton.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.BuildingsExportButton.Location = new System.Drawing.Point(910, 48);
+            this.BuildingsExportButton.Location = new System.Drawing.Point(826, 51);
             this.BuildingsExportButton.Margin = new System.Windows.Forms.Padding(0, 3, 7, 3);
             this.BuildingsExportButton.Name = "BuildingsExportButton";
-            this.BuildingsExportButton.Size = new System.Drawing.Size(202, 26);
+            this.BuildingsExportButton.Size = new System.Drawing.Size(134, 26);
             this.BuildingsExportButton.TabIndex = 33;
             this.BuildingsExportButton.Text = "Export CSV";
             this.BuildingsExportButton.UseVisualStyleBackColor = true;
@@ -475,7 +475,7 @@ namespace Foreman
             // ExportToFactorioButton
             // 
             this.ExportToFactorioButton.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.ExportToFactorioButton.Location = new System.Drawing.Point(744, 31);
+            this.ExportToFactorioButton.Location = new System.Drawing.Point(967, 51);
             this.ExportToFactorioButton.Margin = new System.Windows.Forms.Padding(0, 3, 7, 3);
             this.ExportToFactorioButton.Name = "ExportToFactorioButton";
             this.ExportToFactorioButton.Size = new System.Drawing.Size(148, 26);
@@ -605,7 +605,7 @@ namespace Foreman
             this.ItemsTabControl.Dock = System.Windows.Forms.DockStyle.Fill;
             this.ItemsTabControl.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F);
             this.ItemsTabControl.Location = new System.Drawing.Point(6, 96);
-            this.ItemsTabControl.Margin = new System.Windows.Forms.Padding(6, 6, 6, 6);
+            this.ItemsTabControl.Margin = new System.Windows.Forms.Padding(6);
             this.ItemsTabControl.Multiline = true;
             this.ItemsTabControl.Name = "ItemsTabControl";
             this.ItemsTabControl.Padding = new System.Drawing.Point(12, 3);
@@ -700,7 +700,7 @@ namespace Foreman
             this.tabPage5.Font = new System.Drawing.Font("Microsoft Sans Serif", 7.8F);
             this.tabPage5.Location = new System.Drawing.Point(4, 31);
             this.tabPage5.Name = "tabPage5";
-            this.tabPage5.Size = new System.Drawing.Size(1096, 553);
+            this.tabPage5.Size = new System.Drawing.Size(1102, 572);
             this.tabPage5.TabIndex = 2;
             this.tabPage5.Text = "Fluids";
             this.tabPage5.UseVisualStyleBackColor = true;
@@ -726,7 +726,7 @@ namespace Foreman
             this.FluidsListView.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
             this.FluidsListView.MultiSelect = false;
             this.FluidsListView.Name = "FluidsListView";
-            this.FluidsListView.Size = new System.Drawing.Size(1096, 553);
+            this.FluidsListView.Size = new System.Drawing.Size(1102, 572);
             this.FluidsListView.SmallImageList = this.IconList;
             this.FluidsListView.TabIndex = 18;
             this.FluidsListView.UseCompatibleStateImageBehavior = false;
@@ -809,7 +809,7 @@ namespace Foreman
             this.ItemsFilterCBTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
             this.ItemsFilterCBTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
             this.ItemsFilterCBTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
-            this.ItemsFilterCBTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 213F));
+            this.ItemsFilterCBTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 220F));
             this.ItemsFilterCBTable.Controls.Add(this.ItemFilterConsumptionCheckBox, 6, 0);
             this.ItemsFilterCBTable.Controls.Add(this.ItemFilterOutputOverproducedCheckBox, 4, 0);
             this.ItemsFilterCBTable.Controls.Add(this.ItemFilterOutputUnlinkedCheckBox, 3, 0);
@@ -824,7 +824,7 @@ namespace Foreman
             this.ItemsFilterCBTable.Name = "ItemsFilterCBTable";
             this.ItemsFilterCBTable.RowCount = 1;
             this.ItemsFilterCBTable.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.ItemsFilterCBTable.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 46F));
+            this.ItemsFilterCBTable.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 34F));
             this.ItemsFilterCBTable.Size = new System.Drawing.Size(1114, 34);
             this.ItemsFilterCBTable.TabIndex = 32;
             // 
