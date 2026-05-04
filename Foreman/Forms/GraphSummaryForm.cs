@@ -674,5 +674,42 @@ namespace Foreman
 				}
 			}
 		}
-	}
+        private void ExportToFactorioButton_Click(object sender, EventArgs e)
+        {
+            var lines = new List<string>();
+
+            var allBuildingLists = new[]
+            {
+				filteredAssemblerList,
+				filteredMinerList,
+				filteredPowerList,
+				filteredBeaconList
+			};
+
+            foreach (var list in allBuildingLists)
+            {
+                foreach (ListViewItem lvi in list)
+                {
+                    string count = lvi.SubItems[0].Text;
+                    string friendlyName = lvi.SubItems[1].Text;
+                    // lvi.Name is "internal-name:quality-name" — grab just the internal name
+                    string internalName = lvi.Name.Split(':')[0];
+
+                    if (!string.IsNullOrWhiteSpace(count) && count != "0")
+                        lines.Add($"{count}x {friendlyName} [{internalName}]");
+                }
+            }
+
+            if (lines.Count == 0)
+            {
+                MessageBox.Show("No buildings in current graph.", "Foreman2 → Factorio",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            Clipboard.SetText(string.Join(Environment.NewLine, lines));
+            MessageBox.Show($"Copied {lines.Count} lines to clipboard.\nPaste into the Foreman2 Task List mod in Factorio.",
+                "Foreman2 → Factorio", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
 }
