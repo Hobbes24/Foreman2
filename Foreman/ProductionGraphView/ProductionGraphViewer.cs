@@ -1484,6 +1484,12 @@ namespace Foreman
 
 		protected override bool ProcessCmdKey(ref Message msg, Keys keyData) //arrow keys to move the current selection
 		{
+            // Ctrl+F always works — even when the find panel is already open and focused
+            if ((keyData & Keys.KeyCode) == Keys.F && (keyData & Keys.Control) == Keys.Control && !SubwindowOpen)
+            {
+                OpenFindPanel();
+                return true;
+            }
 
             // Don't intercept any keys while the find panel is open and focused
             if (findPanel.Visible && findTextBox.Focused)
@@ -1547,11 +1553,6 @@ namespace Foreman
 				ViewOffset += new Size(-panUnit, 0);
 				UpdateGraphBounds();
 			}
-			else if ((keyData & Keys.KeyCode) == Keys.F && (keyData & Keys.Control) == Keys.Control && !SubwindowOpen)
-			{
-				OpenFindPanel();
-				return true;
-			}
 			else
 				processed = false;
 
@@ -1596,9 +1597,11 @@ namespace Foreman
 			findLabel.Location = new Point(6, 7);
 
 			findTextBox = new TextBox();
-			findTextBox.Location = new Point(45, 4);
+            findTextBox.TabStop = false;
+            findTextBox.Location = new Point(45, 4);
 			findTextBox.Width = 200;
 			findTextBox.KeyDown += FindTextBox_KeyDown;
+            findTextBox.Enter += (s, e) => findTextBox.SelectAll();
             findTextBox.MouseWheel += ProductionGraphViewer_MouseWheel;
 
 
@@ -2044,7 +2047,6 @@ namespace Foreman
 		{
 			findPanel.Visible = true;
 			findTextBox.Focus();
-			findTextBox.SelectAll();
 		}
 
         private void CloseFindPanel()
@@ -2105,11 +2107,17 @@ namespace Foreman
 				CloseFindPanel();
 				e.SuppressKeyPress = true;
 			}
-            else if ((e.KeyCode == Keys.C || e.KeyCode == Keys.X || e.KeyCode == Keys.V) && e.Control)
+            //Causes the Find button to bypass the ctrl-c, ctrl-v and ctrl-x commands.
+            //else if ((e.KeyCode == Keys.C || e.KeyCode == Keys.X || e.KeyCode == Keys.V) && e.Control)
+            //{
+            //    // Route Ctrl+C/X/V to the graph instead of the text box
+            //    e.SuppressKeyPress = true;
+            //    ProductionGraphViewer_KeyDown(this, new KeyEventArgs(e.KeyCode | Keys.Control));
+            //}
+            else if (e.KeyCode == Keys.Tab)
             {
-                // Route Ctrl+C/X/V to the graph instead of the text box
                 e.SuppressKeyPress = true;
-                ProductionGraphViewer_KeyDown(this, new KeyEventArgs(e.KeyCode | Keys.Control));
+                BeginInvoke(new Action(() => ActiveControl = null));
             }
         }
         private void ExecuteFind(string query)
@@ -2134,8 +2142,7 @@ namespace Foreman
 
             foreach (BaseNodeElement ne in nodeElements)
             {
-                string nodeName = GetNodeSearchText(ne.DisplayedNode);
-                if (nodeName != null && nodeName.ToLowerInvariant().Contains(q))
+                if (NodeMatchesSearch(ne, q))
                     findResults.Add(ne);
             }
 
@@ -2160,6 +2167,29 @@ namespace Foreman
             UpdateFindStatus();
         }
 
+        private static bool NodeMatchesSearch(BaseNodeElement ne, string q)
+        {
+            ReadOnlyBaseNode node = ne.DisplayedNode;
+
+            if (node is ReadOnlyRecipeNode rNode)
+            {
+                if (rNode.BaseRecipe.FriendlyName.ToLowerInvariant().Contains(q)) return true;
+                if (rNode.BaseRecipe.Recipe.IngredientSet.Keys.Any(i => i.FriendlyName.ToLowerInvariant().Contains(q))) return true;
+                if (rNode.BaseRecipe.Recipe.ProductSet.Keys.Any(i => i.FriendlyName.ToLowerInvariant().Contains(q))) return true;
+                return false;
+            }
+            if (node is ReadOnlySupplierNode sNode)
+                return sNode.SuppliedItem.FriendlyName.ToLowerInvariant().Contains(q);
+            if (node is ReadOnlyConsumerNode cNode)
+                return cNode.ConsumedItem.FriendlyName.ToLowerInvariant().Contains(q);
+            if (node is ReadOnlyPassthroughNode pNode)
+                return pNode.PassthroughItem.FriendlyName.ToLowerInvariant().Contains(q);
+            if (node is ReadOnlySpoilNode spNode)
+                return spNode.InputItem.FriendlyName.ToLowerInvariant().Contains(q);
+            if (node is ReadOnlyPlantNode plNode)
+                return plNode.Seed.FriendlyName.ToLowerInvariant().Contains(q);
+            return false;
+        }
         private void FindNext()
 		{
 			if (findResults.Count == 0)
@@ -2195,23 +2225,6 @@ namespace Foreman
 		{
 			findStatusLabel.ForeColor = Color.DimGray;
 			findStatusLabel.Text = string.Format("{0} of {1}", findResultIndex + 1, findResults.Count);
-		}
-
-		private static string GetNodeSearchText(ReadOnlyBaseNode node)
-		{
-			if (node is ReadOnlyRecipeNode rNode)
-				return rNode.BaseRecipe.FriendlyName;
-			if (node is ReadOnlySupplierNode sNode)
-				return sNode.SuppliedItem.FriendlyName;
-			if (node is ReadOnlyConsumerNode cNode)
-				return cNode.ConsumedItem.FriendlyName;
-			if (node is ReadOnlyPassthroughNode pNode)
-				return pNode.PassthroughItem.FriendlyName;
-			if (node is ReadOnlySpoilNode spNode)
-				return spNode.InputItem.FriendlyName;
-			if (node is ReadOnlyPlantNode plNode)
-				return plNode.Seed.FriendlyName;
-			return null;
 		}
 
 		private void CenterOnNode(BaseNodeElement node)
