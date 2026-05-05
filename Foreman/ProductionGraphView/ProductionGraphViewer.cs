@@ -1267,17 +1267,21 @@ namespace Foreman
                             MouseDownElement.Dragged(graph_location);
                             Invalidate();
                         }
-                        else // move — group drag all selected annotations together
+                        else // move — group drag all selected annotations and nodes together
                         {
                             Point startPoint = draggedAnn.Location;
                             MouseDownElement.Dragged(graph_location);
                             Point endPoint = draggedAnn.Location;
                             if (startPoint != endPoint)
+                            {
                                 foreach (AnnotationElement ann in selectedAnnotations.Where(a => a != draggedAnn))
                                 {
                                     ann.X += endPoint.X - startPoint.X;
                                     ann.Y += endPoint.Y - startPoint.Y;
                                 }
+                                foreach (BaseNodeElement node in selectedNodes)
+                                    node.SetLocation(new Point(node.X + endPoint.X - startPoint.X, node.Y + endPoint.Y - startPoint.Y));
+                            }
                             Invalidate();
                         }
                     }
@@ -1333,7 +1337,23 @@ namespace Foreman
 			}
 
 			Invalidate();
-		}
+
+            // Update cursor based on what's under the mouse
+            if (currentDragOperation == DragOperation.None && !viewBeingDragged)
+            {
+                Cursor newCursor = Cursors.Default;
+                for (int i = annotationElements.Count - 1; i >= 0; i--)
+                {
+                    Cursor annCursor = annotationElements[i].GetCursorForPoint(graph_location);
+                    if (annCursor != null) { newCursor = annCursor; break; }
+                }
+                this.Cursor = newCursor;
+            }
+            else if (currentDragOperation == DragOperation.None)
+            {
+                this.Cursor = Cursors.Default;
+            }
+        }
 
 		private void ProductionGraphViewer_MouseWheel(object sender, MouseEventArgs e)
 		{

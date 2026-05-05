@@ -459,8 +459,50 @@ namespace Foreman
             return !lassoInsideAnnotation;
         }
 
+        public bool ContainsPointFull(Point graph_point)
+        {
+            if (!Visible)
+                return false;
+            return Bounds.Contains(GraphToLocal(graph_point));
+        }
+
         /// <summary>Forces this annotation to be visible regardless of bounds check.
         /// Used during full-graph export so off-graph annotations aren't clipped.</summary>
         public void ForceVisible() { Visible = true; }
+
+        /// <summary>
+        /// Returns the appropriate cursor when the mouse is at the given graph point,
+        /// or null if this annotation doesn't own that point.
+        /// </summary>
+        public Cursor GetCursorForPoint(Point graphPoint)
+        {
+            if (!Visible)
+                return null;
+
+            if (IsSelected)
+            {
+                switch (GetHandleAtPoint(graphPoint))
+                {
+                    case HandleType.TopLeft:
+                    case HandleType.BottomRight: return Cursors.SizeNWSE;
+                    case HandleType.TopRight:
+                    case HandleType.BottomLeft: return Cursors.SizeNESW;
+                    case HandleType.TopCenter:
+                    case HandleType.BottomCenter: return Cursors.SizeNS;
+                    case HandleType.MiddleLeft:
+                    case HandleType.MiddleRight: return Cursors.SizeWE;
+                }
+
+                // Inside selected annotation — move cursor
+                if (Bounds.Contains(GraphToLocal(graphPoint)))
+                    return Cursors.SizeAll;
+            }
+
+            // Edge band (shapes) or full bounds (text) — move cursor
+            if (ContainsPoint(graphPoint))
+                return Cursors.SizeAll;
+
+            return null;
+        }
     }
 }

@@ -50,6 +50,7 @@ namespace Foreman
             TransparentCheckBox.Checked = (element.BackColor.A == 0);
             TransparentCheckBox.CheckedChanged += TransparentCheckBox_CheckedChanged;
             BackColorButton.Enabled = !TransparentCheckBox.Checked;
+            this.Shown += (s, e) => { TextInput.Focus(); TextInput.SelectAll(); };
         }
 
         // ----------------------------------------------------------------
