@@ -180,10 +180,18 @@ namespace Foreman
 						RightClickMenu.Close();
 						graphViewer.ConvertNodeToPassthrough(DisplayedNode, Item);
 					})));
-				// *** END ADD ***
+                // *** END ADD ***
 
-				RightClickMenu.Show(graphViewer, graphViewer.GraphToScreen(graph_point));
-			}
-		}
-	}
+                RightClickMenu.Items.Add(new ToolStripSeparator());
+                RightClickMenu.Items.Add(new ToolStripMenuItem("Copy item name", null,
+                    new EventHandler((o, e) =>
+                    {
+                        RightClickMenu.Close();
+                        Clipboard.SetText(Item.FriendlyName);
+                    })));
+
+                RightClickMenu.Show(graphViewer, graphViewer.GraphToScreen(graph_point));
+            }
+        }
+    }
 }

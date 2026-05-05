@@ -1422,10 +1422,18 @@ namespace Foreman
                     try
                     {
                         JObject json = JObject.Parse(Clipboard.GetText());
-                        ImportNodesFromJson(json, ScreenToGraph(PointToClient(Cursor.Position)), false);
-                        // Also paste any annotations that were part of the copied selection
+                        Point pasteTarget = ScreenToGraph(PointToClient(Cursor.Position));
+                        Size nodeOffset = ImportNodesFromJson(json, pasteTarget, false);
                         if (json["Annotations"] != null)
-                            ImportAnnotationsFromJson((JArray)json["Annotations"], ScreenToGraph(PointToClient(Cursor.Position)));
+                        {
+                            JArray annotationsJson = (JArray)json["Annotations"];
+                            if (nodeOffset != Size.Empty)
+                                // Use same offset as nodes to preserve relative positions
+                                ImportAnnotationsFromJson(annotationsJson, nodeOffset);
+                            else
+                                // No nodes — center annotations at cursor normally
+                                ImportAnnotationsFromJson(annotationsJson, pasteTarget);
+                        }
                     }
                     catch { Console.WriteLine("Non-Foreman paste detected."); } //clipboard string wasnt a proper json object, or didnt process properly. Likely answer: was a clip NOT from foreman.
                 }
@@ -1732,14 +1740,14 @@ namespace Foreman
                 new JArray(annotationElements.Select(a => a.ToJson())).ToString(Formatting.None));
         }
 
-		public void ImportNodesFromJson(JObject json, Point origin, bool loadSolverValues)
-		{
+        public Size ImportNodesFromJson(JObject json, Point origin, bool loadSolverValues)
+        {
 			ProductionGraph.NewNodeCollection newNodeCollection = newNodeCollection = Graph.InsertNodesFromJson(DCache, json, loadSolverValues); //NOTE: missing items & recipes may be added here!
 			if (newNodeCollection == null || newNodeCollection.newNodes.Count == 0)
-				return;
+                return Size.Empty;
 
-			//update the locations of the new nodes to be centered around the mouse position (as opposed to wherever they were before)
-			long xAve = 0;
+            //update the locations of the new nodes to be centered around the mouse position (as opposed to wherever they were before)
+            long xAve = 0;
 			long yAve = 0;
 			foreach (ReadOnlyBaseNode newNode in newNodeCollection.newNodes)
 			{
@@ -1763,9 +1771,10 @@ namespace Foreman
 			}
 			Console.WriteLine(selectedNodes.Count);
 
-			UpdateGraphBounds();
-			Graph.UpdateNodeValues();
-		}
+            UpdateGraphBounds();
+            Graph.UpdateNodeValues();
+            return offset;
+        }
 
         public void ImportAnnotationsFromJson(JArray annotationsJson, Point origin)
         {
@@ -1805,6 +1814,32 @@ namespace Foreman
             Invalidate();
         }
 
+        public void ImportAnnotationsFromJson(JArray annotationsJson, Size offset)
+        {
+            if (annotationsJson == null || annotationsJson.Count == 0)
+                return;
+
+            List<AnnotationElement> newAnnotations = new List<AnnotationElement>();
+            foreach (JObject annJson in annotationsJson)
+            {
+                try { newAnnotations.Add(AnnotationElement.FromJson(annJson, this)); }
+                catch (Exception ex) { Console.WriteLine("Skipping bad annotation: " + ex.Message); }
+            }
+
+            if (newAnnotations.Count == 0)
+                return;
+
+            foreach (AnnotationElement ann in newAnnotations)
+            {
+                ann.X += offset.Width;
+                ann.Y += offset.Height;
+                ann.IsSelected = true;
+                AddAnnotationElement(ann);
+                selectedAnnotations.Add(ann);
+            }
+
+            Invalidate();
+        }
         public void LoadPreset(Preset preset)
 		{
 			using (DataLoadForm form = new DataLoadForm(preset))
