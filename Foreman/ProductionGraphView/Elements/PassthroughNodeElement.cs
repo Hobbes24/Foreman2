@@ -137,6 +137,19 @@ namespace Foreman
 				}
 			}
 
+            if (graphViewer.SelectedNodes.Count > 1
+				&& graphViewer.SelectedNodes.Contains(this)
+				&& graphViewer.SelectedNodes.All(n => n is PassthroughNodeElement pne && pne.DisplayedNode.PassthroughItem == DisplayedNode.PassthroughItem))
+			{
+				RightClickMenu.Items.Add(new ToolStripSeparator());
+				RightClickMenu.Items.Add(new ToolStripMenuItem("Merge selected passthrough nodes", null,
+					new EventHandler((o, e) =>
+					{
+						RightClickMenu.Close();
+						graphViewer.MergeSelectedPassthroughNodes(DisplayedNode);
+					})));
+			}
+
             if (graphViewer.ConversionSnapshots.ContainsKey(DisplayedNode))
             {
                 RightClickMenu.Items.Add(new ToolStripSeparator());

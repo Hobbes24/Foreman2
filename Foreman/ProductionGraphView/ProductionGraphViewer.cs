@@ -671,6 +671,27 @@ namespace Foreman
 			Invalidate();
 		}
 
+		public void MergeSelectedPassthroughNodes(ReadOnlyPassthroughNode survivor)
+		{
+			var nodesToMerge = selectedNodes
+				.OfType<PassthroughNodeElement>()
+				.Where(n => n.DisplayedNode != survivor && n.DisplayedNode.PassthroughItem == survivor.PassthroughItem)
+				.Select(n => n.DisplayedNode)
+				.ToList();
+
+			foreach (ReadOnlyPassthroughNode node in nodesToMerge)
+			{
+				foreach (ReadOnlyNodeLink link in node.InputLinks.ToList())
+					Graph.CreateLink(link.Supplier, survivor, link.Item);
+				foreach (ReadOnlyNodeLink link in node.OutputLinks.ToList())
+					Graph.CreateLink(survivor, link.Consumer, link.Item);
+				Graph.DeleteNode(node);
+			}
+
+			Graph.UpdateNodeValues();
+			Invalidate();
+		}
+
 		public void EditNode(BaseNodeElement bNodeElement)
 		{
 			if (bNodeElement is RecipeNodeElement rNodeElement)
