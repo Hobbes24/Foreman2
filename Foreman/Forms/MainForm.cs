@@ -18,6 +18,7 @@ namespace Foreman
 		internal string DefaultAppName;
 		private string savefilePath = null;
         private string lastSavedGraphJson = null;
+		private GraphSummaryForm graphSummaryForm = null;
 
         public MainForm()
 		{
@@ -624,13 +625,18 @@ namespace Foreman
 
 		private void GraphSummaryButton_Click(object sender, EventArgs e)
 		{
-			using (GraphSummaryForm form = new GraphSummaryForm(GraphViewer.Graph.Nodes, GraphViewer.Graph.NodeLinks, GraphViewer.Graph.GetRateName()))
+			if (graphSummaryForm == null || graphSummaryForm.IsDisposed)
 			{
-				form.StartPosition = FormStartPosition.Manual;
-				form.Left = this.Left + 50;
-				form.Top = this.Top + 50;
-				form.ShowDialog();
-
+				graphSummaryForm = new GraphSummaryForm(GraphViewer.Graph);
+				graphSummaryForm.StartPosition = FormStartPosition.Manual;
+				graphSummaryForm.Left = this.Left + 50;
+				graphSummaryForm.Top = this.Top + 50;
+				graphSummaryForm.FormClosed += (s, args) => graphSummaryForm = null;
+				graphSummaryForm.Show(this);
+			}
+			else
+			{
+				graphSummaryForm.BringToFront();
 			}
 		}
 

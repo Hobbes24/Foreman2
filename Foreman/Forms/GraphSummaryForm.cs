@@ -50,12 +50,19 @@ namespace Foreman
 
 		private Dictionary<ListView, int> lastSortOrder; //int is +ve if sorted down, -ve if sorted up, |value| is the column # (starts from 1 due to 0 not having a sign) of the sort.
 
-		private readonly string rateString;
+		private readonly ProductionGraph graph;
+		private string rateString;
+
+		private string itemsTabBaseText;
+		private string buildingCountBaseText;
+		private string beaconCountBaseText;
+		private string powerConsumptionBaseText;
+		private string powerProductionBaseText;
 
 		private static readonly Color AvailableObjectColor = Color.White;
 		private static readonly Color UnavailableObjectColor = Color.Pink;
 
-		public GraphSummaryForm(IEnumerable<ReadOnlyBaseNode> nodes, IEnumerable<ReadOnlyNodeLink> links, string rateString)
+		public GraphSummaryForm(ProductionGraph graph)
 		{
 			InitializeComponent();
 			MainForm.SetDoubleBuffered(AssemblerListView);
@@ -65,6 +72,13 @@ namespace Foreman
 			MainForm.SetDoubleBuffered(ItemsListView);
 			MainForm.SetDoubleBuffered(FluidsListView);
 			MainForm.SetDoubleBuffered(KeyNodesListView);
+
+			// Capture designer-set base texts before any appending
+			itemsTabBaseText = ItemsTabPage.Text;
+			buildingCountBaseText = BuildingCountLabel.Text;
+			beaconCountBaseText = BeaconCountLabel.Text;
+			powerConsumptionBaseText = PowerConsumptionLabel.Text;
+			powerProductionBaseText = PowerProductionLabel.Text;
 
 			unfilteredAssemblerList = new List<ListViewItem>();
 			unfilteredMinerList = new List<ListViewItem>();
@@ -91,37 +105,74 @@ namespace Foreman
 			lastSortOrder.Add(FluidsListView, 1);
 			lastSortOrder.Add(KeyNodesListView, 1);
 
+			this.graph = graph;
+
+			graph.NodeAdded += Graph_Changed;
+			graph.NodeDeleted += Graph_Changed;
+			graph.LinkAdded += Graph_Changed;
+			graph.LinkDeleted += Graph_Changed;
+			graph.NodeValuesUpdated += Graph_Changed;
+
+			this.FormClosed += GraphSummaryForm_FormClosed;
+
+			RefreshData();
+		}
+
+		private void GraphSummaryForm_FormClosed(object sender, FormClosedEventArgs e)
+		{
+			graph.NodeAdded -= Graph_Changed;
+			graph.NodeDeleted -= Graph_Changed;
+			graph.LinkAdded -= Graph_Changed;
+			graph.LinkDeleted -= Graph_Changed;
+			graph.NodeValuesUpdated -= Graph_Changed;
+		}
+
+		private void Graph_Changed(object sender, EventArgs e)
+		{
+			if (InvokeRequired)
+				BeginInvoke(new Action(RefreshData));
+			else
+				RefreshData();
+		}
+
+		private void RefreshData()
+		{
+			rateString = graph.GetRateName();
+
+			unfilteredAssemblerList.Clear();
+			unfilteredMinerList.Clear();
+			unfilteredPowerList.Clear();
+			unfilteredBeaconList.Clear();
+			unfilteredItemsList.Clear();
+			unfilteredFluidsList.Clear();
+			unfilteredKeyNodesList.Clear();
+
 			IconList.Images.Clear();
 			IconList.Images.Add(DataCache.UnknownIcon);
 
-			ItemsTabPage.Text += " ( per " + rateString + ")";
-			this.rateString = rateString;
+			var nodes = graph.Nodes;
+			var links = graph.NodeLinks;
 
-			//lists
 			LoadUnfilteredSelectedAssemblerList(nodes.Where(n => n is ReadOnlyRecipeNode rNode && rNode.SelectedAssembler.Assembler.EntityType == EntityType.Assembler).Select(n => (ReadOnlyRecipeNode)n), unfilteredAssemblerList);
 			LoadUnfilteredSelectedAssemblerList(nodes.Where(n => n is ReadOnlyRecipeNode rNode && (rNode.SelectedAssembler.Assembler.EntityType == EntityType.Miner || rNode.SelectedAssembler.Assembler.EntityType == EntityType.OffshorePump)).Select(n => (ReadOnlyRecipeNode)n), unfilteredMinerList);
 			LoadUnfilteredSelectedAssemblerList(nodes.Where(n => n is ReadOnlyRecipeNode rNode && (rNode.SelectedAssembler.Assembler.EntityType == EntityType.Boiler || rNode.SelectedAssembler.Assembler.EntityType == EntityType.BurnerGenerator || rNode.SelectedAssembler.Assembler.EntityType == EntityType.Generator || rNode.SelectedAssembler.Assembler.EntityType == EntityType.Reactor)).Select(n => (ReadOnlyRecipeNode)n), unfilteredPowerList);
-
 			LoadUnfilteredBeaconList(nodes.Where(n => n is ReadOnlyRecipeNode rNode && rNode.SelectedBeacon).Select(n => (ReadOnlyRecipeNode)n), unfilteredBeaconList);
-
 			LoadUnfilteredItemLists(nodes, links, false, unfilteredItemsList);
 			LoadUnfilteredItemLists(nodes, links, true, unfilteredFluidsList);
-
 			LoadUnfilteredKeyNodesList(nodes.Where(n => n.KeyNode), unfilteredKeyNodesList);
 
-			//building totals
 			double buildingTotal = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => Math.Ceiling(((ReadOnlyRecipeNode)n).ActualSetValue));
 			double beaconTotal = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n).GetTotalBeacons());
-			BuildingCountLabel.Text += GraphicsStuff.DoubleToString(buildingTotal);
-			BeaconCountLabel.Text += GraphicsStuff.DoubleToString(beaconTotal);
+			BuildingCountLabel.Text = buildingCountBaseText + GraphicsStuff.DoubleToString(buildingTotal);
+			BeaconCountLabel.Text = beaconCountBaseText + GraphicsStuff.DoubleToString(beaconTotal);
 
-			//power totals
 			double powerConsumption = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n).GetTotalAssemblerElectricalConsumption() + ((ReadOnlyRecipeNode)n).GetTotalBeaconElectricalConsumption());
 			double powerProduction = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n).GetTotalGeneratorElectricalProduction());
-			PowerConsumptionLabel.Text += GraphicsStuff.DoubleToEnergy(powerConsumption, "W");
-			PowerProductionLabel.Text += GraphicsStuff.DoubleToEnergy(powerProduction, "W");
+			PowerConsumptionLabel.Text = powerConsumptionBaseText + GraphicsStuff.DoubleToEnergy(powerConsumption, "W");
+			PowerProductionLabel.Text = powerProductionBaseText + GraphicsStuff.DoubleToEnergy(powerProduction, "W");
 
-			//update filtered
+			ItemsTabPage.Text = itemsTabBaseText + " ( per " + rateString + ")";
+
 			UpdateFilteredBuildingLists();
 			UpdateFilteredItemsLists();
 			UpdateFilteredKeyNodesList();
@@ -510,9 +561,9 @@ namespace Foreman
 					result = -((double)a.SubItems[column].Tag).CompareTo((double)b.SubItems[column].Tag);
 
 				if (result == 0)
-					result = ((DataObjectBase)a.Tag).LFriendlyName.CompareTo(((DataObjectBase)b.Tag).LFriendlyName);
+					result = a.SubItems[1].Text.ToLower().CompareTo(b.SubItems[1].Text.ToLower());
 				if (result == 0)
-					result = ((DataObjectBase)a.Tag).Name.CompareTo(((DataObjectBase)b.Tag).Name);
+					result = a.Name.CompareTo(b.Name);
 				return result * reverseSortLamda;
 
 			});
