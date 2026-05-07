@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Drawing;
 using System.Windows.Forms;
 using Newtonsoft.Json.Linq;
@@ -151,7 +152,7 @@ namespace Foreman
                     })));
                 RightClickMenu.Items.Add(new ToolStripSeparator());
 
-                bool inSelection = graphViewer.SelectedAnnotations.Contains(this)
+                bool inSelection = graphViewer.SelectedAnnotations.Any(a => a == this)
                     && (graphViewer.SelectedNodes.Count > 0 || graphViewer.SelectedAnnotations.Count > 1);
                 RightClickMenu.Items.Add(new ToolStripMenuItem(inSelection ? "Delete selection" : "Delete", null,
                     new EventHandler((o, e) =>
