@@ -184,7 +184,7 @@ namespace Foreman
 			SaveGraph(dialog.FileName);
 		}
 
-        // Helper to extract just the ProductionGraph JSON from a full serialization
+        // Helper to extract the graph + annotations JSON for unsaved-changes comparison
         private string GetCurrentGraphJson()
         {
             StringBuilder sb = new StringBuilder();
@@ -194,7 +194,7 @@ namespace Foreman
             GraphViewer.Graph.SerializeNodeIdSet = null;
             serialiser.Serialize(writer, GraphViewer);
             writer.Close();
-            return JObject.Parse(sb.ToString())["ProductionGraph"].ToString();
+            return sb.ToString();
         }
 
         private bool SaveGraph(string path)
@@ -214,7 +214,7 @@ namespace Foreman
                 File.WriteAllText(path, sb.ToString());
 
                 savefilePath = path;
-                lastSavedGraphJson = JObject.Parse(sb.ToString())["ProductionGraph"].ToString();
+                lastSavedGraphJson = sb.ToString();
                 this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
                 return true;
             }
@@ -627,8 +627,8 @@ namespace Foreman
 		{
 			if (graphSummaryForm == null || graphSummaryForm.IsDisposed)
 			{
-				graphSummaryForm = new GraphSummaryForm(GraphViewer.Graph);
-				graphSummaryForm.StartPosition = FormStartPosition.Manual;
+                graphSummaryForm = new GraphSummaryForm(GraphViewer.Graph, GraphViewer);
+                graphSummaryForm.StartPosition = FormStartPosition.Manual;
 				graphSummaryForm.Left = this.Left + 50;
 				graphSummaryForm.Top = this.Top + 50;
 				graphSummaryForm.FormClosed += (s, args) => graphSummaryForm = null;

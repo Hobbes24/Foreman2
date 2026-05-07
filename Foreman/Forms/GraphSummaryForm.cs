@@ -51,7 +51,13 @@ namespace Foreman
 		private Dictionary<ListView, int> lastSortOrder; //int is +ve if sorted down, -ve if sorted up, |value| is the column # (starts from 1 due to 0 not having a sign) of the sort.
 
 		private readonly ProductionGraph graph;
-		private string rateString;
+
+        private readonly ProductionGraphViewer graphViewer;
+
+        private ItemQualityPair? navLastItem = null;
+        private int navCycleIndex = 0;
+
+        private string rateString;
 
 		private string itemsTabBaseText;
 		private string buildingCountBaseText;
@@ -62,8 +68,8 @@ namespace Foreman
 		private static readonly Color AvailableObjectColor = Color.White;
 		private static readonly Color UnavailableObjectColor = Color.Pink;
 
-		public GraphSummaryForm(ProductionGraph graph)
-		{
+        public GraphSummaryForm(ProductionGraph graph, ProductionGraphViewer viewer)
+        {
 			InitializeComponent();
 			MainForm.SetDoubleBuffered(AssemblerListView);
 			MainForm.SetDoubleBuffered(MinerListView);
@@ -107,7 +113,13 @@ namespace Foreman
 
 			this.graph = graph;
 
-			graph.NodeAdded += Graph_Changed;
+            this.graphViewer = viewer;
+
+            ItemsListView.DoubleClick += ItemsOrFluids_DoubleClick;
+            FluidsListView.DoubleClick += ItemsOrFluids_DoubleClick;
+            KeyNodesListView.DoubleClick += KeyNodes_DoubleClick;
+
+            graph.NodeAdded += Graph_Changed;
 			graph.NodeDeleted += Graph_Changed;
 			graph.LinkAdded += Graph_Changed;
 			graph.LinkDeleted += Graph_Changed;
@@ -118,7 +130,50 @@ namespace Foreman
 			RefreshData();
 		}
 
-		private void GraphSummaryForm_FormClosed(object sender, FormClosedEventArgs e)
+        private void ItemsOrFluids_DoubleClick(object sender, EventArgs e)
+        {
+            if (graphViewer == null) return;
+            ListView lv = (ListView)sender;
+
+            Point hit = lv.PointToClient(Cursor.Position);
+            ListViewHitTestInfo info = lv.HitTest(hit);
+            if (info.Item == null || !(info.Item.Tag is ItemQualityPair item)) return;
+
+            List<ReadOnlyBaseNode> targets = graph.Nodes
+                .Where(n =>
+                    (n.Inputs.Contains(item) && !n.InputLinks.Any(l => l.Item == item)) ||
+                    (n.Outputs.Contains(item) && !n.OutputLinks.Any(l => l.Item == item)))
+                .ToList();
+
+            if (targets.Count == 0) return;
+
+            if (!navLastItem.HasValue || !item.Equals(navLastItem.Value))
+            {
+                navLastItem = item;
+                navCycleIndex = 0;
+            }
+            else
+            {
+                navCycleIndex = (navCycleIndex + 1) % targets.Count;
+            }
+
+            if (graphViewer.NodeElementDictionary.TryGetValue(targets[navCycleIndex], out BaseNodeElement element))
+                graphViewer.CenterOnNode(element);
+        }
+
+        private void KeyNodes_DoubleClick(object sender, EventArgs e)
+        {
+            if (graphViewer == null) return;
+
+            Point hit = KeyNodesListView.PointToClient(Cursor.Position);
+            ListViewHitTestInfo info = KeyNodesListView.HitTest(hit);
+            if (info.Item == null || !(info.Item.Tag is ReadOnlyBaseNode node)) return;
+
+            if (graphViewer.NodeElementDictionary.TryGetValue(node, out BaseNodeElement element))
+                graphViewer.CenterOnNode(element);
+        }
+
+        private void GraphSummaryForm_FormClosed(object sender, FormClosedEventArgs e)
 		{
 			graph.NodeAdded -= Graph_Changed;
 			graph.NodeDeleted -= Graph_Changed;

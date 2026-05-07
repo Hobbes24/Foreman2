@@ -151,11 +151,16 @@ namespace Foreman
                     })));
                 RightClickMenu.Items.Add(new ToolStripSeparator());
 
-                RightClickMenu.Items.Add(new ToolStripMenuItem("Delete", null,
+                bool inSelection = graphViewer.SelectedAnnotations.Contains(this)
+                    && (graphViewer.SelectedNodes.Count > 0 || graphViewer.SelectedAnnotations.Count > 1);
+                RightClickMenu.Items.Add(new ToolStripMenuItem(inSelection ? "Delete selection" : "Delete", null,
                     new EventHandler((o, e) =>
                     {
                         RightClickMenu.Close();
-                        graphViewer.RemoveAnnotationElement(this);
+                        if (inSelection)
+                            graphViewer.TryDeleteSelection();
+                        else
+                            graphViewer.RemoveAnnotationElement(this);
                     })));
 
                 RightClickMenu.Show(graphViewer, graphViewer.GraphToScreen(graph_point));

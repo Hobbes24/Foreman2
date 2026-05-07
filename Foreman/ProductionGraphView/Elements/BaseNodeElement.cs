@@ -313,11 +313,12 @@ namespace Foreman
 						})));
 				if (graphViewer.SelectedNodes.Count > 1 && graphViewer.SelectedNodes.Contains(this))
 				{
-					RightClickMenu.Items.Add(new ToolStripMenuItem("Delete selected nodes", null,
+					bool hasAnnotations = graphViewer.SelectedAnnotations.Count > 0;
+					RightClickMenu.Items.Add(new ToolStripMenuItem("Delete selected", null,
 						new EventHandler((o, e) =>
 						{
 							RightClickMenu.Close();
-							graphViewer.TryDeleteSelectedNodes();
+							graphViewer.TryDeleteSelected();
 						})));
 				}
 

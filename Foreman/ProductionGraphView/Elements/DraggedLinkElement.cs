@@ -124,9 +124,13 @@ namespace Foreman
                     graphViewer.DisposeLinkDrag();
                 }
             }
-            else if (SubElements.Any(e => e is DraggedLinkElement)) //at least one null + sub-link -> this is an 'add new passthrough nodes operation
+            else if (SubElements.Any(e => e is DraggedLinkElement)) //at least one null + sub-link -> multi-passthrough operation
             {
-                graphViewer.AddPassthroughNodesFromSelection(StartConnectionType, (Size)Point.Subtract(EndpointLocation, (Size)originElement.Location));
+                Size offset = (Size)Point.Subtract(EndpointLocation, (Size)originElement.Location);
+                if ((Control.ModifierKeys & Keys.Control) == Keys.Control)
+                    graphViewer.AddPassthroughNodesFromSelection(StartConnectionType, offset);
+                else
+                    graphViewer.AddSourceNodesForSelection(StartConnectionType, offset);
             }
             else //at least one null -> add new recipe, or with Ctrl/Ctrl+Shift shortcuts
             {
@@ -215,10 +219,15 @@ namespace Foreman
         {
             if (SupplierElement == null || ConsumerElement == null)
             {
-                if ((Control.ModifierKeys & Keys.Control) == Keys.Control && !SubElements.Any(e => e is DraggedLinkElement) && originElement is PassthroughNodeElement && graphViewer.SelectedNodes.Count > 1 && graphViewer.SelectedNodes.Contains(originElement) && !graphViewer.SelectedNodes.Any(e => !(e is PassthroughNodeElement)))
+                bool isMultiPassthrough = originElement is PassthroughNodeElement
+                    && graphViewer.SelectedNodes.Count > 1
+                    && graphViewer.SelectedNodes.Contains(originElement)
+                    && graphViewer.SelectedNodes.All(e => e is PassthroughNodeElement);
+
+                if (isMultiPassthrough && !SubElements.Any(e => e is DraggedLinkElement))
                     foreach (PassthroughNodeElement node in graphViewer.SelectedNodes.Where(e => e != originElement))
                         new DraggedLinkElement(graphViewer, node, StartConnectionType, ((ReadOnlyPassthroughNode)node.DisplayedNode).PassthroughItem, this);
-                else if ((Control.ModifierKeys & Keys.Control) != Keys.Control)
+                else if (!isMultiPassthrough)
                     foreach (DraggedLinkElement link in SubElements.Where(e => e is DraggedLinkElement).ToList())
                         link.Dispose();
                 UpdateEndpoint();

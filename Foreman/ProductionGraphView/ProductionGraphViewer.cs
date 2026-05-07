@@ -54,6 +54,7 @@ namespace Foreman
 		public IReadOnlyDictionary<ReadOnlyNodeLink, LinkElement> LinkElementDictionary { get { return linkElementDictionary; } }
 
 		public IReadOnlyCollection<BaseNodeElement> SelectedNodes { get { return selectedNodes; } }
+		public IReadOnlyCollection<AnnotationElement> SelectedAnnotations { get { return selectedAnnotations; } }
 
 		public Point ViewOffset { get; private set; }
 		public float ViewScale { get; private set; }
@@ -483,10 +484,41 @@ namespace Foreman
 			Invalidate();
 		}
 
-        // ---------------------------------------------------------------------------------
-        // ADD THESE TWO METHODS to ProductionGraphViewer.cs
-        // Place them immediately after the closing brace of AddPassthroughNodesFromSelection
-        // ---------------------------------------------------------------------------------
+        public void AddSourceNodesForSelection(LinkType linkType, Size offset)
+        {
+            List<BaseNodeElement> newNodes = new List<BaseNodeElement>();
+            foreach (PassthroughNodeElement passthroughNode in selectedNodes)
+            {
+                ItemQualityPair passthroughItem = ((ReadOnlyPassthroughNode)passthroughNode.DisplayedNode).PassthroughItem;
+
+                int yoffset = linkType == LinkType.Input ? passthroughNode.Height / 2 : -passthroughNode.Height / 2;
+                yoffset *= passthroughNode.DisplayedNode.NodeDirection == NodeDirection.Up ? 1 : -1;
+                yoffset += offset.Height;
+
+                Point nodeLocation = new Point(passthroughNode.Location.X + offset.Width, passthroughNode.Location.Y + yoffset);
+                if (Grid.ShowGrid)
+                    nodeLocation = Grid.AlignToGrid(nodeLocation);
+
+                ReadOnlyBaseNode newNode;
+                if (linkType == LinkType.Input)
+                {
+                    newNode = Graph.CreateSupplierNode(passthroughItem, nodeLocation);
+                    Graph.CreateLink(newNode, passthroughNode.DisplayedNode, passthroughItem);
+                }
+                else
+                {
+                    newNode = Graph.CreateConsumerNode(passthroughItem, nodeLocation);
+                    Graph.CreateLink(passthroughNode.DisplayedNode, newNode, passthroughItem);
+                }
+                newNodes.Add(nodeElementDictionary[newNode]);
+            }
+            SetSelection(newNodes);
+
+            DisposeLinkDrag();
+            Graph.UpdateNodeValues();
+            Graph.UpdateNodeStates(false);
+            Invalidate();
+        }
 
         // Ctrl + drag from any node tab to empty space:
         // Creates a passthrough node for every item on that side of the origin node,
@@ -568,6 +600,41 @@ namespace Foreman
 				foreach (BaseNodeElement node in selectedNodes.ToList())
 					Graph.DeleteNode(node.DisplayedNode);
 				selectedNodes.Clear();
+				Graph.UpdateNodeValues();
+			}
+		}
+
+		public void TryDeleteSelected()
+		{
+			int total = selectedNodes.Count + selectedAnnotations.Count;
+			bool proceed = true;
+			if (total > 10)
+				proceed = (MessageBox.Show("You are deleting " + total + " items. \nAre you sure?", "Confirm delete.", MessageBoxButtons.YesNo) == DialogResult.Yes);
+			if (proceed)
+			{
+				foreach (BaseNodeElement node in selectedNodes.ToList())
+					Graph.DeleteNode(node.DisplayedNode);
+				selectedNodes.Clear();
+				foreach (AnnotationElement ann in selectedAnnotations.ToList())
+					RemoveAnnotationElement(ann);
+				selectedAnnotations.Clear();
+				Graph.UpdateNodeValues();
+			}
+		}
+
+		public void TryDeleteSelection()
+		{
+			bool proceed = true;
+			if (selectedNodes.Count > 10)
+				proceed = (MessageBox.Show("You are deleting " + selectedNodes.Count + " nodes. \nAre you sure?", "Confirm delete.", MessageBoxButtons.YesNo) == DialogResult.Yes);
+			if (proceed)
+			{
+				foreach (BaseNodeElement node in selectedNodes.ToList())
+					Graph.DeleteNode(node.DisplayedNode);
+				selectedNodes.Clear();
+				foreach (AnnotationElement ann in selectedAnnotations.ToList())
+					RemoveAnnotationElement(ann);
+				selectedAnnotations.Clear();
 				Graph.UpdateNodeValues();
 			}
 		}
@@ -675,16 +742,18 @@ namespace Foreman
 		{
 			var nodesToMerge = selectedNodes
 				.OfType<PassthroughNodeElement>()
-				.Where(n => n.DisplayedNode != survivor && n.DisplayedNode.PassthroughItem == survivor.PassthroughItem)
-				.Select(n => n.DisplayedNode)
+				.Where(n => n.DisplayedNode != survivor && ((ReadOnlyPassthroughNode)n.DisplayedNode).PassthroughItem == survivor.PassthroughItem)
+				.Select(n => (ReadOnlyPassthroughNode)n.DisplayedNode)
 				.ToList();
 
 			foreach (ReadOnlyPassthroughNode node in nodesToMerge)
 			{
 				foreach (ReadOnlyNodeLink link in node.InputLinks.ToList())
-					Graph.CreateLink(link.Supplier, survivor, link.Item);
+					if (link.Supplier != survivor)
+						Graph.CreateLink(link.Supplier, survivor, link.Item);
 				foreach (ReadOnlyNodeLink link in node.OutputLinks.ToList())
-					Graph.CreateLink(survivor, link.Consumer, link.Item);
+					if (link.Consumer != survivor)
+						Graph.CreateLink(survivor, link.Consumer, link.Item);
 				Graph.DeleteNode(node);
 			}
 
@@ -1480,10 +1549,7 @@ namespace Foreman
 				switch (e.KeyCode)
 				{
                     case Keys.Delete:
-                        TryDeleteSelectedNodes();
-                        foreach (AnnotationElement ann in selectedAnnotations.ToList())
-                            RemoveAnnotationElement(ann);
-                        selectedAnnotations.Clear();
+                        TryDeleteSelected();
                         e.Handled = true;
                         break;
                     case Keys.Escape:
@@ -2283,7 +2349,7 @@ namespace Foreman
 			findStatusLabel.Text = string.Format("{0} of {1}", findResultIndex + 1, findResults.Count);
 		}
 
-		private void CenterOnNode(BaseNodeElement node)
+		public void CenterOnNode(BaseNodeElement node)
 		{
 			if (!nodeElements.Contains(node))
 				return; // node was deleted, skip it
