@@ -308,6 +308,7 @@ namespace Foreman
 						new EventHandler((o, e) =>
 						{
 							RightClickMenu.Close();
+							graphViewer.CleanupNodeFromGroups(DisplayedNode);
 							graphViewer.Graph.DeleteNode(DisplayedNode);
 							graphViewer.Graph.UpdateNodeValues();
 						})));
@@ -319,6 +320,45 @@ namespace Foreman
 						{
 							RightClickMenu.Close();
 							graphViewer.TryDeleteSelected();
+						})));
+				}
+
+				RightClickMenu.Items.Add(new ToolStripSeparator());
+
+				// --- Grouping ---
+				bool thisNodeInGroup = graphViewer.IsNodeInGroup(DisplayedNode);
+
+				HashSet<ReadOnlyBaseNode> toGroup = new HashSet<ReadOnlyBaseNode>(
+					graphViewer.SelectedNodes.Select(ne => ne.DisplayedNode));
+				toGroup.Add(DisplayedNode);
+
+				HashSet<AnnotationElement> annsToGroup = new HashSet<AnnotationElement>(
+					graphViewer.SelectedAnnotations);
+
+				if (toGroup.Count + annsToGroup.Count >= 2)
+				{
+					RightClickMenu.Items.Add(new ToolStripMenuItem("Group selected nodes", null,
+						new EventHandler((o, e) =>
+						{
+							RightClickMenu.Close();
+							graphViewer.CreateGroup(toGroup, annsToGroup);
+						})));
+				}
+
+				if (thisNodeInGroup)
+				{
+					RightClickMenu.Items.Add(new ToolStripMenuItem("Remove from group", null,
+						new EventHandler((o, e) =>
+						{
+							RightClickMenu.Close();
+							graphViewer.RemoveNodeFromGroup(DisplayedNode);
+						})));
+
+					RightClickMenu.Items.Add(new ToolStripMenuItem("Ungroup", null,
+						new EventHandler((o, e) =>
+						{
+							RightClickMenu.Close();
+							graphViewer.DisbandGroup(DisplayedNode);
 						})));
 				}
 

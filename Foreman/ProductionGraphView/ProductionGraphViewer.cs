@@ -89,6 +89,20 @@ namespace Foreman
 
         private List<AnnotationElement> annotationElements;
         private HashSet<AnnotationElement> selectedAnnotations;
+        private class NodeGroup
+        {
+            public HashSet<ReadOnlyBaseNode> Nodes = new HashSet<ReadOnlyBaseNode>();
+            public HashSet<AnnotationElement> Annotations = new HashSet<AnnotationElement>();
+
+            public bool ContainsNode(ReadOnlyBaseNode node) => Nodes.Contains(node);
+            public bool ContainsAnnotation(AnnotationElement ann) => Annotations.Contains(ann);
+            public bool IsEmpty => Nodes.Count + Annotations.Count < 2;
+
+            public bool OverlapsWith(IEnumerable<ReadOnlyBaseNode> nodes, IEnumerable<AnnotationElement> anns)
+                => nodes.Any(n => Nodes.Contains(n)) || anns.Any(a => Annotations.Contains(a));
+        }
+
+        private List<NodeGroup> nodeGroups = new List<NodeGroup>();
 
         private ContextMenu rightClickMenu = new ContextMenu();
 
@@ -189,6 +203,79 @@ namespace Foreman
             return null;
         }
 
+        //----------------------------------------------Node group management
+
+        public void CreateGroup(IEnumerable<ReadOnlyBaseNode> nodes, IEnumerable<AnnotationElement> annotations)
+        {
+            var nodeSet = new HashSet<ReadOnlyBaseNode>(nodes);
+            var annSet = new HashSet<AnnotationElement>(annotations);
+
+            if (nodeSet.Count + annSet.Count < 2)
+                return;
+
+            List<NodeGroup> overlapping = nodeGroups
+                .Where(g => g.OverlapsWith(nodeSet, annSet))
+                .ToList();
+
+            foreach (NodeGroup old in overlapping)
+            {
+                nodeSet.UnionWith(old.Nodes);
+                annSet.UnionWith(old.Annotations);
+                nodeGroups.Remove(old);
+            }
+
+            var group = new NodeGroup();
+            group.Nodes.UnionWith(nodeSet);
+            group.Annotations.UnionWith(annSet);
+            nodeGroups.Add(group);
+        }
+
+        public void DisbandGroup(ReadOnlyBaseNode member)
+        {
+            NodeGroup group = nodeGroups.FirstOrDefault(g => g.ContainsNode(member));
+            if (group != null)
+                nodeGroups.Remove(group);
+        }
+
+        public void DisbandGroup(AnnotationElement member)
+        {
+            NodeGroup group = nodeGroups.FirstOrDefault(g => g.ContainsAnnotation(member));
+            if (group != null)
+                nodeGroups.Remove(group);
+        }
+
+        public void RemoveNodeFromGroup(ReadOnlyBaseNode node)
+        {
+            NodeGroup group = nodeGroups.FirstOrDefault(g => g.ContainsNode(node));
+            if (group == null) return;
+            group.Nodes.Remove(node);
+            if (group.IsEmpty) nodeGroups.Remove(group);
+        }
+
+        public void RemoveAnnotationFromGroup(AnnotationElement ann)
+        {
+            NodeGroup group = nodeGroups.FirstOrDefault(g => g.ContainsAnnotation(ann));
+            if (group == null) return;
+            group.Annotations.Remove(ann);
+            if (group.IsEmpty) nodeGroups.Remove(group);
+        }
+
+        public void CleanupNodeFromGroups(ReadOnlyBaseNode node) => RemoveNodeFromGroup(node);
+
+        public void CleanupAnnotationFromGroups(AnnotationElement ann) => RemoveAnnotationFromGroup(ann);
+
+        public bool IsNodeInGroup(ReadOnlyBaseNode node)
+            => nodeGroups.Any(g => g.ContainsNode(node));
+
+        public bool IsAnnotationInGroup(AnnotationElement ann)
+            => nodeGroups.Any(g => g.ContainsAnnotation(ann));
+
+        private NodeGroup GetGroupForNode(ReadOnlyBaseNode node)
+            => nodeGroups.FirstOrDefault(g => g.ContainsNode(node));
+
+        private NodeGroup GetGroupForAnnotation(AnnotationElement ann)
+            => nodeGroups.FirstOrDefault(g => g.ContainsAnnotation(ann));
+
         //----------------------------------------------Annotation add/remove/create
 
         public void AddAnnotationElement(AnnotationElement element)
@@ -201,6 +288,7 @@ namespace Foreman
         {
             annotationElements.Remove(element);
             selectedAnnotations.Remove(element);
+            CleanupAnnotationFromGroups(element);
             element.Dispose();
             Invalidate();
         }
@@ -598,7 +686,10 @@ namespace Foreman
 			if (proceed)
 			{
 				foreach (BaseNodeElement node in selectedNodes.ToList())
+				{
+					CleanupNodeFromGroups(node.DisplayedNode);
 					Graph.DeleteNode(node.DisplayedNode);
+				}
 				selectedNodes.Clear();
 				Graph.UpdateNodeValues();
 			}
@@ -613,7 +704,10 @@ namespace Foreman
 			if (proceed)
 			{
 				foreach (BaseNodeElement node in selectedNodes.ToList())
+				{
+					CleanupNodeFromGroups(node.DisplayedNode);
 					Graph.DeleteNode(node.DisplayedNode);
+				}
 				selectedNodes.Clear();
 				foreach (AnnotationElement ann in selectedAnnotations.ToList())
 					RemoveAnnotationElement(ann);
@@ -630,7 +724,10 @@ namespace Foreman
 			if (proceed)
 			{
 				foreach (BaseNodeElement node in selectedNodes.ToList())
+				{
+					CleanupNodeFromGroups(node.DisplayedNode);
 					Graph.DeleteNode(node.DisplayedNode);
+				}
 				selectedNodes.Clear();
 				foreach (AnnotationElement ann in selectedAnnotations.ToList())
 					RemoveAnnotationElement(ann);
@@ -1346,6 +1443,30 @@ namespace Foreman
                                     ann.X += endPoint.X - startPoint.X;
                                     ann.Y += endPoint.Y - startPoint.Y;
                                 }
+                                // Co-move group members not already moved by selection
+                                if (MouseDownElement is BaseNodeElement draggedNode)
+                                {
+                                    NodeGroup group = GetGroupForNode(draggedNode.DisplayedNode);
+                                    if (group != null)
+                                    {
+                                        foreach (ReadOnlyBaseNode member in group.Nodes)
+                                        {
+                                            if (!NodeElementDictionary.TryGetValue(member, out BaseNodeElement memberElement))
+                                                continue;
+                                            if (memberElement == MouseDownElement) continue;
+                                            if (selectedNodes.Contains(memberElement)) continue;
+                                            memberElement.SetLocation(new Point(
+                                                memberElement.X + endPoint.X - startPoint.X,
+                                                memberElement.Y + endPoint.Y - startPoint.Y));
+                                        }
+                                        foreach (AnnotationElement ann in group.Annotations)
+                                        {
+                                            if (selectedAnnotations.Contains(ann)) continue;
+                                            ann.X += endPoint.X - startPoint.X;
+                                            ann.Y += endPoint.Y - startPoint.Y;
+                                        }
+                                    }
+                                }
                             }
                             Invalidate();
                         }
@@ -1371,13 +1492,68 @@ namespace Foreman
                                 }
                                 foreach (BaseNodeElement node in selectedNodes)
                                     node.SetLocation(new Point(node.X + endPoint.X - startPoint.X, node.Y + endPoint.Y - startPoint.Y));
+                                // Co-move group members not already moved by selection
+                                if (MouseDownElement is AnnotationElement movedAnn)
+                                {
+                                    NodeGroup group = GetGroupForAnnotation(movedAnn);
+                                    if (group != null)
+                                    {
+                                        foreach (ReadOnlyBaseNode member in group.Nodes)
+                                        {
+                                            if (!NodeElementDictionary.TryGetValue(member, out BaseNodeElement memberElement))
+                                                continue;
+                                            if (selectedNodes.Contains(memberElement)) continue;
+                                            memberElement.SetLocation(new Point(
+                                                memberElement.X + endPoint.X - startPoint.X,
+                                                memberElement.Y + endPoint.Y - startPoint.Y));
+                                        }
+                                        foreach (AnnotationElement ann in group.Annotations)
+                                        {
+                                            if (ann == movedAnn) continue;
+                                            if (selectedAnnotations.Contains(ann)) continue;
+                                            ann.X += endPoint.X - startPoint.X;
+                                            ann.Y += endPoint.Y - startPoint.Y;
+                                        }
+                                    }
+                                }
                             }
                             Invalidate();
                         }
                     }
                     else //dragging a single unselected item
                     {
-                        MouseDownElement.Dragged(graph_location);
+                        if (MouseDownElement is BaseNodeElement unselectedNode)
+                        {
+                            Point startPoint = unselectedNode.Location;
+                            MouseDownElement.Dragged(graph_location);
+                            Point endPoint = unselectedNode.Location;
+                            if (startPoint != endPoint)
+                            {
+                                NodeGroup group = GetGroupForNode(unselectedNode.DisplayedNode);
+                                if (group != null)
+                                {
+                                    foreach (ReadOnlyBaseNode groupMember in group.Nodes)
+                                    {
+                                        if (!NodeElementDictionary.TryGetValue(groupMember, out BaseNodeElement memberElement))
+                                            continue;
+                                        if (memberElement == MouseDownElement)
+                                            continue;
+                                        memberElement.SetLocation(new Point(
+                                            memberElement.X + endPoint.X - startPoint.X,
+                                            memberElement.Y + endPoint.Y - startPoint.Y));
+                                    }
+                                    foreach (AnnotationElement ann in group.Annotations)
+                                    {
+                                        ann.X += endPoint.X - startPoint.X;
+                                        ann.Y += endPoint.Y - startPoint.Y;
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            MouseDownElement.Dragged(graph_location);
+                        }
                         Invalidate();
                     }
 
@@ -1501,7 +1677,10 @@ namespace Foreman
                     if (e.KeyCode == Keys.X) //cut
                     {
                         foreach (BaseNodeElement node in selectedNodes.ToList())
+                        {
+                            CleanupNodeFromGroups(node.DisplayedNode);
                             Graph.DeleteNode(node.DisplayedNode);
+                        }
                         foreach (AnnotationElement ann in selectedAnnotations.ToList())
                             RemoveAnnotationElement(ann);
                         selectedAnnotations.Clear();

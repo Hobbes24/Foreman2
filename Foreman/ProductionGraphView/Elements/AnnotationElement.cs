@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Drawing;
 using System.Windows.Forms;
@@ -163,6 +164,45 @@ namespace Foreman
                         else
                             graphViewer.RemoveAnnotationElement(this);
                     })));
+
+                RightClickMenu.Items.Add(new ToolStripSeparator());
+
+                // Grouping
+                HashSet<ReadOnlyBaseNode> nodesToGroup = new HashSet<ReadOnlyBaseNode>(
+                    graphViewer.SelectedNodes.Select(ne => ne.DisplayedNode));
+
+                HashSet<AnnotationElement> annsToGroup = new HashSet<AnnotationElement>(
+                    graphViewer.SelectedAnnotations);
+                annsToGroup.Add(this);
+
+                bool thisAnnInGroup = graphViewer.IsAnnotationInGroup(this);
+
+                if (nodesToGroup.Count + annsToGroup.Count >= 2)
+                {
+                    RightClickMenu.Items.Add(new ToolStripMenuItem("Group selected", null,
+                        new EventHandler((o, e) =>
+                        {
+                            RightClickMenu.Close();
+                            graphViewer.CreateGroup(nodesToGroup, annsToGroup);
+                        })));
+                }
+
+                if (thisAnnInGroup)
+                {
+                    RightClickMenu.Items.Add(new ToolStripMenuItem("Remove from group", null,
+                        new EventHandler((o, e) =>
+                        {
+                            RightClickMenu.Close();
+                            graphViewer.RemoveAnnotationFromGroup(this);
+                        })));
+
+                    RightClickMenu.Items.Add(new ToolStripMenuItem("Ungroup", null,
+                        new EventHandler((o, e) =>
+                        {
+                            RightClickMenu.Close();
+                            graphViewer.DisbandGroup(this);
+                        })));
+                }
 
                 RightClickMenu.Show(graphViewer, graphViewer.GraphToScreen(graph_point));
             }
