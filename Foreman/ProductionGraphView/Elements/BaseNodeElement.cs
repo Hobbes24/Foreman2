@@ -561,6 +561,10 @@ namespace Foreman
 				else
 				{
 					DragStarted = true;
+					// DragOrigin may have been set before MouseDownElement was assigned (Shift held before click).
+					// Reset it now to the actual node start position so axis-locking is correct.
+					if (graphViewer.Grid.LockDragToAxis)
+						graphViewer.Grid.DragOrigin = graphViewer.Grid.AlignToGrid(MouseDownNodeLocation);
 				}
 			}
 			else //drag started -> proceed with dragging the node around

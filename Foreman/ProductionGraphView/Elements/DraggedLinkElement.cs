@@ -142,12 +142,24 @@ namespace Foreman
                 bool shiftHeld = (Control.ModifierKeys & Keys.Shift) == Keys.Shift;
                 // Ctrl alone: AddNewNode handles it internally (creates single passthrough)
                 // Ctrl+Shift on empty space: create passthroughs for all items on that side
+                // Shift alone on empty space: directly create supplier/consumer at drop location (no picker)
                 bool useAllItemsPassthrough = ctrlHeld && shiftHeld && !droppedOnNonMatchingNode;
+                bool createDirectNode = shiftHeld && !ctrlHeld && !droppedOnNonMatchingNode;
 
                 if (StartConnectionType == LinkType.Input && SupplierElement == null)
                 {
                     if (useAllItemsPassthrough)
                         graphViewer.AddPassthroughNodesForAllItems(LinkType.Input, ConsumerElement, EndpointLocation);
+                    else if (createDirectNode)
+                    {
+                        Point loc = graphViewer.Grid.ShowGrid ? graphViewer.Grid.AlignToGrid(EndpointLocation) : EndpointLocation;
+                        ReadOnlyBaseNode newNode = graphViewer.Graph.CreateSupplierNode(Item, loc);
+                        graphViewer.Graph.CreateLink(newNode, ConsumerElement.DisplayedNode, Item);
+                        graphViewer.DisposeLinkDrag();
+                        graphViewer.Graph.UpdateNodeValues();
+                        graphViewer.Graph.UpdateNodeStates(false);
+                        graphViewer.Invalidate();
+                    }
                     else
                         graphViewer.AddNewNode(screenPoint, Item, EndpointLocation, NewNodeType.Supplier, ConsumerElement, true);
                 }
@@ -155,6 +167,16 @@ namespace Foreman
                 {
                     if (useAllItemsPassthrough)
                         graphViewer.AddPassthroughNodesForAllItems(LinkType.Output, SupplierElement, EndpointLocation);
+                    else if (createDirectNode)
+                    {
+                        Point loc = graphViewer.Grid.ShowGrid ? graphViewer.Grid.AlignToGrid(EndpointLocation) : EndpointLocation;
+                        ReadOnlyBaseNode newNode = graphViewer.Graph.CreateConsumerNode(Item, loc);
+                        graphViewer.Graph.CreateLink(SupplierElement.DisplayedNode, newNode, Item);
+                        graphViewer.DisposeLinkDrag();
+                        graphViewer.Graph.UpdateNodeValues();
+                        graphViewer.Graph.UpdateNodeStates(false);
+                        graphViewer.Invalidate();
+                    }
                     else
                         graphViewer.AddNewNode(screenPoint, Item, EndpointLocation, NewNodeType.Consumer, SupplierElement, true);
                 }
