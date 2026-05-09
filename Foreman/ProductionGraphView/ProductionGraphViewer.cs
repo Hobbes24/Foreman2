@@ -1999,6 +1999,7 @@ namespace Foreman
 			info.AddValue("EnabledAssemblers", DCache.Assemblers.Values.Where(a => a.Enabled).Select(a => a.Name));
 			info.AddValue("EnabledModules", DCache.Modules.Values.Where(m => m.Enabled).Select(m => m.Name));
 			info.AddValue("EnabledBeacons", DCache.Beacons.Values.Where(b => b.Enabled).Select(b => b.Name));
+			info.AddValue("EnabledTechTiers", Properties.Settings.Default.EnabledTechTiers);
             //planting results are always enabled
 
             //graph :)
@@ -2295,9 +2296,11 @@ namespace Foreman
                 foreach (Recipe recipe in DCache.Recipes.Values)
                     if (recipe.Available && !recipe.Enabled)
                         recipe.Enabled = true;
-
-
             }
+
+            //restore science-pack filter saved with this file (absent in old saves → leave global setting unchanged)
+            if (json["EnabledTechTiers"] != null)
+                RecipeChooserPanel.ApplyTechTierSetting((string)json["EnabledTechTiers"]);
 
             //add all nodes
             ProductionGraph.NewNodeCollection collection = Graph.InsertNodesFromJson(DCache, (JObject)json["ProductionGraph"], true);

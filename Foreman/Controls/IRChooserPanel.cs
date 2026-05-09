@@ -703,6 +703,29 @@ namespace Foreman
             return result.Count == 0 ? null : result;
         }
 
+        // Called by ProductionGraphViewer when loading a save file so the filter
+        // reflects per-file state rather than the last global setting.
+        internal static void ApplyTechTierSetting(string csvPackNames)
+        {
+            if (string.IsNullOrEmpty(csvPackNames))
+            {
+                enabledSciencePacks = null;
+            }
+            else
+            {
+                HashSet<string> result = new HashSet<string>();
+                foreach (string part in csvPackNames.Split(','))
+                {
+                    string name = part.Trim();
+                    if (!string.IsNullOrEmpty(name))
+                        result.Add(name);
+                }
+                enabledSciencePacks = result.Count == 0 ? null : result;
+            }
+            Properties.Settings.Default.EnabledTechTiers = csvPackNames ?? "";
+            Properties.Settings.Default.Save();
+        }
+
 
         private void BuildTechTierDropDown()
         {
