@@ -2000,6 +2000,7 @@ namespace Foreman
 			info.AddValue("EnabledModules", DCache.Modules.Values.Where(m => m.Enabled).Select(m => m.Name));
 			info.AddValue("EnabledBeacons", DCache.Beacons.Values.Where(b => b.Enabled).Select(b => b.Name));
 			info.AddValue("EnabledTechTiers", Properties.Settings.Default.EnabledTechTiers);
+			info.AddValue("AnnotationDpi", DeviceDpi);
             //planting results are always enabled
 
             //graph :)
@@ -2315,9 +2316,20 @@ namespace Foreman
             {
                 try
                 {
+                    float savedDpi = json["AnnotationDpi"] != null ? (float)(int)json["AnnotationDpi"] : 96f;
+                    float dpiScale = DeviceDpi / savedDpi;
+
                     JArray annotationsJson = JArray.Parse((string)json["Annotations"]);
                     foreach (JObject annJson in annotationsJson)
-                        AddAnnotationElement(AnnotationElement.FromJson(annJson, this));
+                    {
+                        AnnotationElement ann = AnnotationElement.FromJson(annJson, this);
+                        if (Math.Abs(dpiScale - 1f) > 0.01f)
+                        {
+                            ann.Width = (int)Math.Round(ann.Width * dpiScale);
+                            ann.Height = (int)Math.Round(ann.Height * dpiScale);
+                        }
+                        AddAnnotationElement(ann);
+                    }
                 }
                 catch (Exception ex)
                 {
