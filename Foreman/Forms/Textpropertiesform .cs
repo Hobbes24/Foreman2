@@ -14,6 +14,7 @@ namespace Foreman
         private readonly Font _originalFont;
         private readonly Color _originalTextColor;
         private readonly Color _originalBackColor;
+        private readonly System.Drawing.StringAlignment _originalTextAlign;
 
         // Working font copy — disposed on close if not transferred to element
         private Font _workingFont;
@@ -30,6 +31,7 @@ namespace Foreman
             _originalFont = new Font(element.TextFont, element.TextFont.Style);
             _originalTextColor = element.TextColor;
             _originalBackColor = element.BackColor;
+            _originalTextAlign = element.TextAlign;
 
             // Working font clone
             _workingFont = new Font(element.TextFont, element.TextFont.Style);
@@ -43,6 +45,7 @@ namespace Foreman
             TextInput.TextChanged += TextInput_TextChanged;
 
             UpdateFontLabel();
+            UpdateAlignRadios();
             UpdateTextColorButton();
             UpdateBackColorButton();
 
@@ -87,6 +90,37 @@ namespace Foreman
                     UpdateFontLabel();
                 }
             }
+        }
+
+        // ----------------------------------------------------------------
+        // Text alignment — live update
+        // ----------------------------------------------------------------
+
+        private void UpdateAlignRadios()
+        {
+            AlignLeftRadio.CheckedChanged -= AlignRadio_CheckedChanged;
+            AlignCenterRadio.CheckedChanged -= AlignRadio_CheckedChanged;
+            AlignRightRadio.CheckedChanged -= AlignRadio_CheckedChanged;
+
+            AlignLeftRadio.Checked   = _element.TextAlign == System.Drawing.StringAlignment.Near;
+            AlignCenterRadio.Checked = _element.TextAlign == System.Drawing.StringAlignment.Center;
+            AlignRightRadio.Checked  = _element.TextAlign == System.Drawing.StringAlignment.Far;
+
+            AlignLeftRadio.CheckedChanged += AlignRadio_CheckedChanged;
+            AlignCenterRadio.CheckedChanged += AlignRadio_CheckedChanged;
+            AlignRightRadio.CheckedChanged += AlignRadio_CheckedChanged;
+        }
+
+        private void AlignRadio_CheckedChanged(object sender, EventArgs e)
+        {
+            if (AlignLeftRadio.Checked)
+                _element.TextAlign = System.Drawing.StringAlignment.Near;
+            else if (AlignCenterRadio.Checked)
+                _element.TextAlign = System.Drawing.StringAlignment.Center;
+            else if (AlignRightRadio.Checked)
+                _element.TextAlign = System.Drawing.StringAlignment.Far;
+            _element.RebuildGdiObjects();
+            _graphViewer.Invalidate();
         }
 
         private void UpdateFontLabel()
@@ -187,6 +221,7 @@ namespace Foreman
             _element.TextFont = _originalFont; // transfer ownership
             _element.TextColor = _originalTextColor;
             _element.BackColor = _originalBackColor;
+            _element.TextAlign = _originalTextAlign;
             _element.RebuildGdiObjects();
             _graphViewer.Invalidate();
 

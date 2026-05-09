@@ -27,6 +27,7 @@ namespace Foreman
         public Font TextFont { get; set; }
         public Color TextColor { get; set; }
         public Color BackColor { get; set; }
+        public StringAlignment TextAlign { get; set; }
 
         // ----------------------------------------------------------------
         // GDI resources
@@ -34,13 +35,7 @@ namespace Foreman
 
         private SolidBrush _textBrush;
         private SolidBrush _backBrush; // null when BackColor is fully transparent
-
-        private static readonly StringFormat CenteredFormat = new StringFormat
-        {
-            Alignment = StringAlignment.Center,
-            LineAlignment = StringAlignment.Center,
-            Trimming = StringTrimming.EllipsisCharacter
-        };
+        private StringFormat _textFormat;
 
         // ----------------------------------------------------------------
         // Construction
@@ -54,6 +49,7 @@ namespace Foreman
             TextFont = new Font("Segoe UI", 14f, FontStyle.Bold, GraphicsUnit.Point);
             TextColor = Color.Black;
             BackColor = Color.Transparent;
+            TextAlign = StringAlignment.Center;
 
             RebuildGdiObjects();
         }
@@ -62,13 +58,15 @@ namespace Foreman
         private TextAnnotationElement(ProductionGraphViewer graphViewer,
                                       Point location, Size size,
                                       string text, Font textFont,
-                                      Color textColor, Color backColor)
+                                      Color textColor, Color backColor,
+                                      StringAlignment textAlign)
             : base(graphViewer, location, size.Width, size.Height)
         {
             Text = text;
             TextFont = textFont;
             TextColor = textColor;
             BackColor = backColor;
+            TextAlign = textAlign;
 
             RebuildGdiObjects();
         }
@@ -82,9 +80,16 @@ namespace Foreman
         {
             _textBrush?.Dispose();
             _backBrush?.Dispose();
+            _textFormat?.Dispose();
 
             _textBrush = new SolidBrush(TextColor);
             _backBrush = (BackColor.A > 0) ? new SolidBrush(BackColor) : null;
+            _textFormat = new StringFormat
+            {
+                Alignment = TextAlign,
+                LineAlignment = StringAlignment.Center,
+                Trimming = StringTrimming.EllipsisCharacter
+            };
         }
 
         // ----------------------------------------------------------------
@@ -114,9 +119,9 @@ namespace Foreman
             if (_backBrush != null)
                 graphics.FillRectangle(_backBrush, r);
 
-            // 3. Text, centred and clipped with ellipsis
+            // 3. Text, aligned and clipped with ellipsis
             if (!string.IsNullOrEmpty(Text))
-                graphics.DrawString(Text, TextFont, _textBrush, (RectangleF)r, CenteredFormat);
+                graphics.DrawString(Text, TextFont, _textBrush, (RectangleF)r, _textFormat);
 
             // 4. Resize handles (drawn on top when selected)
             DrawResizeHandles(graphics);
@@ -152,6 +157,7 @@ namespace Foreman
             json["FontStyle"] = (int)TextFont.Style;
             json["TextColor"] = ColorToJson(TextColor);
             json["BackColor"] = ColorToJson(BackColor);
+            json["TextAlign"] = (int)TextAlign;
             return json;
         }
 
@@ -165,12 +171,13 @@ namespace Foreman
             FontStyle style = (FontStyle)(int)json["FontStyle"];
             Color textColor = ColorFromJson(json["TextColor"]);
             Color backColor = ColorFromJson(json["BackColor"]);
+            StringAlignment textAlign = json["TextAlign"] != null ? (StringAlignment)(int)json["TextAlign"] : StringAlignment.Center;
 
             Font font;
             try { font = new Font(family, size, style, GraphicsUnit.Point); }
             catch { font = new Font("Segoe UI", 14f, FontStyle.Bold, GraphicsUnit.Point); }
 
-            return new TextAnnotationElement(graphViewer, loc, sz, text, font, textColor, backColor);
+            return new TextAnnotationElement(graphViewer, loc, sz, text, font, textColor, backColor, textAlign);
         }
 
         // ----------------------------------------------------------------
@@ -181,6 +188,7 @@ namespace Foreman
         {
             _textBrush?.Dispose();
             _backBrush?.Dispose();
+            _textFormat?.Dispose();
             TextFont?.Dispose();
             base.Dispose();
         }
