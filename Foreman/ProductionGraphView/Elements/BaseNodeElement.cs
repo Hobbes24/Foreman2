@@ -378,6 +378,16 @@ namespace Foreman
 							RightClickMenu.Close();
 							graphViewer.FlipSelectedNodes();
 						})));
+
+					ToolStripMenuItem alignMenu = new ToolStripMenuItem("Align selected nodes");
+					alignMenu.DropDownItems.Add("Left edges", null, (o, e) => { RightClickMenu.Close(); graphViewer.AlignSelectedNodes(ProductionGraphViewer.NodeAlignment.Left); });
+					alignMenu.DropDownItems.Add("Right edges", null, (o, e) => { RightClickMenu.Close(); graphViewer.AlignSelectedNodes(ProductionGraphViewer.NodeAlignment.Right); });
+					alignMenu.DropDownItems.Add("Top edges", null, (o, e) => { RightClickMenu.Close(); graphViewer.AlignSelectedNodes(ProductionGraphViewer.NodeAlignment.Top); });
+					alignMenu.DropDownItems.Add("Bottom edges", null, (o, e) => { RightClickMenu.Close(); graphViewer.AlignSelectedNodes(ProductionGraphViewer.NodeAlignment.Bottom); });
+					alignMenu.DropDownItems.Add(new ToolStripSeparator());
+					alignMenu.DropDownItems.Add("Center horizontally", null, (o, e) => { RightClickMenu.Close(); graphViewer.AlignSelectedNodes(ProductionGraphViewer.NodeAlignment.CenterH); });
+					alignMenu.DropDownItems.Add("Center vertically", null, (o, e) => { RightClickMenu.Close(); graphViewer.AlignSelectedNodes(ProductionGraphViewer.NodeAlignment.CenterV); });
+					RightClickMenu.Items.Add(alignMenu);
 				}
 
 				if (graphViewer.SelectedNodes.Count > 0)

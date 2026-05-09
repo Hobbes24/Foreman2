@@ -608,6 +608,70 @@ namespace Foreman
             Invalidate();
         }
 
+        public void AddSourceNodesByShiftClick(PassthroughNodeElement clickedNode)
+        {
+            bool inMultiPassthrough = selectedNodes.Count > 1
+                && selectedNodes.Contains(clickedNode)
+                && selectedNodes.All(n => n is PassthroughNodeElement);
+
+            IEnumerable<PassthroughNodeElement> targets = inMultiPassthrough
+                ? selectedNodes.Cast<PassthroughNodeElement>()
+                : new[] { clickedNode };
+
+            List<BaseNodeElement> newNodes = new List<BaseNodeElement>();
+            foreach (PassthroughNodeElement pNode in targets)
+            {
+                ItemQualityPair item = ((ReadOnlyPassthroughNode)pNode.DisplayedNode).PassthroughItem;
+                int yDelta = pNode.DisplayedNode.NodeDirection == NodeDirection.Up ? 200 : -200;
+                Point loc = new Point(pNode.Location.X, pNode.Location.Y + yDelta);
+                if (Grid.ShowGrid) loc = Grid.AlignToGrid(loc);
+                ReadOnlyBaseNode newNode = Graph.CreateSupplierNode(item, loc);
+                Graph.CreateLink(newNode, pNode.DisplayedNode, item);
+                newNodes.Add(nodeElementDictionary[newNode]);
+            }
+            SetSelection(newNodes);
+            Graph.UpdateNodeValues();
+            Graph.UpdateNodeStates(false);
+            Invalidate();
+        }
+
+        public enum NodeAlignment { Left, Right, Top, Bottom, CenterH, CenterV }
+
+        public void AlignSelectedNodes(NodeAlignment alignment)
+        {
+            if (selectedNodes.Count < 2) return;
+            int target;
+            switch (alignment)
+            {
+                case NodeAlignment.Left:
+                    target = selectedNodes.Min(n => n.X - n.Width / 2);
+                    foreach (var n in selectedNodes.ToList()) n.SetLocation(new Point(target + n.Width / 2, n.Y));
+                    break;
+                case NodeAlignment.Right:
+                    target = selectedNodes.Max(n => n.X + n.Width / 2);
+                    foreach (var n in selectedNodes.ToList()) n.SetLocation(new Point(target - n.Width / 2, n.Y));
+                    break;
+                case NodeAlignment.Top:
+                    target = selectedNodes.Min(n => n.Y - n.Height / 2);
+                    foreach (var n in selectedNodes.ToList()) n.SetLocation(new Point(n.X, target + n.Height / 2));
+                    break;
+                case NodeAlignment.Bottom:
+                    target = selectedNodes.Max(n => n.Y + n.Height / 2);
+                    foreach (var n in selectedNodes.ToList()) n.SetLocation(new Point(n.X, target - n.Height / 2));
+                    break;
+                case NodeAlignment.CenterH:
+                    target = (int)selectedNodes.Average(n => n.X);
+                    foreach (var n in selectedNodes.ToList()) n.SetLocation(new Point(target, n.Y));
+                    break;
+                case NodeAlignment.CenterV:
+                    target = (int)selectedNodes.Average(n => n.Y);
+                    foreach (var n in selectedNodes.ToList()) n.SetLocation(new Point(n.X, target));
+                    break;
+            }
+            Graph.UpdateNodeValues();
+            Invalidate();
+        }
+
         // Ctrl + drag from any node tab to empty space:
         // Creates a passthrough node for every item on that side of the origin node,
         // spaced 80px apart horizontally starting at the drop location.
