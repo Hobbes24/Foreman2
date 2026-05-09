@@ -2323,7 +2323,7 @@ namespace Foreman
                     foreach (JObject annJson in annotationsJson)
                     {
                         AnnotationElement ann = AnnotationElement.FromJson(annJson, this);
-                        if (Math.Abs(dpiScale - 1f) > 0.01f)
+                        if (Math.Abs(dpiScale - 1f) > 0.01f && ann is TextAnnotationElement)
                         {
                             ann.Width = (int)Math.Round(ann.Width * dpiScale);
                             ann.Height = (int)Math.Round(ann.Height * dpiScale);
