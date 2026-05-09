@@ -272,16 +272,16 @@ namespace Foreman
 
 		protected abstract List<TooltipInfo> GetMyToolTips(Point graph_point, bool exclusive); //exclusive = true means no other tooltips are shown
 
-		public override void MouseDown(Point graph_point, MouseButtons button)
-		{
-			MouseDownLocation = graph_point;
-			MouseDownNodeLocation = new Point(X, Y);
+        public override void MouseDown(Point graph_point, MouseButtons button)
+        {
+            MouseDownLocation = graph_point;
+            MouseDownNodeLocation = new Point(X, Y);
+            DragStarted = false;  // ADD THIS
+            if (button == MouseButtons.Left)
+                graphViewer.MouseDownElement = this;
+        }
 
-			if (button == MouseButtons.Left)
-				graphViewer.MouseDownElement = this;
-		}
-
-		public override void MouseUp(Point graph_point, MouseButtons button, bool wasDragged)
+        public override void MouseUp(Point graph_point, MouseButtons button, bool wasDragged)
 		{
 			DragStarted = false;
 			GraphElement subelement = SubElements.OfType<ItemTabElement>().FirstOrDefault(it => it.ContainsPoint(graph_point));

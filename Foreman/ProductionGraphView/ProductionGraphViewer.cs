@@ -766,6 +766,7 @@ namespace Foreman
                 .SetDirection(node.NodeDirection);
 
             // Delete the original node first (clears all its links cleanly)
+            CleanupNodeFromGroups(node);
             Graph.DeleteNode(node);
 
             // Re-wire: suppliers → passthrough → consumers
@@ -1153,7 +1154,6 @@ namespace Foreman
 
         private void Graph_NodeDeleted(object sender, NodeEventArgs e)
         {
-            // Clean up any snapshot stored for this node
             if (e.node is ReadOnlyPassthroughNode passthroughNode)
                 ConversionSnapshots.Remove(passthroughNode);
 
@@ -1161,9 +1161,12 @@ namespace Foreman
             nodeElementDictionary.Remove(e.node);
             nodeElements.Remove(element);
             selectedNodes.Remove(element);
+            if (MouseDownElement == element)   // ADD THIS
+                MouseDownElement = null;       // ADD THIS
             element.Dispose();
             Invalidate();
         }
+
         private void Graph_NodeAdded(object sender, NodeEventArgs e)
 		{
 			BaseNodeElement element = null;
