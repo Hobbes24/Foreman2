@@ -77,6 +77,16 @@ namespace Foreman
 			}
 		}
 
+		protected override void MouseUpAction(Point graph_point, MouseButtons button)
+		{
+			if (button == MouseButtons.Left && (Control.ModifierKeys & Keys.Shift) == Keys.Shift)
+			{
+				graphViewer.AddSourceNodesByShiftClick(this);
+				return;
+			}
+			base.MouseUpAction(graph_point, button);
+		}
+
 		protected override List<TooltipInfo> GetMyToolTips(Point graph_point, bool exclusive)
 		{
 			List<TooltipInfo> tooltips = new List<TooltipInfo>();
@@ -84,7 +94,7 @@ namespace Foreman
 			if (exclusive)
 			{
 				TooltipInfo helpToolTipInfo = new TooltipInfo();
-				helpToolTipInfo.Text = string.Format("Left click on this node to edit the throughput of {0}.\nRight click for options.", ItemName);
+				helpToolTipInfo.Text = string.Format("Left click to edit throughput of {0}.\nShift+click to add a supplier node.\nRight click for options.", ItemName);
 				helpToolTipInfo.Direction = Direction.None;
 				helpToolTipInfo.ScreenLocation = new Point(10, 10);
 				tooltips.Add(helpToolTipInfo);
