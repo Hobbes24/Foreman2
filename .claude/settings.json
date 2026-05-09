@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(git -C * diff *)",
+      "PowerShell(git -C * log *)",
+      "PowerShell(git -C * worktree list)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-ChildItem *)"
+    ]
+  }
+}
