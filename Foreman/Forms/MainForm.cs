@@ -122,8 +122,9 @@ namespace Foreman
 
 			Properties.Settings.Default.Save();
 
-			NewGraph();
-			GraphViewer.Invalidate();
+            string lastFile = Properties.Settings.Default.LastOpenFile;
+            if (!string.IsNullOrEmpty(lastFile) && File.Exists(lastFile))
+                LoadGraph(lastFile); GraphViewer.Invalidate();
 			GraphViewer.Focus();
 #if DEBUG
 			//LoadGraph(Path.Combine(new string[] { Application.StartupPath, "Saved Graphs", "NodeLayoutTestpage.fjson" }));
@@ -159,12 +160,17 @@ namespace Foreman
 			NewGraph();
 		}
 
-		private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
-		{
-			e.Cancel = !TestGraphSavedStatus();
-		}
+        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            e.Cancel = !TestGraphSavedStatus();
+            if (!e.Cancel)
+            {
+                Properties.Settings.Default.LastOpenFile = savefilePath ?? "";
+                Properties.Settings.Default.Save();
+            }
+        }
 
-		private void SaveGraphAs()
+        private void SaveGraphAs()
 		{
 			SaveFileDialog dialog = new SaveFileDialog();
 			dialog.DefaultExt = ".fjson";

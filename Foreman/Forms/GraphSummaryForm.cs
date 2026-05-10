@@ -321,8 +321,8 @@ namespace Foreman
 
 			foreach (ReadOnlyBaseNode node in nodes)
 			{
-				if (node is ReadOnlyRecipeNode)
-				{
+                if (node is ReadOnlyRecipeNode || node is ReadOnlySpoilNode || node is ReadOnlyPlantNode)
+                {
 					foreach (ItemQualityPair input in node.Inputs.Where(i => fluids.Equals(i.Item is Fluid)))
 					{
 						if (!itemCounters.ContainsKey(input))
@@ -524,24 +524,24 @@ namespace Foreman
 
 			filteredList.Clear();
 
-			foreach (ListViewItem lvItem in unfilteredList)
-			{
-				if (string.IsNullOrEmpty(filterString) || ((Item)lvItem.Tag).LFriendlyName.Contains(filterString))
-				{
-					if ((includeInputs && lvItem.SubItems[1].Text != "-") ||
-						(includeInputUnlinked && lvItem.SubItems[2].Text != "-") ||
-						(includeOutputs && lvItem.SubItems[3].Text != "-") ||
-						(includeOutputsUnlinked && lvItem.SubItems[4].Text != "-") ||
-						(includeOutputsOverflow && lvItem.SubItems[5].Text != "-") ||
-						(includeProduced && lvItem.SubItems[6].Text != "-") ||
-						(includeConsumed && lvItem.SubItems[7].Text != "-"))
-					{
-						filteredList.Add(lvItem);
-					}
-				}
-			}
+            foreach (ListViewItem lvItem in unfilteredList)
+            {
+                if (string.IsNullOrEmpty(filterString) || ((ItemQualityPair)lvItem.Tag).Item.LFriendlyName.Contains(filterString))
+                {
+                    if ((includeInputs && lvItem.SubItems[1].Text != "-") ||
+                        (includeInputUnlinked && lvItem.SubItems[2].Text != "-") ||
+                        (includeOutputs && lvItem.SubItems[3].Text != "-") ||
+                        (includeOutputsUnlinked && lvItem.SubItems[4].Text != "-") ||
+                        (includeOutputsOverflow && lvItem.SubItems[5].Text != "-") ||
+                        (includeProduced && lvItem.SubItems[6].Text != "-") ||
+                        (includeConsumed && lvItem.SubItems[7].Text != "-"))
+                    {
+                        filteredList.Add(lvItem);
+                    }
+                }
+            }
 
-			owner.VirtualListSize = filteredList.Count;
+            owner.VirtualListSize = filteredList.Count;
 			owner.Invalidate();
 		}
 

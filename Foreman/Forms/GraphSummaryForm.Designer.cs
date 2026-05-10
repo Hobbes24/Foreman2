@@ -140,8 +140,8 @@ namespace Foreman
             // 
             // MainTabControl
             // 
-            this.MainTabControl.Controls.Add(this.BuildingsTabPage);
             this.MainTabControl.Controls.Add(this.ItemsTabPage);
+            this.MainTabControl.Controls.Add(this.BuildingsTabPage);
             this.MainTabControl.Controls.Add(this.KeyNodesTabPage);
             this.MainTabControl.Dock = System.Windows.Forms.DockStyle.Fill;
             this.MainTabControl.Font = new System.Drawing.Font("Microsoft Sans Serif", 12F);
