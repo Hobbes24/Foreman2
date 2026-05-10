@@ -363,6 +363,8 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="Foreman_TemporaryKey.pfx" />
+    <None Include="Mods\foremantasklist\control.lua" />
+    <None Include="Mods\foremantasklist\data.lua" />
     <None Include="Mods\foremanexport_1.0.0\info.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
@@ -402,6 +404,7 @@
     <None Include="Mods\foremansavereader_2.0.0\instrument-control.lua">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="Mods\foremantasklist\info.json" />
     <None Include="packages.config" />
     <None Include="Presets\Factorio 2.0 Space Age.dat">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
@@ -489,8 +492,9 @@
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>
-    </PostBuildEvent>
+    <PostBuildEvent>pushd "$(ProjectDir)"
+powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { $info = Get-Content 'Mods\foremantasklist\info.json' | ConvertFrom-Json; $zipName = $info.name + '_' + $info.version + '.zip'; Compress-Archive -Force 'Mods\foremantasklist' ('Mods\' + $zipName); Copy-Item ('Mods\' + $zipName) '$(TargetDir)' -Force }"
+popd</PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

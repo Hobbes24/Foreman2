@@ -1,0 +1,9 @@
+{
+  "name": "foreman-tasklist",
+  "version": "1.0.0",
+  "factorio_version": "2.0",
+  "title": "Foreman2 Task List",
+  "author": "you",
+  "description": "Paste a Foreman2 building list and turn it into a checkable in-game task list.",
+  "dependencies": ["base >= 2.0.0"]
+}
