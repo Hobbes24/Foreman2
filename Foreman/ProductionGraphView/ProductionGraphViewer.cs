@@ -2259,6 +2259,8 @@ namespace Foreman
                     SavedPresetNames = new List<string>();
 
                 // Try each candidate name in order before falling back to full search
+                Preset bestNamedCandidate = null;
+
                 foreach (string candidateName in SavedPresetNames.ToList())
                 {
                     Preset candidate = allPresets.FirstOrDefault(p => p.Name == candidateName);
@@ -2274,41 +2276,47 @@ namespace Foreman
                     {
                         if (errors != null)
                             presetErrors.Add(errors);
+                        if (bestNamedCandidate == null)
+                            bestNamedCandidate = candidate;
                         allPresets.Remove(candidate);
                     }
                 }
 
-                //havent found the preset, or it returned some errors (not good) -> have to search for best fit (and leave the decision to user if we have multiple)
+                // Named preset exists on this machine but has minor incompatibilities — auto-select it
+                if (chosenPreset == null && bestNamedCandidate != null)
+                    chosenPreset = bestNamedCandidate;
+
+                // Still nothing — full search across all remaining presets, then ask the user
                 if (chosenPreset == null)
-				{
-					foreach (Preset preset in allPresets)
-					{
-						PresetErrorPackage errors = await PresetProcessor.TestPreset(preset, modSet, itemNames, assemblerNames, qualityNames, recipeShorts, plantShorts);
-						if (errors != null)
-							presetErrors.Add(errors);
-					}
+                {
+                    foreach (Preset preset in allPresets)
+                    {
+                        PresetErrorPackage errors = await PresetProcessor.TestPreset(preset, modSet, itemNames, assemblerNames, qualityNames, recipeShorts, plantShorts);
+                        if (errors != null)
+                            presetErrors.Add(errors);
+                    }
 
-					//show the menu to select the preferred preset
-					using (PresetSelectionForm form = new PresetSelectionForm(presetErrors))
-					{
-						form.StartPosition = FormStartPosition.Manual;
-						form.Left = ParentForm.Left + 50;
-						form.Top = ParentForm.Top + 50;
+                    using (PresetSelectionForm form = new PresetSelectionForm(presetErrors))
+                    {
+                        form.StartPosition = FormStartPosition.Manual;
+                        form.Left = ParentForm.Left + 50;
+                        form.Top = ParentForm.Top + 50;
 
-						if (form.ShowDialog() != DialogResult.OK || form.ChosenPreset == null) //null check is not necessary - if we get an ok dialogresult, we know it will be set
-							return;
-						chosenPreset = form.ChosenPreset;
-						Properties.Settings.Default.CurrentPresetName = chosenPreset.Name;
-						Properties.Settings.Default.Save();
-					}
-				}
-				else if (chosenPreset.Name != Properties.Settings.Default.CurrentPresetName) //we had to switch the preset to a new one (without the user having to select a preset from a list)
-				{
-					MessageBox.Show(string.Format("Loaded graph uses a different Preset.\nPreset switched from \"{0}\" to \"{1}\"", Properties.Settings.Default.CurrentPresetName, chosenPreset.Name));
-					Properties.Settings.Default.CurrentPresetName = chosenPreset.Name;
-					Properties.Settings.Default.Save();
-				}
-			}
+                        if (form.ShowDialog() != DialogResult.OK || form.ChosenPreset == null)
+                            return;
+                        chosenPreset = form.ChosenPreset;
+                        Properties.Settings.Default.CurrentPresetName = chosenPreset.Name;
+                        Properties.Settings.Default.Save();
+                    }
+                }
+                else if (chosenPreset.Name != Properties.Settings.Default.CurrentPresetName)
+                {
+                    MessageBox.Show(string.Format("Loaded graph uses a different Preset.\nPreset switched from \"{0}\" to \"{1}\"",
+                        Properties.Settings.Default.CurrentPresetName, chosenPreset.Name));
+                    Properties.Settings.Default.CurrentPresetName = chosenPreset.Name;
+                    Properties.Settings.Default.Save();
+                }
+            }
 
 			//clear graph
 			ClearGraph();

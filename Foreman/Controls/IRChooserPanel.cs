@@ -679,11 +679,16 @@ namespace Foreman
 
         protected override void IRChooserPanel_Disposed(object sender, EventArgs e)
         {
-            Properties.Settings.Default.EnabledTechTiers = enabledSciencePacks == null || sciencePackValues == null
-                ? ""
-                : string.Join(",", sciencePackValues
-                    .Where(p => enabledSciencePacks.Contains(p.Name))
-                    .Select(p => p.Name));
+            if (enabledSciencePacks == null)
+                Properties.Settings.Default.EnabledTechTiers = "";
+            else if (sciencePackValues != null)
+                Properties.Settings.Default.EnabledTechTiers = string.Join(",",
+                    sciencePackValues
+                        .Where(p => enabledSciencePacks.Contains(p.Name))
+                        .Select(p => p.Name));
+            else
+                Properties.Settings.Default.EnabledTechTiers = string.Join(",", enabledSciencePacks);
+
             base.IRChooserPanel_Disposed(sender, e);
         }
 
@@ -766,11 +771,11 @@ namespace Foreman
         }
 
         private void TechTierButton_Click(object sender, EventArgs e)
-{
-    if (techTierDropDown == null)
-        BuildTechTierDropDown();
-    techTierDropDown.Show(TechTierButton, new Point(0, TechTierButton.Height));
-}
+		{
+			if (techTierDropDown == null)
+				BuildTechTierDropDown();
+			techTierDropDown.Show(TechTierButton, new Point(0, TechTierButton.Height));
+		}
 
         private void TechTierListBox_ItemCheck(object sender, ItemCheckEventArgs e)
         {

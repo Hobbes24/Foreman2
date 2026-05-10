@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"Z:\\\\Foreman2\\\\Foreman\\\\ProductionGraphView\\\\\" -Recurse -Filter \"*.cs\" | Select-Object FullName | head -30)",
+      "Bash(xargs grep -l \"class ShapePropertiesForm\")"
+    ]
+  }
+}
