@@ -103,7 +103,9 @@ namespace Foreman
         }
 
         private List<NodeGroup> nodeGroups = new List<NodeGroup>();
-
+        // -------Undo/Redo
+        private UndoRedoManager undoRedo = new UndoRedoManager();
+        private string _pendingDragUndoSnapshot = null; // captured at drag start; committed at drag end
         private ContextMenu rightClickMenu = new ContextMenu();
 
         internal Dictionary<ReadOnlyPassthroughNode, RecipeNodeSnapshot> ConversionSnapshots
@@ -162,6 +164,7 @@ namespace Foreman
 
 		public void ClearGraph()
 		{
+			undoRedo.Clear(); // reset undo/redo history when clearing the graph
 			DisposeLinkDrag();
 			Graph.ClearGraph();
             //at this point every node element and link element has been removed.
@@ -179,6 +182,79 @@ namespace Foreman
             currentSelectionNodes.Clear();
         }
 
+		// -------------------------------------------------------Undo/Redo core methods
+		/// <summary>
+		/// Serialises the current graph + annotations to a compact JSON string.
+		/// This is the unit stored in the undo/redo stacks.
+		/// </summary>
+		public string CaptureSnapshot()
+		{
+			JsonSerializer serializer = JsonSerializer.Create();
+			StringBuilder sb = new StringBuilder();
+			using (var writer = new JsonTextWriter(new StringWriter(sb)))
+				serializer.Serialize(writer, Graph);
+			JObject snap = new JObject();
+			snap["ProductionGraph"] = JObject.Parse(sb.ToString());
+			snap["Annotations"] = new JArray(annotationElements.Select(a => a.ToJson()));
+			return snap.ToString(Formatting.None);
+		}
+		/// <summary>
+		/// Captures the current state and pushes it onto the undo stack.
+		/// Call this BEFORE any mutating operation.
+		/// </summary>
+		public void PushUndoState()
+		{
+			undoRedo.PushUndoState(CaptureSnapshot());
+		}
+		/// <summary>
+		/// Restores graph + annotations from a snapshot without touching the
+		/// preset, enabled lists, or view position.
+		/// </summary>
+		private void RestoreSnapshot(string snapshotJson)
+		{
+			JObject snap = JObject.Parse(snapshotJson);
+			DisposeLinkDrag();
+			ToolTipRenderer?.ClearFloatingControls();
+			Graph.ClearGraph();
+			foreach (AnnotationElement ann in annotationElements.ToList())
+				ann.Dispose();
+			annotationElements.Clear();
+			selectedAnnotations.Clear();
+			selectedNodes.Clear();
+			currentSelectionNodes.Clear();
+			ConversionSnapshots.Clear();
+			nodeGroups.Clear(); // stale refs crash group-drag after undo
+			findResults.Clear();
+			findResultIndex = -1;
+			lastSearchQuery = "";
+			// Restore graph nodes + links
+			Graph.InsertNodesFromJson(DCache, (JObject)snap["ProductionGraph"], true);
+			// Restore annotations
+			if (snap["Annotations"] is JArray annotationsArr)
+			{
+				foreach (JObject annJson in annotationsArr)
+				{
+					try { AddAnnotationElement(AnnotationElement.FromJson(annJson, this)); }
+					catch (Exception ex) { Console.WriteLine("Undo restore annotation: " + ex.Message); }
+				}
+			}
+			Graph.UpdateNodeValues();
+			Graph.UpdateNodeStates(false);
+			UpdateGraphBounds();
+			Invalidate();
+		}
+		private void PerformUndo()
+		{
+			string stateToRestore = undoRedo.Undo(CaptureSnapshot());
+			if (stateToRestore != null)
+				RestoreSnapshot(stateToRestore);
+		}
+		private void PerformRedo()
+		{
+			string stateToRestore = undoRedo.Redo(CaptureSnapshot());
+			if (stateToRestore != null)
+				RestoreSnapshot(stateToRestore);
+		}
 		public BaseNodeElement GetNodeAtPoint(Point point) //returns first such node (in case of stacking)
 		{
 			//done in a 2 stage process -> first we do a rough check on the point's location (point within a node's area + 50 boundary on all sides), it goes to part 2)
@@ -295,11 +371,13 @@ namespace Foreman
 
         public void AddShapeAnnotation(Point graphPoint)
         {
+            PushUndoState(); // undo: add shape annotation
             AddAnnotationElement(new ShapeAnnotationElement(this, graphPoint));
         }
 
         public void AddTextAnnotation(Point graphPoint)
         {
+            PushUndoState(); // undo: add text annotation
             AddAnnotationElement(new TextAnnotationElement(this, graphPoint));
         }
 
@@ -396,6 +474,7 @@ namespace Foreman
 			//internal helper funtion: called upon a successfull selection of a recipe-selection screen (opened above)
             void ProcessNodeRequest(object o, RecipeRequestArgs recipeRequestArgs)
 			{
+				PushUndoState(); // undo: new node added via chooser panel
 				ReadOnlyBaseNode newNode = null;
 				switch (recipeRequestArgs.NodeType)
 				{
@@ -541,6 +620,7 @@ namespace Foreman
 
 		public void AddPassthroughNodesFromSelection(LinkType linkType, Size offset)
 		{
+			PushUndoState(); // undo: add passthrough nodes from selection drag
 			List<BaseNodeElement> newPassthroughNodes = new List<BaseNodeElement>();
 			foreach(PassthroughNodeElement passthroughNode in selectedNodes)
 			{
@@ -574,6 +654,7 @@ namespace Foreman
 
         public void AddSourceNodesForSelection(LinkType linkType, Size offset)
         {
+            PushUndoState(); // undo: add source nodes for selection drag
             List<BaseNodeElement> newNodes = new List<BaseNodeElement>();
             foreach (PassthroughNodeElement passthroughNode in selectedNodes)
             {
@@ -610,6 +691,7 @@ namespace Foreman
 
         public void AddSourceNodesByShiftClick(PassthroughNodeElement clickedNode)
         {
+            PushUndoState(); // undo: shift-click add source nodes
             bool inMultiPassthrough = selectedNodes.Count > 1
                 && selectedNodes.Contains(clickedNode)
                 && selectedNodes.All(n => n is PassthroughNodeElement);
@@ -640,6 +722,7 @@ namespace Foreman
         public void AlignSelectedNodes(NodeAlignment alignment)
         {
             if (selectedNodes.Count < 2) return;
+            PushUndoState(); // undo: align nodes
             int target;
             switch (alignment)
             {
@@ -677,6 +760,7 @@ namespace Foreman
         // spaced 80px apart horizontally starting at the drop location.
         public void AddPassthroughNodesForAllItems(LinkType linkType, BaseNodeElement originElement, Point dropLocation)
         {
+            PushUndoState(); // undo: add passthrough nodes for all items
             IEnumerable<ItemQualityPair> items = linkType == LinkType.Input
                 ? originElement.DisplayedNode.Inputs
                 : originElement.DisplayedNode.Outputs;
@@ -718,6 +802,7 @@ namespace Foreman
         // rather than connecting them directly.
         public void AddPassthroughNodeBetween(BaseNodeElement supplierElement, BaseNodeElement consumerElement, ItemQualityPair item)
         {
+            PushUndoState(); // undo: insert passthrough between nodes
             Point midpoint = new Point(
                 (supplierElement.Location.X + consumerElement.Location.X) / 2,
                 (supplierElement.Location.Y + consumerElement.Location.Y) / 2);
@@ -749,6 +834,7 @@ namespace Foreman
 				proceed = (MessageBox.Show("You are deleting " + selectedNodes.Count + " nodes. \nAre you sure?", "Confirm delete.", MessageBoxButtons.YesNo) == DialogResult.Yes);
 			if (proceed)
 			{
+				PushUndoState(); // undo: delete nodes (inside proceed block — no push if user cancels)
 				foreach (BaseNodeElement node in selectedNodes.ToList())
 				{
 					CleanupNodeFromGroups(node.DisplayedNode);
@@ -767,6 +853,7 @@ namespace Foreman
 				proceed = (MessageBox.Show("You are deleting " + total + " items. \nAre you sure?", "Confirm delete.", MessageBoxButtons.YesNo) == DialogResult.Yes);
 			if (proceed)
 			{
+				PushUndoState(); // undo: delete selected (inside proceed block — no push if user cancels)
 				foreach (BaseNodeElement node in selectedNodes.ToList())
 				{
 					CleanupNodeFromGroups(node.DisplayedNode);
@@ -787,6 +874,7 @@ namespace Foreman
 				proceed = (MessageBox.Show("You are deleting " + selectedNodes.Count + " nodes. \nAre you sure?", "Confirm delete.", MessageBoxButtons.YesNo) == DialogResult.Yes);
 			if (proceed)
 			{
+				PushUndoState(); // undo: delete selection (inside proceed block — no push if user cancels)
 				foreach (BaseNodeElement node in selectedNodes.ToList())
 				{
 					CleanupNodeFromGroups(node.DisplayedNode);
@@ -802,6 +890,7 @@ namespace Foreman
 
 		public void FlipSelectedNodes()
 		{
+			PushUndoState(); // undo: flip node directions
 			foreach (BaseNodeElement node in selectedNodes.ToList())
 				Graph.RequestNodeController(node.DisplayedNode).SetDirection(node.DisplayedNode.NodeDirection == NodeDirection.Up ? NodeDirection.Down : NodeDirection.Up);
 			Invalidate();
@@ -809,6 +898,7 @@ namespace Foreman
 
         public void ConvertNodeToPassthrough(ReadOnlyBaseNode node, ItemQualityPair item)
         {
+            PushUndoState(); // undo: convert node to passthrough
             // Capture snapshot before anything is deleted
             RecipeNodeSnapshot snapshot = null;
             if (node is ReadOnlyRecipeNode recipeNode)
@@ -852,7 +942,7 @@ namespace Foreman
         {
             if (!ConversionSnapshots.TryGetValue(passthrough, out RecipeNodeSnapshot snapshot))
                 return;
-
+            PushUndoState(); // undo: restore recipe node from passthrough
             ReadOnlyRecipeNode restored = Graph.CreateRecipeNode(snapshot.BaseRecipe, snapshot.Location);
             RecipeNodeController controller = (RecipeNodeController)Graph.RequestNodeController(restored);
 
@@ -902,6 +992,7 @@ namespace Foreman
 
 		public void MergeSelectedPassthroughNodes(ReadOnlyPassthroughNode survivor)
 		{
+			PushUndoState(); // undo: merge passthrough nodes
 			var nodesToMerge = selectedNodes
 				.OfType<PassthroughNodeElement>()
 				.Where(n => n.DisplayedNode != survivor && ((ReadOnlyPassthroughNode)n.DisplayedNode).PassthroughItem == survivor.PassthroughItem)
@@ -931,6 +1022,7 @@ namespace Foreman
 				return;
 			}
 
+			PushUndoState(); // undo: node property edits
 			SubwindowOpen = true;
 			Control editPanel = new EditFlowPanel(bNodeElement.DisplayedNode, this);
 
@@ -957,6 +1049,7 @@ namespace Foreman
 
 		public void EditRecipeNode(RecipeNodeElement rNodeElement)
 		{
+			PushUndoState(); // undo: recipe node property edits
 			SubwindowOpen = true;
 			ReadOnlyRecipeNode rNode = (ReadOnlyRecipeNode)rNodeElement.DisplayedNode;
 			Control editPanel = new EditRecipePanel(rNode, this);
@@ -1273,6 +1366,7 @@ namespace Foreman
             // Double-click on an annotation opens its properties dialog
             if (e.Clicks == 2 && e.Button == MouseButtons.Left && clickedElement is AnnotationElement doubleClickedAnnotation)
             {
+                PushUndoState(); // undo: annotation property changes
                 doubleClickedAnnotation.ShowPropertiesDialog();
                 return;
             }
@@ -1456,7 +1550,16 @@ namespace Foreman
                     }
                     else if (!viewBeingDragged)
                         element?.MouseUp(graph_location, e.Button, (currentDragOperation == DragOperation.Item));
-
+                    // Commit any pending drag-move undo snapshot.
+                    // Guard: if the drag became a link drag (ItemTab), the link-creation
+                    // method already pushed its own undo state — avoid double-push.
+                    if (currentDragOperation == DragOperation.Item
+                        && _pendingDragUndoSnapshot != null
+                        && !(MouseDownElement is DraggedLinkElement))
+                    {
+                        undoRedo.PushUndoState(_pendingDragUndoSnapshot);
+                    }
+                    _pendingDragUndoSnapshot = null;
                     currentDragOperation = DragOperation.None;
                     MouseDownElement = null;
                     break;
@@ -1485,7 +1588,13 @@ namespace Foreman
 							viewBeingDragged = true;
 
 						if (MouseDownElement != null) //there is an item under the mouse during drag
+						{
 							currentDragOperation = DragOperation.Item;
+							// Capture pre-drag state for node/annotation moves.
+							// Link drags (DraggedLinkElement) push their own undo states.
+							if (!(MouseDownElement is DraggedLinkElement))
+								_pendingDragUndoSnapshot = CaptureSnapshot();
+						}
 						else if ((downButtons & MouseButtons.Left) != 0)
 							currentDragOperation = DragOperation.Selection;
 					}
@@ -1743,6 +1852,7 @@ namespace Foreman
 
                     if (e.KeyCode == Keys.X) //cut
                     {
+                        PushUndoState(); // undo: cut
                         foreach (BaseNodeElement node in selectedNodes.ToList())
                         {
                             CleanupNodeFromGroups(node.DisplayedNode);
@@ -1832,6 +1942,17 @@ namespace Foreman
                 return true;
             }
 
+            // Ctrl+Z = Undo, Ctrl+R = Redo (intercepted here so they never reach child controls)
+            if ((keyData & Keys.KeyCode) == Keys.Z && (keyData & Keys.Control) == Keys.Control && !SubwindowOpen && currentDragOperation == DragOperation.None)
+            {
+                PerformUndo();
+                return true;
+            }
+            if ((keyData & Keys.KeyCode) == Keys.R && (keyData & Keys.Control) == Keys.Control && !SubwindowOpen && currentDragOperation == DragOperation.None)
+            {
+                PerformRedo();
+                return true;
+            }
             // Don't intercept any keys while the find panel is open and focused
             if (findPanel.Visible && findTextBox.Focused)
                 return base.ProcessCmdKey(ref msg, keyData);
@@ -2077,6 +2198,7 @@ namespace Foreman
 
         public Size ImportNodesFromJson(JObject json, Point origin, bool loadSolverValues)
         {
+            PushUndoState(); // undo: paste / import nodes
 			ProductionGraph.NewNodeCollection newNodeCollection = newNodeCollection = Graph.InsertNodesFromJson(DCache, json, loadSolverValues); //NOTE: missing items & recipes may be added here!
 			if (newNodeCollection == null || newNodeCollection.newNodes.Count == 0)
                 return Size.Empty;

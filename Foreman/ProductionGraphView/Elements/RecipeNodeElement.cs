@@ -142,6 +142,7 @@ namespace Foreman
 					new EventHandler((o, e) =>
 					{
 						RightClickMenu.Close();
+						graphViewer.PushUndoState(); // undo: apply default assembler
 						foreach (ReadOnlyRecipeNode rNode in rNodes)
 							((RecipeNodeController)graphViewer.Graph.RequestNodeController(rNode)).AutoSetAssembler();
 					})));
@@ -149,6 +150,7 @@ namespace Foreman
 					new EventHandler((o, e) =>
 					{
 						RightClickMenu.Close();
+						graphViewer.PushUndoState(); // undo: apply default modules
 						foreach (ReadOnlyRecipeNode rNode in rNodes)
 							((RecipeNodeController)graphViewer.Graph.RequestNodeController(rNode)).AutoSetAssemblerModules();
 					})));
@@ -157,6 +159,7 @@ namespace Foreman
 						new EventHandler((o, e) =>
 						{
 							RightClickMenu.Close();
+							graphViewer.PushUndoState(); // undo: remove modules
 							foreach (ReadOnlyRecipeNode rNode in rNodes)
 								((RecipeNodeController)graphViewer.Graph.RequestNodeController(rNode)).RemoveAssemblerModules();
 						})));
@@ -165,6 +168,7 @@ namespace Foreman
 						new EventHandler((o, e) =>
 						{
 							RightClickMenu.Close();
+							graphViewer.PushUndoState(); // undo: remove beacons
 							foreach (ReadOnlyRecipeNode rNode in rNodes)
 								((RecipeNodeController)graphViewer.Graph.RequestNodeController(rNode)).ClearBeacon();
 						})));
@@ -204,6 +208,7 @@ namespace Foreman
 							new EventHandler((o, e) =>
 							{
 								RightClickMenu.Close();
+								graphViewer.PushUndoState(); // undo: paste node options
 								if (canPasteAssembler) OptionsCopyAssemblerDefault = assemblerCheck.Checked;
 								if (canPasteExtraProductivityMiners) OptionsCopyExtraProductivityMinersDefault = extraProductivityMinersCheck.Checked;
 								if (canPasteExtraProductivityNonMiners) OptionsCopyExtraProductivityNonMinersDefault = extraProductivityNonMinersCheck.Checked;

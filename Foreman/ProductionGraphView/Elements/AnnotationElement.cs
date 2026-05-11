@@ -162,7 +162,10 @@ namespace Foreman
                         if (inSelection)
                             graphViewer.TryDeleteSelection();
                         else
+                        {
+                            graphViewer.PushUndoState(); // undo: delete single annotation
                             graphViewer.RemoveAnnotationElement(this);
+                        }
                     })));
 
                 RightClickMenu.Items.Add(new ToolStripSeparator());

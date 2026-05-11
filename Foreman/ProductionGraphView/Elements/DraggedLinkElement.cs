@@ -117,6 +117,7 @@ namespace Foreman
                 }
                 else
                 {
+                    graphViewer.PushUndoState(); // undo: direct link creation
                     graphViewer.Graph.CreateLink(SupplierElement.DisplayedNode, ConsumerElement.DisplayedNode, this.Item);
                     graphViewer.Graph.UpdateNodeValues();
                     graphViewer.UpdateGraphBounds();
@@ -152,6 +153,7 @@ namespace Foreman
                         graphViewer.AddPassthroughNodesForAllItems(LinkType.Input, ConsumerElement, EndpointLocation);
                     else if (createDirectNode)
                     {
+                        graphViewer.PushUndoState(); // undo: shift-drag direct supplier creation
                         Point loc = graphViewer.Grid.ShowGrid ? graphViewer.Grid.AlignToGrid(EndpointLocation) : EndpointLocation;
                         ReadOnlyBaseNode newNode = graphViewer.Graph.CreateSupplierNode(Item, loc);
                         graphViewer.Graph.CreateLink(newNode, ConsumerElement.DisplayedNode, Item);
@@ -169,6 +171,7 @@ namespace Foreman
                         graphViewer.AddPassthroughNodesForAllItems(LinkType.Output, SupplierElement, EndpointLocation);
                     else if (createDirectNode)
                     {
+                        graphViewer.PushUndoState(); // undo: shift-drag direct consumer creation
                         Point loc = graphViewer.Grid.ShowGrid ? graphViewer.Grid.AlignToGrid(EndpointLocation) : EndpointLocation;
                         ReadOnlyBaseNode newNode = graphViewer.Graph.CreateConsumerNode(Item, loc);
                         graphViewer.Graph.CreateLink(SupplierElement.DisplayedNode, newNode, Item);

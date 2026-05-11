@@ -137,11 +137,11 @@ namespace Foreman
 			PresetListBox.Items.AddRange(Options.Presets.ToArray());
 			PresetListBox.Items.RemoveAt(0); //0 is the currently active preset.
 
-			//settings
+            //settings
 
-			QualityStepsInput.Value = Options.QualitySteps;
+            QualityStepsInput.Value = Math.Max(QualityStepsInput.Minimum, Math.Min(QualityStepsInput.Maximum, (decimal)Options.QualitySteps));
 
-			DynamicLWCheckBox.Checked = Options.DynamicLinkWidth;
+            DynamicLWCheckBox.Checked = Options.DynamicLinkWidth;
 			NodeCountForSimpleViewInput.Value = Math.Min(NodeCountForSimpleViewInput.Maximum, Options.NodeCountForSimpleView);
 
 			IconsSizeInput.Value = Options.IconsOnlyIconSize;
@@ -200,9 +200,17 @@ namespace Foreman
 			PullConsumerNodesPowerInput.Value = Math.Min(PullConsumerNodesPowerInput.Maximum, (decimal)Options.Solver_PullConsumerNodesPower);
 
             //lists
-            LoadUnfilteredLists();
-            UpdateModList();
+            if (Options.DCache != null)
+                LoadUnfilteredLists();
+			UpdateModList();
             InitializeFilePresetsSection();
+
+            if (Options.DCache == null)
+            {
+                LoadEnabledFromSaveButton.Enabled = false;
+                SetEnabledFromSciencePacksButton.Enabled = false;
+                EnableAllButton.Enabled = false;
+            }
         }
         private void UpdateModList()
 		{
@@ -743,7 +751,7 @@ namespace Foreman
 
 			filteredQualityList.Clear();
 			filteredQualityList.AddRange(unfilteredQualityList);
-			QualityListView.VirtualListSize += filteredQualityList.Count;
+			QualityListView.VirtualListSize = filteredQualityList.Count;
 
 
 			foreach (ListViewItem item in unfilteredAssemblerList)

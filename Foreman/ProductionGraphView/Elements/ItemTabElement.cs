@@ -167,6 +167,7 @@ namespace Foreman
 					new EventHandler((o, e) =>
 					{
 						RightClickMenu.Close();
+						graphViewer.PushUndoState(); // undo: delete connections from item tab
 						foreach (ReadOnlyNodeLink link in connections)
 							graphViewer.Graph.DeleteLink(link);
 						graphViewer.Graph.UpdateNodeValues();

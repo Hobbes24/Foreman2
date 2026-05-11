@@ -126,6 +126,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="UndoRedoManager.cs" />
     <Compile Include="BenchmarkTimer.cs" />
     <Compile Include="Controls\ControlExtensions.cs" />
     <Compile Include="Controls\DataObjectCheckedListBox.cs">
@@ -492,9 +493,7 @@
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>pushd "$(ProjectDir)"
-powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { $info = Get-Content 'Mods\foremantasklist\info.json' | ConvertFrom-Json; $zipName = $info.name + '_' + $info.version + '.zip'; Compress-Archive -Force 'Mods\foremantasklist' ('Mods\' + $zipName); Copy-Item ('Mods\' + $zipName) '$(TargetDir)' -Force }"
-popd</PostBuildEvent>
+    <PostBuildEvent>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { $projDir = '$(ProjectDir)'; $targetDir = '$(TargetDir)Mods\'; $info = Get-Content ($projDir + 'Mods\foremantasklist\info.json') | ConvertFrom-Json; $zipName = $info.name + '_' + $info.version + '.zip'; $zipPath = $projDir + 'Mods\' + $zipName; Compress-Archive -Force ($projDir + 'Mods\foremantasklist') $zipPath; Copy-Item $zipPath $targetDir -Force }"</PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

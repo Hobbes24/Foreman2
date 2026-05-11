@@ -417,7 +417,7 @@ namespace Foreman
 							new EventHandler((o, e) =>
 							{
 								RightClickMenu.Close();
-
+								graphViewer.PushUndoState(); // undo: auto-connect inputs
 								Dictionary<ReadOnlyBaseNode, List<ItemQualityPair>> openInputNodes = new Dictionary<ReadOnlyBaseNode, List<ItemQualityPair>>();
 								foreach(BaseNodeElement node in graphViewer.SelectedNodes.Where(n => n.InputTabs.Any(t => !t.Links.Any())))
 									openInputNodes.Add(node.DisplayedNode, node.InputTabs.Where(t => !t.Links.Any()).Select(t => t.Item).ToList());
@@ -455,7 +455,7 @@ namespace Foreman
 							new EventHandler((o, e) =>
 							{
 								RightClickMenu.Close();
-
+								graphViewer.PushUndoState(); // undo: auto-connect outputs
 								Dictionary<ReadOnlyBaseNode, List<ItemQualityPair>> openOutputNodes = new Dictionary<ReadOnlyBaseNode, List<ItemQualityPair>>();
 								foreach (BaseNodeElement node in graphViewer.SelectedNodes.Where(n => n.OutputTabs.Any(t => !t.Links.Any())))
 									openOutputNodes.Add(node.DisplayedNode, node.OutputTabs.Where(t => !t.Links.Any()).Select(t => t.Item).ToList());
@@ -520,6 +520,7 @@ namespace Foreman
 								new EventHandler((o, e) =>
 								{
 									RightClickMenu.Close();
+									graphViewer.PushUndoState(); // undo: paste key node status
 									if(graphViewer.SelectedNodes.Count == 0)
 									{
 										BaseNodeController controller = graphViewer.Graph.RequestNodeController(this.DisplayedNode);

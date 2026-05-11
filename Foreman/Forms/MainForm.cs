@@ -443,12 +443,14 @@ namespace Foreman
 			options.Solver_PullConsumerNodes = GraphViewer.Graph.PullOutputNodes;
 			options.Solver_PullConsumerNodesPower = GraphViewer.Graph.PullOutputNodesPower;
 
-            options.EnabledObjects.UnionWith(GraphViewer.DCache.Recipes.Values.Where(r => r.Enabled));
-            options.EnabledObjects.UnionWith(GraphViewer.DCache.Assemblers.Values.Where(r => r.Enabled));
-            options.EnabledObjects.UnionWith(GraphViewer.DCache.Beacons.Values.Where(r => r.Enabled));
-            options.EnabledObjects.UnionWith(GraphViewer.DCache.Modules.Values.Where(r => r.Enabled));
-            options.EnabledObjects.UnionWith(GraphViewer.DCache.Qualities.Values.Where(r => r.Enabled));
-
+            if (GraphViewer.DCache != null)
+            {
+                options.EnabledObjects.UnionWith(GraphViewer.DCache.Recipes.Values.Where(r => r.Enabled));
+                options.EnabledObjects.UnionWith(GraphViewer.DCache.Assemblers.Values.Where(r => r.Enabled));
+                options.EnabledObjects.UnionWith(GraphViewer.DCache.Beacons.Values.Where(r => r.Enabled));
+                options.EnabledObjects.UnionWith(GraphViewer.DCache.Modules.Values.Where(r => r.Enabled));
+                options.EnabledObjects.UnionWith(GraphViewer.DCache.Qualities.Values.Where(r => r.Enabled));
+            }
             options.FilePresetNames = GraphViewer.SavedPresetNames.Count > 0
                 ? new List<string>(GraphViewer.SavedPresetNames)
                 : null;
@@ -465,28 +467,40 @@ namespace Foreman
 						Properties.Settings.Default.CurrentPresetName = form.Options.SelectedPreset.Name;
 						Properties.Settings.Default.UseRecipeBWfilters = true;  //Deprecated, this should work now.
 
-                        List<Preset> validPresets = GetValidPresetsList();
-                        await GraphViewer.LoadFromJson(JObject.Parse(JsonConvert.SerializeObject(GraphViewer)), true, false);
-                        lastSavedGraphJson = GetCurrentGraphJson(); // re-snapshot after preset reload
-                        this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+                        if (GraphViewer.DCache == null)
+                        {
+                            // No graph loaded yet — just load the preset directly, nothing to serialize/restore
+                            GraphViewer.LoadPreset(form.Options.SelectedPreset);
+                            this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+                        }
+                        else
+                        {
+                            // Existing graph — serialize it and reload under the new preset
+                            List<Preset> validPresets = GetValidPresetsList();
+                            await GraphViewer.LoadFromJson(JObject.Parse(JsonConvert.SerializeObject(GraphViewer)), true, false);
+                            lastSavedGraphJson = GetCurrentGraphJson();
+                            this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+                        }
                     }
-					else //not loading a new preset -> update the enabled statuses
-					{
-						foreach (Recipe recipe in GraphViewer.DCache.Recipes.Values)
-							recipe.Enabled = options.EnabledObjects.Contains(recipe);
-						foreach (Assembler assembler in GraphViewer.DCache.Assemblers.Values)
-							assembler.Enabled = options.EnabledObjects.Contains(assembler);
-						foreach (Beacon beacon in GraphViewer.DCache.Beacons.Values)
-							beacon.Enabled = options.EnabledObjects.Contains(beacon);
-						foreach (Module module in GraphViewer.DCache.Modules.Values)
-							module.Enabled = options.EnabledObjects.Contains(module);
-						foreach (Quality quality in GraphViewer.DCache.Qualities.Values)
-							quality.Enabled = options.EnabledObjects.Contains(quality);
-						GraphViewer.DCache.DefaultQuality.Enabled = true;
-						GraphViewer.DCache.RocketAssembler.Enabled = GraphViewer.DCache.Assemblers["rocket-silo"]?.Enabled?? false;
-					}
-
-					GraphViewer.Graph.MaxQualitySteps = options.QualitySteps;
+                    else //not loading a new preset -> update the enabled statuses
+                    {
+                        if (GraphViewer.DCache != null)
+                        {
+                            foreach (Recipe recipe in GraphViewer.DCache.Recipes.Values)
+                                recipe.Enabled = options.EnabledObjects.Contains(recipe);
+                            foreach (Assembler assembler in GraphViewer.DCache.Assemblers.Values)
+                                assembler.Enabled = options.EnabledObjects.Contains(assembler);
+                            foreach (Beacon beacon in GraphViewer.DCache.Beacons.Values)
+                                beacon.Enabled = options.EnabledObjects.Contains(beacon);
+                            foreach (Module module in GraphViewer.DCache.Modules.Values)
+                                module.Enabled = options.EnabledObjects.Contains(module);
+                            foreach (Quality quality in GraphViewer.DCache.Qualities.Values)
+                                quality.Enabled = options.EnabledObjects.Contains(quality);
+                            GraphViewer.DCache.DefaultQuality.Enabled = true;
+                            GraphViewer.DCache.RocketAssembler.Enabled = GraphViewer.DCache.Assemblers["rocket-silo"]?.Enabled ?? false;
+                        }
+                    }
+                    GraphViewer.Graph.MaxQualitySteps = options.QualitySteps;
 
 					GraphViewer.LevelOfDetail = options.LevelOfDetail;
 					Properties.Settings.Default.LevelOfDetail = (int)options.LevelOfDetail;
