@@ -123,9 +123,26 @@ namespace Foreman
 			Properties.Settings.Default.Save();
 
             string lastFile = Properties.Settings.Default.LastOpenFile;
-            if (!string.IsNullOrEmpty(lastFile) && File.Exists(lastFile))
-                LoadGraph(lastFile); GraphViewer.Invalidate();
-			GraphViewer.Focus();
+            bool loadingFromFile = !string.IsNullOrEmpty(lastFile) && File.Exists(lastFile);
+
+            if (loadingFromFile)
+                LoadGraph(lastFile);
+
+            // If no save file was loaded, ensure a preset is still loaded so DCache is never null
+            if (!loadingFromFile)
+            {
+                List<Preset> validPresets = GetValidPresetsList();
+                if (validPresets != null && validPresets.Count > 0)
+                {
+                    Properties.Settings.Default.CurrentPresetName = validPresets[0].Name;
+                    GraphViewer.LoadPreset(validPresets[0]);
+                    this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+                    Properties.Settings.Default.Save();
+                }
+            }
+
+            GraphViewer.Invalidate();
+            GraphViewer.Focus();
 #if DEBUG
 			//LoadGraph(Path.Combine(new string[] { Application.StartupPath, "Saved Graphs", "NodeLayoutTestpage.fjson" }));
 #endif
