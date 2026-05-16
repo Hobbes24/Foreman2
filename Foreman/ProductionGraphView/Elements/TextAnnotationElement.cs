@@ -109,13 +109,12 @@ namespace Foreman
             const int padding = 16;
             const int minWidth = 60;
             const int minHeight = 30;
-            const int maxWidth = 600;
 
             using (var bmp = new Bitmap(1, 1))
             using (var g = Graphics.FromImage(bmp))
             {
                 SizeF natural = g.MeasureString(Text, TextFont);
-                Width  = Math.Max(minWidth,  Math.Min(maxWidth,  (int)Math.Ceiling(natural.Width)  + padding));
+                Width  = Math.Max(minWidth,  (int)Math.Ceiling(natural.Width)  + padding);
                 Height = Math.Max(minHeight, (int)Math.Ceiling(natural.Height) + padding);
             }
         }
@@ -137,7 +136,7 @@ namespace Foreman
             {
                 Alignment = TextAlign,
                 LineAlignment = StringAlignment.Center,
-                Trimming = StringTrimming.EllipsisCharacter,
+                Trimming = StringTrimming.None,
                 FormatFlags = StringFormatFlags.NoWrap
             };
         }
