@@ -163,6 +163,7 @@ namespace Foreman
 
         private void OKButton_Click(object sender, EventArgs e)
         {
+            ShapeAnnotationElement.SaveDefaults(_element);
             DialogResult = DialogResult.OK;
             Close();
         }

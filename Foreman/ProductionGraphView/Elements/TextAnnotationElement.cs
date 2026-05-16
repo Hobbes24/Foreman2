@@ -38,17 +38,18 @@ namespace Foreman
         private StringFormat _textFormat;
 
         // ----------------------------------------------------------------
-        // Last-used format defaults (session-persistent; updated on every OK)
+        // Last-used format defaults (cross-session persistent via Properties.Settings)
         // ----------------------------------------------------------------
-        private static string _defaultFontFamily = "Segoe UI";
-        private static float _defaultFontSize = 14f;
-        private static FontStyle _defaultFontStyle = FontStyle.Bold;
-        private static Color _defaultTextColor = Color.Black;
-        private static Color _defaultBackColor = Color.Transparent;
-        private static StringAlignment _defaultTextAlign = StringAlignment.Center;
+        private static string _defaultFontFamily = Properties.Settings.Default.AnnotTextFontFamily;
+        private static float _defaultFontSize = float.TryParse(Properties.Settings.Default.AnnotTextFontSize, out float _fs) ? _fs : 14f;
+        private static FontStyle _defaultFontStyle = (FontStyle)Properties.Settings.Default.AnnotTextFontStyle;
+        private static Color _defaultTextColor = Color.FromArgb(Properties.Settings.Default.AnnotTextColorARGB);
+        private static Color _defaultBackColor = Color.FromArgb(Properties.Settings.Default.AnnotTextBackColorARGB);
+        private static StringAlignment _defaultTextAlign = (StringAlignment)Properties.Settings.Default.AnnotTextAlign;
 
         /// <summary>
-        /// Saves the current element's appearance as the new defaults for future Add Text operations.
+        /// Saves the current element's appearance as the new defaults for future Add Text operations,
+        /// persisting them to user settings so they survive restarts.
         /// Called by TextPropertiesForm when the user clicks OK.
         /// </summary>
         public static void SaveDefaults(TextAnnotationElement element)
@@ -59,6 +60,15 @@ namespace Foreman
             _defaultTextColor  = element.TextColor;
             _defaultBackColor  = element.BackColor;
             _defaultTextAlign  = element.TextAlign;
+
+            var s = Properties.Settings.Default;
+            s.AnnotTextFontFamily    = _defaultFontFamily;
+            s.AnnotTextFontSize      = _defaultFontSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            s.AnnotTextFontStyle     = (int)_defaultFontStyle;
+            s.AnnotTextColorARGB     = _defaultTextColor.ToArgb();
+            s.AnnotTextBackColorARGB = _defaultBackColor.ToArgb();
+            s.AnnotTextAlign         = (int)_defaultTextAlign;
+            s.Save();
         }
 
         // ----------------------------------------------------------------
