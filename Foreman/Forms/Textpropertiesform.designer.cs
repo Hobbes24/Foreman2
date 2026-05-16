@@ -36,19 +36,23 @@
             this.TextLabel.Location = new System.Drawing.Point(12, 15);
             this.TextLabel.Text = "Label Text:";
 
-            // TextInput
+            // TextInput — multiline, auto-grows via ResizeTextInput()
             this.TextInput.Location = new System.Drawing.Point(120, 12);
-            this.TextInput.Size = new System.Drawing.Size(200, 20);
+            this.TextInput.Size = new System.Drawing.Size(200, 46);
+            this.TextInput.Multiline = true;
+            this.TextInput.WordWrap = true;
+            this.TextInput.AcceptsReturn = true;
+            this.TextInput.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
             this.TextInput.TabIndex = 0;
             this.TextInput.TextChanged += new System.EventHandler(this.TextInput_TextChanged);
 
-            // FontLabel
+            // FontLabel  (all Y positions below shifted +26 to match new TextInput baseline)
             this.FontLabel.AutoSize = true;
-            this.FontLabel.Location = new System.Drawing.Point(12, 48);
+            this.FontLabel.Location = new System.Drawing.Point(12, 74);
             this.FontLabel.Text = "Font:";
 
             // FontButton
-            this.FontButton.Location = new System.Drawing.Point(120, 44);
+            this.FontButton.Location = new System.Drawing.Point(120, 70);
             this.FontButton.Size = new System.Drawing.Size(100, 26);
             this.FontButton.TabIndex = 1;
             this.FontButton.Text = "Choose Font…";
@@ -57,19 +61,19 @@
 
             // FontPreviewLabel
             this.FontPreviewLabel.AutoSize = true;
-            this.FontPreviewLabel.Location = new System.Drawing.Point(12, 78);
+            this.FontPreviewLabel.Location = new System.Drawing.Point(12, 104);
             this.FontPreviewLabel.Size = new System.Drawing.Size(310, 13);
             this.FontPreviewLabel.Name = "FontPreviewLabel";
             this.FontPreviewLabel.Text = "";
 
             // AlignLabel
             this.AlignLabel.AutoSize = true;
-            this.AlignLabel.Location = new System.Drawing.Point(12, 104);
+            this.AlignLabel.Location = new System.Drawing.Point(12, 130);
             this.AlignLabel.Text = "Alignment:";
 
             // AlignLeftRadio
             this.AlignLeftRadio.AutoSize = true;
-            this.AlignLeftRadio.Location = new System.Drawing.Point(120, 101);
+            this.AlignLeftRadio.Location = new System.Drawing.Point(120, 127);
             this.AlignLeftRadio.Size = new System.Drawing.Size(46, 17);
             this.AlignLeftRadio.TabIndex = 2;
             this.AlignLeftRadio.Text = "Left";
@@ -78,7 +82,7 @@
 
             // AlignCenterRadio
             this.AlignCenterRadio.AutoSize = true;
-            this.AlignCenterRadio.Location = new System.Drawing.Point(178, 101);
+            this.AlignCenterRadio.Location = new System.Drawing.Point(178, 127);
             this.AlignCenterRadio.Size = new System.Drawing.Size(56, 17);
             this.AlignCenterRadio.TabIndex = 3;
             this.AlignCenterRadio.Text = "Center";
@@ -87,7 +91,7 @@
 
             // AlignRightRadio
             this.AlignRightRadio.AutoSize = true;
-            this.AlignRightRadio.Location = new System.Drawing.Point(246, 101);
+            this.AlignRightRadio.Location = new System.Drawing.Point(246, 127);
             this.AlignRightRadio.Size = new System.Drawing.Size(51, 17);
             this.AlignRightRadio.TabIndex = 4;
             this.AlignRightRadio.Text = "Right";
@@ -96,11 +100,11 @@
 
             // TextColorLabel
             this.TextColorLabel.AutoSize = true;
-            this.TextColorLabel.Location = new System.Drawing.Point(12, 132);
+            this.TextColorLabel.Location = new System.Drawing.Point(12, 158);
             this.TextColorLabel.Text = "Text Colour:";
 
             // TextColorButton
-            this.TextColorButton.Location = new System.Drawing.Point(120, 129);
+            this.TextColorButton.Location = new System.Drawing.Point(120, 155);
             this.TextColorButton.Size = new System.Drawing.Size(130, 26);
             this.TextColorButton.TabIndex = 5;
             this.TextColorButton.Text = "Choose…";
@@ -109,11 +113,11 @@
 
             // BackColorLabel
             this.BackColorLabel.AutoSize = true;
-            this.BackColorLabel.Location = new System.Drawing.Point(12, 168);
+            this.BackColorLabel.Location = new System.Drawing.Point(12, 194);
             this.BackColorLabel.Text = "Background:";
 
             // BackColorButton
-            this.BackColorButton.Location = new System.Drawing.Point(120, 165);
+            this.BackColorButton.Location = new System.Drawing.Point(120, 191);
             this.BackColorButton.Size = new System.Drawing.Size(130, 26);
             this.BackColorButton.TabIndex = 6;
             this.BackColorButton.Text = "Choose…";
@@ -122,14 +126,14 @@
 
             // TransparentCheckBox
             this.TransparentCheckBox.AutoSize = true;
-            this.TransparentCheckBox.Location = new System.Drawing.Point(120, 198);
+            this.TransparentCheckBox.Location = new System.Drawing.Point(120, 224);
             this.TransparentCheckBox.TabIndex = 7;
             this.TransparentCheckBox.Text = "Transparent background";
             this.TransparentCheckBox.UseVisualStyleBackColor = true;
             this.TransparentCheckBox.CheckedChanged += new System.EventHandler(this.TransparentCheckBox_CheckedChanged);
 
             // OKButton
-            this.OKButton.Location = new System.Drawing.Point(130, 228);
+            this.OKButton.Location = new System.Drawing.Point(130, 254);
             this.OKButton.Size = new System.Drawing.Size(75, 26);
             this.OKButton.TabIndex = 8;
             this.OKButton.Text = "OK";
@@ -137,7 +141,7 @@
             this.OKButton.Click += new System.EventHandler(this.OKButton_Click);
 
             // CancelBtn
-            this.CancelBtn.Location = new System.Drawing.Point(215, 228);
+            this.CancelBtn.Location = new System.Drawing.Point(215, 254);
             this.CancelBtn.Size = new System.Drawing.Size(75, 26);
             this.CancelBtn.TabIndex = 9;
             this.CancelBtn.Text = "Cancel";
@@ -149,7 +153,7 @@
             this.CancelButton = this.CancelBtn;
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(340, 266);
+            this.ClientSize = new System.Drawing.Size(340, 292);
             this.Controls.Add(this.TextLabel);
             this.Controls.Add(this.TextInput);
             this.Controls.Add(this.FontLabel);
