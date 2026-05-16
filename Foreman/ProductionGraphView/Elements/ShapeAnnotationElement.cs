@@ -41,6 +41,34 @@ namespace Foreman
         private Pen _borderPen;
 
         // ----------------------------------------------------------------
+        // Last-used appearance defaults (cross-session persistent via Properties.Settings)
+        // ----------------------------------------------------------------
+        private static ShapeType _defaultShapeType = (ShapeType)Properties.Settings.Default.AnnotShapeType;
+        private static Color _defaultFillColor = Color.FromArgb(Properties.Settings.Default.AnnotShapeFillColorARGB);
+        private static Color _defaultBorderColor = Color.FromArgb(Properties.Settings.Default.AnnotShapeBorderColorARGB);
+        private static int _defaultBorderWidth = Properties.Settings.Default.AnnotShapeBorderWidth;
+
+        /// <summary>
+        /// Saves the current element's appearance as the new defaults for future Add Shape operations,
+        /// persisting them to user settings so they survive restarts.
+        /// Called by ShapePropertiesForm when the user clicks OK.
+        /// </summary>
+        public static void SaveDefaults(ShapeAnnotationElement element)
+        {
+            _defaultShapeType   = element.CurrentShapeType;
+            _defaultFillColor   = element.FillColor;
+            _defaultBorderColor = element.BorderColor;
+            _defaultBorderWidth = element.BorderWidth;
+
+            var s = Properties.Settings.Default;
+            s.AnnotShapeType            = (int)_defaultShapeType;
+            s.AnnotShapeFillColorARGB   = _defaultFillColor.ToArgb();
+            s.AnnotShapeBorderColorARGB = _defaultBorderColor.ToArgb();
+            s.AnnotShapeBorderWidth     = _defaultBorderWidth;
+            s.Save();
+        }
+
+        // ----------------------------------------------------------------
         // Construction
         // ----------------------------------------------------------------
 
@@ -48,10 +76,10 @@ namespace Foreman
         public ShapeAnnotationElement(ProductionGraphViewer graphViewer, Point graphLocation)
             : base(graphViewer, graphLocation, DefaultWidth, DefaultHeight)
         {
-            CurrentShapeType = ShapeType.Rectangle;
-            FillColor = Color.FromArgb(0, 80, 140, 255);  // semi-transparent blue fill
-            BorderColor = Color.FromArgb(220, 60, 120, 220);  // blue-ish border
-            BorderWidth = 2;
+            CurrentShapeType = _defaultShapeType;
+            FillColor        = _defaultFillColor;
+            BorderColor      = _defaultBorderColor;
+            BorderWidth      = _defaultBorderWidth;
 
             RebuildGdiObjects();
         }
@@ -60,10 +88,10 @@ namespace Foreman
         public ShapeAnnotationElement(ProductionGraphViewer graphViewer, Point graphLocation, int width, int height)
             : base(graphViewer, graphLocation, width, height)
         {
-            CurrentShapeType = ShapeType.Rectangle;
-            FillColor = Color.FromArgb(0, 80, 140, 255);
-            BorderColor = Color.FromArgb(220, 60, 120, 220);
-            BorderWidth = 2;
+            CurrentShapeType = _defaultShapeType;
+            FillColor        = _defaultFillColor;
+            BorderColor      = _defaultBorderColor;
+            BorderWidth      = _defaultBorderWidth;
 
             RebuildGdiObjects();
         }
