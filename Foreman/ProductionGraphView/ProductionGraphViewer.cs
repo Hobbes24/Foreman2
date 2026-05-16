@@ -81,6 +81,12 @@ namespace Foreman
 
 		private Point ViewDragOriginPoint;
 		private bool viewBeingDragged = false; //separate from dragOperation due to being able to drag view at all stages of dragOperation
+        /// <summary>
+        /// Non-null while the user is in text-placement mode (after clicking OK in the Add Text dialog
+        /// but before clicking the canvas to commit the position).  The element is already in
+        /// annotationElements and renders live, but follows the mouse until placed.
+        /// </summary>
+        private TextAnnotationElement pendingTextAnnotation = null;
 
 		private DragOperation currentDragOperation = DragOperation.None;
 
@@ -383,8 +389,32 @@ namespace Foreman
 
         public void AddTextAnnotation(Point graphPoint)
         {
-            PushUndoState(); // undo: add text annotation
-            AddAnnotationElement(new TextAnnotationElement(this, graphPoint));
+            // Create the element at the right-click location so the live preview is visible
+            var element = new TextAnnotationElement(this, graphPoint);
+            element.IsSelected = true;  // renders selection highlight in the live preview
+            AddAnnotationElement(element);
+            using (var form = new TextPropertiesForm(element))
+            {
+                form.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
+                var result = form.ShowDialog(ParentForm);
+                if (result == System.Windows.Forms.DialogResult.OK)
+                {
+                    // Enter placement mode — element stays in annotationElements and follows the mouse
+                    foreach (BaseNodeElement ne in selectedNodes) ne.Highlighted = false;
+                    selectedNodes.Clear();
+                    foreach (AnnotationElement ann in selectedAnnotations) ann.IsSelected = false;
+                    selectedAnnotations.Clear();
+                    element.IsSelected = true;   // keep the selection highlight as a visual cue
+                    pendingTextAnnotation = element;
+                    this.Cursor = Cursors.Cross;
+                    Invalidate();
+                }
+                else
+                {
+                    // User cancelled — remove the element entirely
+                    RemoveAnnotationElement(element);
+                }
+            }
         }
 
         //----------------------------------------------Adding new node functions (including link dragging) + Node edit
@@ -1372,6 +1402,10 @@ namespace Foreman
 			mouseDownStartScreenPoint = Control.MousePosition;
 			Point graph_location = ScreenToGraph(e.Location);
 
+            // During text placement mode absorb all mouse-down events — placement is committed on MouseUp
+            if (pendingTextAnnotation != null)
+                return;
+
             GraphElement clickedElement = (GraphElement)draggedLinkElement
                                         ?? (GraphElement)GetNodeAtPoint(ScreenToGraph(e.Location))
                                         ?? GetAnnotationAtPoint(ScreenToGraph(e.Location));
@@ -1411,6 +1445,35 @@ namespace Foreman
 
 			ToolTipRenderer.ClearFloatingControls();
 			Point graph_location = ScreenToGraph(e.Location);
+
+            // ---- Text placement mode ----
+            if (pendingTextAnnotation != null)
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    // Commit placement at the current mouse position
+                    pendingTextAnnotation.X = graph_location.X;
+                    pendingTextAnnotation.Y = graph_location.Y;
+                    // Select it so the user can immediately move/resize
+                    selectedAnnotations.Clear();
+                    selectedAnnotations.Add(pendingTextAnnotation);
+                    // IsSelected is already true
+                    pendingTextAnnotation = null;
+                    this.Cursor = Cursors.Default;
+                    Invalidate();
+                }
+                else if (e.Button == MouseButtons.Right)
+                {
+                    // Right-click cancels placement
+                    RemoveAnnotationElement(pendingTextAnnotation);
+                    pendingTextAnnotation = null;
+                    this.Cursor = Cursors.Default;
+                    Invalidate();
+                }
+                return; // do not process any other mouse-up logic while in placement mode
+            }
+            // ---- End text placement mode ----
+
             GraphElement element = (GraphElement)draggedLinkElement
                             ?? (GraphElement)GetNodeAtPoint(graph_location)
                             ?? GetAnnotationAtPoint(graph_location);
@@ -1610,6 +1673,16 @@ namespace Foreman
 			downButtons &= Control.MouseButtons; //only care about those buttons that were pressed down on this control. This is also the best place to update mouse changes done outside the control (ex: clicking down, dragging outside the window, letting go, moving mouse back into window)
 
 			Point graph_location = ScreenToGraph(e.Location);
+
+            // Keep the pending text element glued to the mouse during placement mode
+            if (pendingTextAnnotation != null)
+            {
+                pendingTextAnnotation.X = graph_location.X;
+                pendingTextAnnotation.Y = graph_location.Y;
+                this.Cursor = Cursors.Cross;
+                Invalidate();
+                return;
+            }
 
 			if (currentDragOperation != DragOperation.Selection && currentDragOperation != DragOperation.DrawShape) //dont care about element mouse move operations during selection or draw-shape operation
 			{
@@ -1962,7 +2035,16 @@ namespace Foreman
                         e.Handled = true;
                         break;
                     case Keys.Escape:
-						if (findPanel.Visible)
+                        if (pendingTextAnnotation != null)
+                        {
+                            // Cancel text placement
+                            RemoveAnnotationElement(pendingTextAnnotation);
+                            pendingTextAnnotation = null;
+                            this.Cursor = Cursors.Default;
+                            e.Handled = true;
+                            Invalidate();
+                        }
+                        else if (findPanel.Visible)
 						{
 							CloseFindPanel();
 							e.Handled = true;
