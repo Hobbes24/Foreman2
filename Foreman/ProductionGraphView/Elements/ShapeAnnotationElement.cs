@@ -56,6 +56,18 @@ namespace Foreman
             RebuildGdiObjects();
         }
 
+        /// <summary>Creates a new shape at the given graph-space center with an explicit drawn size (used by drag-to-draw).</summary>
+        public ShapeAnnotationElement(ProductionGraphViewer graphViewer, Point graphLocation, int width, int height)
+            : base(graphViewer, graphLocation, width, height)
+        {
+            CurrentShapeType = ShapeType.Rectangle;
+            FillColor = Color.FromArgb(0, 80, 140, 255);
+            BorderColor = Color.FromArgb(220, 60, 120, 220);
+            BorderWidth = 2;
+
+            RebuildGdiObjects();
+        }
+
         /// <summary>Private constructor used by FromJson.</summary>
         private ShapeAnnotationElement(ProductionGraphViewer graphViewer,
                                        Point location, Size size,
