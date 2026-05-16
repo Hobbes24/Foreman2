@@ -77,6 +77,7 @@ namespace Foreman
             TextAlign = _defaultTextAlign;
 
             RebuildGdiObjects();
+            AutoSizeToText();
         }
 
         /// <summary>Private constructor used by FromJson.</summary>
@@ -94,6 +95,34 @@ namespace Foreman
             TextAlign = textAlign;
 
             RebuildGdiObjects();
+        }
+
+        /// <summary>
+        /// Resizes the element to fit its current Text at the current TextFont.
+        /// Wraps at a maximum of 600px; always leaves a small padding margin.
+        /// Call this whenever Text or TextFont changes.
+        /// </summary>
+        public void AutoSizeToText()
+        {
+            if (string.IsNullOrEmpty(Text)) return;
+
+            const int padding = 16;
+            const int minWidth = 60;
+            const int minHeight = 30;
+            const int maxWidth = 600;
+
+            using (var bmp = new Bitmap(1, 1))
+            using (var g = Graphics.FromImage(bmp))
+            {
+                // Measure natural (single-line) width first
+                SizeF natural = g.MeasureString(Text, TextFont);
+                int w = Math.Max(minWidth, Math.Min(maxWidth, (int)Math.Ceiling(natural.Width) + padding));
+                // Measure height at that width (accounts for wrapping)
+                SizeF fitted = g.MeasureString(Text, TextFont, w);
+                int h = Math.Max(minHeight, (int)Math.Ceiling(fitted.Height) + padding);
+                Width = w;
+                Height = h;
+            }
         }
 
         /// <summary>

@@ -36,9 +36,6 @@ namespace Foreman
             // Working font clone
             _workingFont = new Font(element.TextFont, element.TextFont.Style);
 
-            // Display the text at the annotation's font so wrapping and sizing match the canvas
-            TextInput.Font = _workingFont;
-
             // Initialise controls
             TextInput.Text = element.Text;
 
@@ -57,53 +54,17 @@ namespace Foreman
             TransparentCheckBox.CheckedChanged += TransparentCheckBox_CheckedChanged;
             BackColorButton.Enabled = !TransparentCheckBox.Checked;
             this.Shown += (s, e) => { TextInput.Focus(); TextInput.SelectAll(); };
-            // Size the TextBox to fit the initial text (e.g. when re-editing an existing label)
-            ResizeTextInput();
         }
 
         // ----------------------------------------------------------------
-        // Text — live update + auto-grow
+        // Text — live update
         // ----------------------------------------------------------------
 
         private void TextInput_TextChanged(object sender, EventArgs e)
         {
             _element.Text = TextInput.Text;
+            _element.AutoSizeToText();
             _graphViewer.Invalidate();
-            ResizeTextInput();
-        }
-
-        /// <summary>
-        /// Measures the current TextInput content and grows (or shrinks) the TextBox
-        /// vertically to fit, shifting every control below it and resizing the form.
-        /// Minimum height: ~2 lines.  Maximum: ~8 lines (scroll-bar takes over beyond that).
-        /// </summary>
-        private void ResizeTextInput()
-        {
-            const int minHeight = 46;   // matches the designer's initial height (~2 lines)
-            const int maxHeight = 160;  // ~8 lines; scroll-bar handles anything longer
-            // Measure the text as it would wrap inside the TextBox.
-            // Subtract the vertical scroll-bar width so we don't measure into it.
-            string measureText = TextInput.Text.Length > 0 ? TextInput.Text : " ";
-            int measureWidth = Math.Max(1,
-                TextInput.Width - SystemInformation.VerticalScrollBarWidth - 4);
-            Size textSize = TextRenderer.MeasureText(
-                measureText,
-                TextInput.Font,
-                new Size(measureWidth, int.MaxValue),
-                TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl);
-            int newHeight = Math.Max(minHeight, Math.Min(maxHeight, textSize.Height + 10));
-            if (newHeight == TextInput.Height)
-                return;
-            int delta = newHeight - TextInput.Height;
-            TextInput.Height = newHeight;
-            // Shift every control that sits below the TextBox
-            foreach (Control c in this.Controls)
-            {
-                if (c != TextInput && c != TextLabel && c.Top > TextInput.Top)
-                    c.Top += delta;
-            }
-            // Expand or contract the form to match
-            this.ClientSize = new Size(this.ClientSize.Width, this.ClientSize.Height + delta);
         }
 
         // ----------------------------------------------------------------
@@ -126,10 +87,9 @@ namespace Foreman
                     _element.TextFont?.Dispose();
                     _element.TextFont = new Font(dlg.Font, dlg.Font.Style);
                     _element.RebuildGdiObjects();
+                    _element.AutoSizeToText();
                     _graphViewer.Invalidate();
                     UpdateFontLabel();
-                    TextInput.Font = _workingFont;
-                    ResizeTextInput();
                 }
             }
         }
