@@ -203,6 +203,8 @@ namespace Foreman
 
         private void OKButton_Click(object sender, EventArgs e)
         {
+            // Persist this element's appearance as the defaults for the next Add Text
+            TextAnnotationElement.SaveDefaults(_element);
             _workingFont?.Dispose();
             _workingFont = null;
             _originalFont?.Dispose();

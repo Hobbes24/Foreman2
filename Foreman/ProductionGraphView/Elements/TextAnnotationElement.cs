@@ -38,6 +38,30 @@ namespace Foreman
         private StringFormat _textFormat;
 
         // ----------------------------------------------------------------
+        // Last-used format defaults (session-persistent; updated on every OK)
+        // ----------------------------------------------------------------
+        private static string _defaultFontFamily = "Segoe UI";
+        private static float _defaultFontSize = 14f;
+        private static FontStyle _defaultFontStyle = FontStyle.Bold;
+        private static Color _defaultTextColor = Color.Black;
+        private static Color _defaultBackColor = Color.Transparent;
+        private static StringAlignment _defaultTextAlign = StringAlignment.Center;
+
+        /// <summary>
+        /// Saves the current element's appearance as the new defaults for future Add Text operations.
+        /// Called by TextPropertiesForm when the user clicks OK.
+        /// </summary>
+        public static void SaveDefaults(TextAnnotationElement element)
+        {
+            _defaultFontFamily = element.TextFont.FontFamily.Name;
+            _defaultFontSize   = element.TextFont.SizeInPoints;
+            _defaultFontStyle  = element.TextFont.Style;
+            _defaultTextColor  = element.TextColor;
+            _defaultBackColor  = element.BackColor;
+            _defaultTextAlign  = element.TextAlign;
+        }
+
+        // ----------------------------------------------------------------
         // Construction
         // ----------------------------------------------------------------
 
@@ -46,10 +70,11 @@ namespace Foreman
             : base(graphViewer, graphLocation, DefaultWidth, DefaultHeight)
         {
             Text = "Label";
-            TextFont = new Font("Segoe UI", 14f, FontStyle.Bold, GraphicsUnit.Point);
-            TextColor = Color.Black;
-            BackColor = Color.Transparent;
-            TextAlign = StringAlignment.Center;
+            try   { TextFont = new Font(_defaultFontFamily, _defaultFontSize, _defaultFontStyle, GraphicsUnit.Point); }
+            catch { TextFont = new Font("Segoe UI", 14f, FontStyle.Bold, GraphicsUnit.Point); }
+            TextColor = _defaultTextColor;
+            BackColor = _defaultBackColor;
+            TextAlign = _defaultTextAlign;
 
             RebuildGdiObjects();
         }
