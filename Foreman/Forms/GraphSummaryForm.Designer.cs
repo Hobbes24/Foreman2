@@ -71,6 +71,16 @@ namespace Foreman
             this.ItemsTable = new System.Windows.Forms.TableLayoutPanel();
             this.label1 = new System.Windows.Forms.Label();
             this.ItemsTabControl = new System.Windows.Forms.TabControl();
+            this.AllTabPage = new System.Windows.Forms.TabPage();
+            this.AllListView = new System.Windows.Forms.ListView();
+            this.AllHeaderName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.AllHeaderIn = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.AllHeaderInUL = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.AllHeaderOut = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.AllHeaderOutUL = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.AllHeaderOverproduced = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.AllHeaderProduced = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.AllHeaderConsumed = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.tabPage4 = new System.Windows.Forms.TabPage();
             this.ItemsListView = new System.Windows.Forms.ListView();
             this.ItemsHeaderName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
@@ -130,6 +140,7 @@ namespace Foreman
             this.ItemsTabPage.SuspendLayout();
             this.ItemsTable.SuspendLayout();
             this.ItemsTabControl.SuspendLayout();
+            this.AllTabPage.SuspendLayout();
             this.tabPage4.SuspendLayout();
             this.tabPage5.SuspendLayout();
             this.ItemsFilterCBTable.SuspendLayout();
@@ -600,6 +611,7 @@ namespace Foreman
             // ItemsTabControl
             // 
             this.ItemsTable.SetColumnSpan(this.ItemsTabControl, 3);
+            this.ItemsTabControl.Controls.Add(this.AllTabPage);
             this.ItemsTabControl.Controls.Add(this.tabPage4);
             this.ItemsTabControl.Controls.Add(this.tabPage5);
             this.ItemsTabControl.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -774,9 +786,90 @@ namespace Foreman
             // 
             this.FluidsHeaderConsumed.Text = "Consumed";
             this.FluidsHeaderConsumed.Width = 75;
-            // 
+            //
+            // AllTabPage
+            //
+            this.AllTabPage.Controls.Add(this.AllListView);
+            this.AllTabPage.Font = new System.Drawing.Font("Microsoft Sans Serif", 7.8F);
+            this.AllTabPage.Location = new System.Drawing.Point(4, 31);
+            this.AllTabPage.Name = "AllTabPage";
+            this.AllTabPage.Size = new System.Drawing.Size(1102, 572);
+            this.AllTabPage.TabIndex = 4;
+            this.AllTabPage.Text = "All";
+            this.AllTabPage.UseVisualStyleBackColor = true;
+            //
+            // AllListView
+            //
+            this.AllListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+            this.AllHeaderName,
+            this.AllHeaderIn,
+            this.AllHeaderInUL,
+            this.AllHeaderOut,
+            this.AllHeaderOutUL,
+            this.AllHeaderOverproduced,
+            this.AllHeaderProduced,
+            this.AllHeaderConsumed});
+            this.AllListView.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.AllListView.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F);
+            this.AllListView.FullRowSelect = true;
+            this.AllListView.GridLines = true;
+            this.AllListView.HideSelection = false;
+            this.AllListView.LabelWrap = false;
+            this.AllListView.Location = new System.Drawing.Point(0, 0);
+            this.AllListView.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
+            this.AllListView.MultiSelect = false;
+            this.AllListView.Name = "AllListView";
+            this.AllListView.Size = new System.Drawing.Size(1102, 572);
+            this.AllListView.SmallImageList = this.IconList;
+            this.AllListView.TabIndex = 19;
+            this.AllListView.UseCompatibleStateImageBehavior = false;
+            this.AllListView.View = System.Windows.Forms.View.Details;
+            this.AllListView.VirtualMode = true;
+            this.AllListView.ColumnClick += new System.Windows.Forms.ColumnClickEventHandler(this.AllListView_ColumnClick);
+            this.AllListView.RetrieveVirtualItem += new System.Windows.Forms.RetrieveVirtualItemEventHandler(this.AllListView_RetrieveVirtualItem);
+            //
+            // AllHeaderName
+            //
+            this.AllHeaderName.Text = "Item / Fluid";
+            this.AllHeaderName.Width = 150;
+            //
+            // AllHeaderIn
+            //
+            this.AllHeaderIn.Text = "In";
+            this.AllHeaderIn.Width = 75;
+            //
+            // AllHeaderInUL
+            //
+            this.AllHeaderInUL.Text = "In (x link)";
+            this.AllHeaderInUL.Width = 75;
+            //
+            // AllHeaderOut
+            //
+            this.AllHeaderOut.Text = "Out";
+            this.AllHeaderOut.Width = 75;
+            //
+            // AllHeaderOutUL
+            //
+            this.AllHeaderOutUL.Text = "Out (x link)";
+            this.AllHeaderOutUL.Width = 75;
+            //
+            // AllHeaderOverproduced
+            //
+            this.AllHeaderOverproduced.Text = "Overprod.";
+            this.AllHeaderOverproduced.Width = 75;
+            //
+            // AllHeaderProduced
+            //
+            this.AllHeaderProduced.Text = "Produced";
+            this.AllHeaderProduced.Width = 75;
+            //
+            // AllHeaderConsumed
+            //
+            this.AllHeaderConsumed.Text = "Consumed";
+            this.AllHeaderConsumed.Width = 75;
+            //
             // ItemsFilterTextBox
-            // 
+            //
             this.ItemsFilterTextBox.Dock = System.Windows.Forms.DockStyle.Fill;
             this.ItemsFilterTextBox.Location = new System.Drawing.Point(68, 3);
             this.ItemsFilterTextBox.Margin = new System.Windows.Forms.Padding(3, 3, 10, 3);
@@ -1168,6 +1261,7 @@ namespace Foreman
             this.ItemsTable.ResumeLayout(false);
             this.ItemsTable.PerformLayout();
             this.ItemsTabControl.ResumeLayout(false);
+            this.AllTabPage.ResumeLayout(false);
             this.tabPage4.ResumeLayout(false);
             this.tabPage5.ResumeLayout(false);
             this.ItemsFilterCBTable.ResumeLayout(false);
@@ -1259,6 +1353,16 @@ namespace Foreman
 		private System.Windows.Forms.ColumnHeader FluidsHeaderOverproduced;
 		private System.Windows.Forms.ColumnHeader FluidsHeaderProduced;
 		private System.Windows.Forms.ColumnHeader FluidsHeaderConsumed;
+		private System.Windows.Forms.TabPage AllTabPage;
+		private System.Windows.Forms.ListView AllListView;
+		private System.Windows.Forms.ColumnHeader AllHeaderName;
+		private System.Windows.Forms.ColumnHeader AllHeaderIn;
+		private System.Windows.Forms.ColumnHeader AllHeaderInUL;
+		private System.Windows.Forms.ColumnHeader AllHeaderOut;
+		private System.Windows.Forms.ColumnHeader AllHeaderOutUL;
+		private System.Windows.Forms.ColumnHeader AllHeaderOverproduced;
+		private System.Windows.Forms.ColumnHeader AllHeaderProduced;
+		private System.Windows.Forms.ColumnHeader AllHeaderConsumed;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel1;
 		private System.Windows.Forms.CheckBox PassthroughNodeFilterCheckBox;
 		private System.Windows.Forms.CheckBox ConsumerNodeFilterCheckBox;

@@ -35,6 +35,7 @@ namespace Foreman
 
 		private List<ListViewItem> unfilteredItemsList;
 		private List<ListViewItem> unfilteredFluidsList;
+		private List<ListViewItem> unfilteredAllList;
 
 		private List<ListViewItem> unfilteredKeyNodesList;
 
@@ -45,6 +46,7 @@ namespace Foreman
 
 		private List<ListViewItem> filteredItemsList;
 		private List<ListViewItem> filteredFluidsList;
+		private List<ListViewItem> filteredAllList;
 
 		private List<ListViewItem> filteredKeyNodesList;
 
@@ -77,6 +79,7 @@ namespace Foreman
 			MainForm.SetDoubleBuffered(BeaconListView);
 			MainForm.SetDoubleBuffered(ItemsListView);
 			MainForm.SetDoubleBuffered(FluidsListView);
+			MainForm.SetDoubleBuffered(AllListView);
 			MainForm.SetDoubleBuffered(KeyNodesListView);
 
 			// Capture designer-set base texts before any appending
@@ -92,6 +95,7 @@ namespace Foreman
 			unfilteredBeaconList = new List<ListViewItem>();
 			unfilteredItemsList = new List<ListViewItem>();
 			unfilteredFluidsList = new List<ListViewItem>();
+			unfilteredAllList = new List<ListViewItem>();
 			unfilteredKeyNodesList = new List<ListViewItem>();
 
 			filteredAssemblerList = new List<ListViewItem>();
@@ -100,6 +104,7 @@ namespace Foreman
 			filteredBeaconList = new List<ListViewItem>();
 			filteredItemsList = new List<ListViewItem>();
 			filteredFluidsList = new List<ListViewItem>();
+			filteredAllList = new List<ListViewItem>();
 			filteredKeyNodesList = new List<ListViewItem>();
 
 			lastSortOrder = new Dictionary<ListView, int>();
@@ -109,6 +114,7 @@ namespace Foreman
 			lastSortOrder.Add(BeaconListView, 2);
 			lastSortOrder.Add(ItemsListView, 1);
 			lastSortOrder.Add(FluidsListView, 1);
+			lastSortOrder.Add(AllListView, 1);
 			lastSortOrder.Add(KeyNodesListView, 1);
 
 			this.graph = graph;
@@ -117,6 +123,7 @@ namespace Foreman
 
             ItemsListView.DoubleClick += ItemsOrFluids_DoubleClick;
             FluidsListView.DoubleClick += ItemsOrFluids_DoubleClick;
+            AllListView.DoubleClick += ItemsOrFluids_DoubleClick;
             KeyNodesListView.DoubleClick += KeyNodes_DoubleClick;
 
             graph.NodeAdded += Graph_Changed;
@@ -200,6 +207,7 @@ namespace Foreman
 			unfilteredBeaconList.Clear();
 			unfilteredItemsList.Clear();
 			unfilteredFluidsList.Clear();
+			unfilteredAllList.Clear();
 			unfilteredKeyNodesList.Clear();
 
 			IconList.Images.Clear();
@@ -214,6 +222,8 @@ namespace Foreman
 			LoadUnfilteredBeaconList(nodes.Where(n => n is ReadOnlyRecipeNode rNode && rNode.SelectedBeacon).Select(n => (ReadOnlyRecipeNode)n), unfilteredBeaconList);
 			LoadUnfilteredItemLists(nodes, links, false, unfilteredItemsList);
 			LoadUnfilteredItemLists(nodes, links, true, unfilteredFluidsList);
+			unfilteredAllList.AddRange(unfilteredItemsList);
+			unfilteredAllList.AddRange(unfilteredFluidsList);
 			LoadUnfilteredKeyNodesList(nodes.Where(n => n.KeyNode), unfilteredKeyNodesList);
 
 			double buildingTotal = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => Math.Ceiling(((ReadOnlyRecipeNode)n).ActualSetValue));
@@ -509,6 +519,7 @@ namespace Foreman
 		{
 			UpdateFilteredItemsList(unfilteredItemsList, filteredItemsList, ItemsListView);
 			UpdateFilteredItemsList(unfilteredFluidsList, filteredFluidsList, FluidsListView);
+			UpdateFilteredItemsList(unfilteredAllList, filteredAllList, AllListView);
 		}
 
 		private void UpdateFilteredItemsList(List<ListViewItem> unfilteredList, List<ListViewItem> filteredList, ListView owner)
@@ -581,6 +592,7 @@ namespace Foreman
 		private void BeaconListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredBeaconList[e.ItemIndex]; }
 		private void ItemsListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredItemsList[e.ItemIndex]; }
 		private void FluidsListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredFluidsList[e.ItemIndex]; }
+		private void AllListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredAllList[e.ItemIndex]; }
 		private void KeyNodesListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredKeyNodesList[e.ItemIndex]; }
 
 		//-------------------------------------------------------------------------------------------------------Filter changed events
@@ -629,6 +641,7 @@ namespace Foreman
 
 		private void ItemsListView_ColumnClick(object sender, ColumnClickEventArgs e) { ItemListView_ColumnSort(unfilteredItemsList, filteredItemsList, ItemsListView, e.Column); }
 		private void FluidsListView_ColumnClick(object sender, ColumnClickEventArgs e) { ItemListView_ColumnSort(unfilteredFluidsList, filteredFluidsList, FluidsListView, e.Column); }
+		private void AllListView_ColumnClick(object sender, ColumnClickEventArgs e) { ItemListView_ColumnSort(unfilteredAllList, filteredAllList, AllListView, e.Column); }
 
 		private void ItemListView_ColumnSort(List<ListViewItem> unfilteredList, List<ListViewItem> filteredList, ListView owner, int column)
 		{
