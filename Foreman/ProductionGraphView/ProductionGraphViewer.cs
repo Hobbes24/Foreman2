@@ -20,7 +20,7 @@ namespace Foreman
 	[Serializable]
 	public partial class ProductionGraphViewer : UserControl, ISerializable
 	{
-		private enum DragOperation { None, Item, Selection }
+		private enum DragOperation { None, Item, Selection, DrawShape }
 		public enum LOD { Low, Medium, High } //low: only names. medium: assemblers, beacons, etc. high: include assembler percentages
 
 		public LOD LevelOfDetail { get; set; }
@@ -66,6 +66,9 @@ namespace Foreman
 
 		private static readonly Pen pausedBorders = new Pen(Color.FromArgb(255, 80, 80), 5);
 		private static readonly Pen selectionPen = new Pen(Color.FromArgb(100, 100, 200), 2);
+        private static readonly Pen drawShapePen = new Pen(Color.FromArgb(200, 60, 120, 220), 2) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+
+        private bool _inDrawShapeMode = false;
 
 		private Dictionary<ReadOnlyBaseNode, BaseNodeElement> nodeElementDictionary;
 		private List<BaseNodeElement> nodeElements;
@@ -371,8 +374,11 @@ namespace Foreman
 
         public void AddShapeAnnotation(Point graphPoint)
         {
-            PushUndoState(); // undo: add shape annotation
-            AddAnnotationElement(new ShapeAnnotationElement(this, graphPoint));
+            // Enter draw-shape mode: user drags on the canvas to define bounds.
+            _inDrawShapeMode = true;
+            Cursor = Cursors.Cross;
+            SelectionZone = new Rectangle();
+            Invalidate();
         }
 
         public void AddTextAnnotation(Point graphPoint)
@@ -1242,6 +1248,13 @@ namespace Foreman
 			foreach (GraphElement element in GetPaintingOrder())
 				element.Paint(graphics, FullGraph? NodeDrawingStyle.PrintStyle : IconsOnly? NodeDrawingStyle.IconsOnly : (visibleElements > NodeCountForSimpleView || ViewScale < 0.2)? NodeDrawingStyle.Simple : NodeDrawingStyle.Regular); //if viewscale is 0.2, then the text, images, etc being drawn are ~1/5th the size: aka: ~6x6 pixel images, etc. Use simple draw. Also simple draw if too many objects
 
+			//draw-shape preview
+			if (currentDragOperation == DragOperation.DrawShape && !FullGraph && SelectionZone.Width > 0 && SelectionZone.Height > 0)
+			{
+				drawShapePen.Width = 2 / ViewScale;
+				graphics.DrawRectangle(drawShapePen, SelectionZone);
+			}
+
 			//selection zone
 			if (currentDragOperation == DragOperation.Selection && !FullGraph)
 			{
@@ -1441,6 +1454,32 @@ namespace Foreman
 					viewBeingDragged = false;
 					break;
 				case MouseButtons.Left:
+                    // Finished drawing a new shape by drag
+                    if (currentDragOperation == DragOperation.DrawShape)
+                    {
+                        const int minDrawSize = 30;
+                        if (SelectionZone.Width >= minDrawSize || SelectionZone.Height >= minDrawSize)
+                        {
+                            int w = Math.Max(SelectionZone.Width, minDrawSize);
+                            int h = Math.Max(SelectionZone.Height, minDrawSize);
+                            Point center = new Point(SelectionZone.Left + w / 2, SelectionZone.Top + h / 2);
+                            PushUndoState();
+                            AddAnnotationElement(new ShapeAnnotationElement(this, center, w, h));
+                        }
+                        else
+                        {
+                            // Too small / just a click — fall back to default-sized shape at click point
+                            PushUndoState();
+                            AddAnnotationElement(new ShapeAnnotationElement(this, SelectionZoneOriginPoint));
+                        }
+                        _inDrawShapeMode = false;
+                        Cursor = Cursors.Default;
+                        SelectionZone = new Rectangle();
+                        currentDragOperation = DragOperation.None;
+                        MouseDownElement = null;
+                        break;
+                    }
+
                     //finished selecting the given zone (process selected nodes)
                     if (currentDragOperation == DragOperation.Selection)
                     {
@@ -1572,7 +1611,7 @@ namespace Foreman
 
 			Point graph_location = ScreenToGraph(e.Location);
 
-			if (currentDragOperation != DragOperation.Selection) //dont care about element mouse move operations during selection operation
+			if (currentDragOperation != DragOperation.Selection && currentDragOperation != DragOperation.DrawShape) //dont care about element mouse move operations during selection or draw-shape operation
 			{
 				GraphElement element = draggedLinkElement ?? MouseDownElement;
 				element?.MouseMoved(graph_location);
@@ -1587,7 +1626,7 @@ namespace Foreman
 						if ((downButtons & MouseButtons.Middle) == MouseButtons.Middle || (downButtons & MouseButtons.Right) == MouseButtons.Right)
 							viewBeingDragged = true;
 
-						if (MouseDownElement != null) //there is an item under the mouse during drag
+						if (MouseDownElement != null && !_inDrawShapeMode) //there is an item under the mouse during drag
 						{
 							currentDragOperation = DragOperation.Item;
 							// Capture pre-drag state for node/annotation moves.
@@ -1596,7 +1635,7 @@ namespace Foreman
 								_pendingDragUndoSnapshot = CaptureSnapshot();
 						}
 						else if ((downButtons & MouseButtons.Left) != 0)
-							currentDragOperation = DragOperation.Selection;
+							currentDragOperation = _inDrawShapeMode ? DragOperation.DrawShape : DragOperation.Selection;
 					}
 					break;
 
@@ -1769,6 +1808,16 @@ namespace Foreman
                     if ((downButtons & MouseButtons.Middle) == MouseButtons.Middle)
 						viewBeingDragged = true;
 					break;
+
+                case DragOperation.DrawShape:
+                    SelectionZone = new Rectangle(
+                        Math.Min(SelectionZoneOriginPoint.X, graph_location.X),
+                        Math.Min(SelectionZoneOriginPoint.Y, graph_location.Y),
+                        Math.Abs(SelectionZoneOriginPoint.X - graph_location.X),
+                        Math.Abs(SelectionZoneOriginPoint.Y - graph_location.Y));
+                    if ((downButtons & MouseButtons.Middle) == MouseButtons.Middle)
+                        viewBeingDragged = true;
+                    break;
 			}
 
 			//dragging view (can happen during any drag operation)
@@ -1781,7 +1830,11 @@ namespace Foreman
 			Invalidate();
 
             // Update cursor based on what's under the mouse
-            if (currentDragOperation == DragOperation.None && !viewBeingDragged)
+            if (currentDragOperation == DragOperation.DrawShape || (_inDrawShapeMode && currentDragOperation == DragOperation.None))
+            {
+                this.Cursor = Cursors.Cross;
+            }
+            else if (currentDragOperation == DragOperation.None && !viewBeingDragged)
             {
                 Cursor newCursor = Cursors.Default;
                 for (int i = annotationElements.Count - 1; i >= 0; i--)
@@ -1912,6 +1965,14 @@ namespace Foreman
 						if (findPanel.Visible)
 						{
 							CloseFindPanel();
+							e.Handled = true;
+						}
+						else if (_inDrawShapeMode)
+						{
+							_inDrawShapeMode = false;
+							currentDragOperation = DragOperation.None;
+							Cursor = Cursors.Default;
+							SelectionZone = new Rectangle();
 							e.Handled = true;
 						}
 						break;
