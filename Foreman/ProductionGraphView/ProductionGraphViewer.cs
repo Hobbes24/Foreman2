@@ -2740,15 +2740,25 @@ namespace Foreman
 			findStatusLabel.Text = string.Format("{0} of {1}", findResultIndex + 1, findResults.Count);
 		}
 
-		public void CenterOnNode(BaseNodeElement node)
+		public void CenterOnNode(BaseNodeElement node, float? targetScale = null)
 		{
 			if (!nodeElements.Contains(node))
 				return; // node was deleted, skip it
-			// node.X, node.Y is the center of the node in graph space.
-			// GraphToScreen formula: screen = ((graph + ViewOffset) * ViewScale) + (Width/2, Height/2)
-			// To make node center map to screen center, solve for ViewOffset:
-			//   Width/2 = ((node.X + ViewOffset.X) * ViewScale) + Width/2  =>  ViewOffset.X = -node.X
-			ViewOffset = new Point(-node.X, -node.Y);
+
+            // If a target zoom level was requested, zoom in if currently further out — never zoom out.
+            if (targetScale.HasValue)
+            {
+                float newScale = Math.Max(ViewScale, targetScale.Value);
+                newScale = Math.Max(newScale, 0.01f);
+                newScale = Math.Min(newScale, 2f);
+                ViewScale = newScale;
+            }
+
+            // node.X, node.Y is the center of the node in graph space.
+            // GraphToScreen formula: screen = ((graph + ViewOffset) * ViewScale) + (Width/2, Height/2)
+            // To make node center map to screen center, solve for ViewOffset:
+            //   Width/2 = ((node.X + ViewOffset.X) * ViewScale) + Width/2  =>  ViewOffset.X = -node.X
+            ViewOffset = new Point(-node.X, -node.Y);
 
 			// Sync Highlighted flag with selectedNodes (same pattern as SetSelection)
 			foreach (BaseNodeElement element in selectedNodes)

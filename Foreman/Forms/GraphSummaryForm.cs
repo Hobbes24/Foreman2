@@ -165,7 +165,7 @@ namespace Foreman
             }
 
             if (graphViewer.NodeElementDictionary.TryGetValue(targets[navCycleIndex], out BaseNodeElement element))
-                graphViewer.CenterOnNode(element);
+                graphViewer.CenterOnNode(element, targetScale: 1.0f);
         }
 
         private void KeyNodes_DoubleClick(object sender, EventArgs e)
