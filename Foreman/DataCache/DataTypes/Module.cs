@@ -40,7 +40,7 @@ namespace Foreman
 		public IReadOnlyCollection<Assembler> Assemblers { get { return assemblers; } }
 		public IReadOnlyCollection<Beacon> Beacons { get { return beacons; } }
 		public IReadOnlyCollection<Recipe> AvailableRecipes { get; private set; }
-		public Item AssociatedItem { get { return Owner.Items[Name]; } }
+		public Item AssociatedItem { get { return Owner.Items.TryGetValue(Name, out var item) ? item : null; } }
 
         public double GetSpeedBonus(Quality quality) { return GetSpeedBonus(quality.Level); }
         public double GetProductivityBonus(Quality quality) { return GetProductivityBonus(quality.Level); }
@@ -65,7 +65,7 @@ namespace Foreman
 		public int Tier { get; set; }
 
 		public bool IsMissing { get; private set; }
-		public override bool Available { get { return AssociatedItem.Available; } set { } }
+		public override bool Available { get { return AssociatedItem?.Available ?? false; } set { } }
 
 		internal HashSet<RecipePrototype> recipes { get; private set; }
 		internal HashSet<AssemblerPrototype> assemblers { get; private set; }

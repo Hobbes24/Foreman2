@@ -21,8 +21,7 @@ namespace Foreman
         // ── Per-tab state ──────────────────────────────────────────────────────
         private class GraphTabState
         {
-            public string SaveFilePath       = null;
-            public string LastSavedGraphJson = null;
+            public string SaveFilePath  = null;
             public GraphSummaryForm SummaryForm = null;
             public int  MinorGridlinesIndex  = 0;
             public int  MajorGridlinesIndex  = 0;
@@ -358,8 +357,6 @@ namespace Foreman
             writer.Close();
             return sb.ToString();
         }
-        private string GetCurrentGraphJson() => GetGraphJson(ActiveViewer);
-
         private bool SaveGraph(int tabIndex, string path)
         {
             var state  = tabStates[tabIndex];
@@ -369,8 +366,8 @@ namespace Foreman
             {
                 string json = GetGraphJson(viewer);
                 File.WriteAllText(path, json);
-                state.SaveFilePath       = path;
-                state.LastSavedGraphJson = json;
+                state.SaveFilePath = path;
+                viewer.MarkClean();
                 UpdateTabTitle(tabIndex);
                 if (tabIndex == GraphTabControl.SelectedIndex)
                     UpdateTitleBar();
@@ -410,8 +407,7 @@ namespace Foreman
             try
             {
                 await ActiveViewer.LoadFromJson(JObject.Parse(File.ReadAllText(path)), false, true);
-                state.SaveFilePath       = path;
-                state.LastSavedGraphJson = GetCurrentGraphJson();
+                state.SaveFilePath = path;
                 UpdateTabTitle(tabIndex);
                 Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
             }
@@ -455,8 +451,7 @@ namespace Foreman
                 Properties.Settings.Default.CurrentPresetName = "No Preset!";
             }
             ApplyViewerSettings(v);
-            state.SaveFilePath       = null;
-            state.LastSavedGraphJson = null;
+            state.SaveFilePath = null;
             UpdateTabTitle(GraphTabControl.SelectedIndex);
             Properties.Settings.Default.Save();
             UpdateTitleBar();
@@ -520,8 +515,7 @@ namespace Foreman
                     $"Tab \"{tabLabel}\" save file has been deleted!\nIf you continue you will lose it forever!",
                     "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
 
-            string currentJson = GetGraphJson(viewer);
-            if (state.LastSavedGraphJson == null || currentJson != state.LastSavedGraphJson)
+            if (viewer.IsDirty)
             {
                 DialogResult r = MessageBox.Show(
                     $"Tab \"{tabLabel}\" has been modified!\nDo you wish to save before continuing?",
@@ -658,7 +652,6 @@ namespace Foreman
                                 if (_tv == null) continue;
                                 string _snapshot = JsonConvert.SerializeObject(_tv);
                                 await _tv.LoadFromJson(JObject.Parse(_snapshot), true, false);
-                                tabStates[_ti].LastSavedGraphJson = GetGraphJson(_tv);
                             }
                             SyncToolbarToActiveTab();
                             UpdateTitleBar();
@@ -737,6 +730,8 @@ namespace Foreman
                         _tv.Graph.UpdateNodeMaxQualities();
                         _tv.Graph.UpdateNodeStates(true);
                         _tv.Graph.UpdateNodeValues();
+                        if (tabStates[_ti].SaveFilePath != null)
+                            _tv.MarkDirty();
                     }
 
                     if (options.RequireReload)
@@ -818,6 +813,7 @@ namespace Foreman
             if (v == null) return;
             Properties.Settings.Default.DefaultRateUnit = RateOptionsDropDown.SelectedIndex;
             v.Graph.SelectedRateUnit = (ProductionGraph.RateUnit)RateOptionsDropDown.SelectedIndex;
+            v.MarkDirty();
             Properties.Settings.Default.Save();
             v.Graph.UpdateNodeValues();
         }
