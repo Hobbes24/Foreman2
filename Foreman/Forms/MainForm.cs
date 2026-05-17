@@ -131,12 +131,74 @@ namespace Foreman
 
             Properties.Settings.Default.Save();
 
-            string lastFile = Properties.Settings.Default.LastOpenFile;
-            if (!string.IsNullOrEmpty(lastFile) && File.Exists(lastFile))
-                LoadGraph(lastFile);
+            RestoreSavedTabs();
 
             ActiveViewer?.Invalidate();
             ActiveViewer?.Focus();
+        }
+
+        //---------------------------------------------------------Tab session restore
+
+        private async void RestoreSavedTabs()
+        {
+            List<string> paths = null;
+            string json = Properties.Settings.Default.LastOpenTabs;
+            if (!string.IsNullOrEmpty(json))
+            {
+                try { paths = JsonConvert.DeserializeObject<List<string>>(json); }
+                catch { }
+            }
+
+            // Fall back to the legacy single-file setting if no tab list is stored yet
+            if (paths == null || paths.Count == 0)
+            {
+                string lastFile = Properties.Settings.Default.LastOpenFile;
+                if (!string.IsNullOrEmpty(lastFile) && File.Exists(lastFile))
+                    await LoadGraphAsync(0, lastFile);
+                return;
+            }
+
+            bool firstSlotUsed = false;
+            for (int i = 0; i < paths.Count; i++)
+            {
+                string path = paths[i];
+                if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
+
+                if (!firstSlotUsed)
+                {
+                    // Load into the tab that was already created during startup
+                    await LoadGraphAsync(0, path);
+                    firstSlotUsed = true;
+                }
+                else
+                {
+                    // Create a new tab then load into it
+                    CreateNewTab();
+                    await LoadGraphAsync(GraphTabControl.SelectedIndex, path);
+                }
+            }
+
+            SyncToolbarToActiveTab();
+            ActiveViewer?.Invalidate();
+            ActiveViewer?.Focus();
+        }
+
+        private async Task LoadGraphAsync(int tabIndex, string path)
+        {
+            var state  = tabStates[tabIndex];
+            var viewer = GraphTabControl.GetViewer(tabIndex);
+            if (viewer == null) return;
+            try
+            {
+                await viewer.LoadFromJson(JObject.Parse(File.ReadAllText(path)), false, true);
+                state.SaveFilePath = path;
+                UpdateTabTitle(tabIndex);
+                Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
+            }
+            catch (Exception ex)
+            {
+                ErrorLogging.LogLine($"Error restoring tab from '{path}': {ex.Message}");
+            }
         }
 
         //---------------------------------------------------------ApplyViewerSettings
@@ -317,6 +379,11 @@ namespace Foreman
                     return;
                 }
             }
+            // Persist the file path of every saved tab so they reopen on next launch
+            var openPaths = tabStates
+                .Select(s => s.SaveFilePath ?? "")
+                .ToList();
+            Properties.Settings.Default.LastOpenTabs = JsonConvert.SerializeObject(openPaths);
             Properties.Settings.Default.LastOpenFile = ActiveTabState?.SaveFilePath ?? "";
             Properties.Settings.Default.Save();
         }

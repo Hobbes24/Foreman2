@@ -457,6 +457,14 @@ namespace Foreman.Properties {
 
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string LastOpenTabs {
+            get { return ((string)(this["LastOpenTabs"])); }
+            set { this["LastOpenTabs"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("Segoe UI")]
         public string AnnotTextFontFamily {
             get { return ((string)(this["AnnotTextFontFamily"])); }
