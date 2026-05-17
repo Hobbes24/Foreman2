@@ -107,11 +107,10 @@ namespace Foreman
 
         protected override void OnSelecting(TabControlCancelEventArgs e)
         {
+            // Defensive guard: never allow the + tab to become selected
             if (e.TabPage?.Name == PlusTabKey)
             {
                 e.Cancel = true;
-                if (!_suppressEvents)
-                    AddTabRequested?.Invoke(this, EventArgs.Empty);
                 return;
             }
             base.OnSelecting(e);
@@ -121,6 +120,7 @@ namespace Foreman
         {
             if (e.Button == MouseButtons.Left)
             {
+                // Check close buttons on real tabs first
                 for (int i = 0; i < RealTabCount; i++)
                 {
                     if (GetCloseButtonRect(i).Contains(e.Location))
@@ -128,6 +128,14 @@ namespace Foreman
                         CloseTabRequested?.Invoke(this, i);
                         return;    // suppress normal tab-select from the × click area
                     }
+                }
+                // Intercept + tab clicks before base processes them so selection never changes
+                int plusIdx = RealTabCount;  // + tab is always the last one
+                if (plusIdx < TabPages.Count && GetTabRect(plusIdx).Contains(e.Location))
+                {
+                    if (!_suppressEvents)
+                        AddTabRequested?.Invoke(this, EventArgs.Empty);
+                    return;
                 }
             }
             base.OnMouseDown(e);
