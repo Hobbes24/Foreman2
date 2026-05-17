@@ -230,7 +230,7 @@ namespace Foreman
 			List<Recipe> miningWithFluidRecipes = new List<Recipe>();
 
 			PresetName = preset.Name;
-			JObject jsonData = PresetProcessor.PrepPreset(preset);
+			JObject jsonData = await Task.Run(() => PresetProcessor.PrepPreset(preset));
 			if (jsonData == null)
 				return;
 
