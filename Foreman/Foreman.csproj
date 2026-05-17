@@ -273,6 +273,7 @@
     </Compile>
     <Compile Include="ProductionGraphView\GridManager.cs" />
     <Compile Include="ProductionGraphView\Elements\ItemTabElement.cs" />
+    <Compile Include="Forms\GraphTabControl.cs" />
     <Compile Include="Forms\MainForm.cs">
       <SubType>Form</SubType>
     </Compile>

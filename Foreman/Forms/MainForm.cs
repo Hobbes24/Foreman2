@@ -16,9 +16,26 @@ namespace Foreman
 	{
 		internal const string DefaultPreset = "Factorio 2.0 Vanilla";
 		internal string DefaultAppName;
-		private string savefilePath = null;
-        private string lastSavedGraphJson = null;
-		private GraphSummaryForm graphSummaryForm = null;
+
+        // ── Per-tab state ──────────────────────────────────────────────────────
+        private class GraphTabState
+        {
+            public string SaveFilePath       = null;
+            public string LastSavedGraphJson = null;
+            public GraphSummaryForm SummaryForm = null;
+            public int  MinorGridlinesIndex  = 0;
+            public int  MajorGridlinesIndex  = 0;
+            public bool ShowGridlines        = false;
+        }
+        private readonly List<GraphTabState> tabStates = new List<GraphTabState>();
+        private int _newTabCounter = 0;
+        private bool _suppressToolbarEvents = false;
+
+        // Convenience accessors
+        private ProductionGraphViewer ActiveViewer => GraphTabControl.ActiveViewer;
+        private GraphTabState ActiveTabState =>
+            GraphTabControl.SelectedIndex >= 0 && GraphTabControl.SelectedIndex < tabStates.Count
+                ? tabStates[GraphTabControl.SelectedIndex] : null;
 
         public MainForm()
 		{
@@ -64,98 +81,211 @@ namespace Foreman
 
 		}
 
-		private void MainForm_Load(object sender, EventArgs e)
-		{
-			WindowState = FormWindowState.Maximized;
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+            WindowState = FormWindowState.Maximized;
+            Properties.Settings.Default.ForemanVersion = VersionUpdater.CurrentVersion;
 
-			Properties.Settings.Default.ForemanVersion = VersionUpdater.CurrentVersion;
+            if (!Enum.IsDefined(typeof(ProductionGraph.RateUnit), Properties.Settings.Default.DefaultRateUnit))
+                Properties.Settings.Default.DefaultRateUnit = (int)ProductionGraph.RateUnit.Per1Sec;
+            if (!Enum.IsDefined(typeof(ModuleSelector.Style), Properties.Settings.Default.DefaultModuleOption))
+                Properties.Settings.Default.DefaultModuleOption = (int)ModuleSelector.Style.None;
+            if (!Enum.IsDefined(typeof(AssemblerSelector.Style), Properties.Settings.Default.DefaultAssemblerOption))
+                Properties.Settings.Default.DefaultAssemblerOption = (int)AssemblerSelector.Style.WorstNonBurner;
+            if (!Enum.IsDefined(typeof(ProductionGraphViewer.LOD), Properties.Settings.Default.LevelOfDetail))
+                Properties.Settings.Default.LevelOfDetail = (int)ProductionGraphViewer.LOD.Medium;
+            if (!Enum.IsDefined(typeof(NodeDirection), Properties.Settings.Default.DefaultNodeDirection))
+                Properties.Settings.Default.DefaultNodeDirection = (int)NodeDirection.Up;
+            if (Properties.Settings.Default.IconsSize < 8)   Properties.Settings.Default.IconsSize = 8;
+            if (Properties.Settings.Default.IconsSize > 256) Properties.Settings.Default.IconsSize = 256;
 
-			if (!Enum.IsDefined(typeof(ProductionGraph.RateUnit), Properties.Settings.Default.DefaultRateUnit))
-				Properties.Settings.Default.DefaultRateUnit = (int)ProductionGraph.RateUnit.Per1Sec;
-			GraphViewer.Graph.SelectedRateUnit = (ProductionGraph.RateUnit)Properties.Settings.Default.DefaultRateUnit;
+            // Wire up tab control events before adding first tab
+            GraphTabControl.AddTabRequested      += GraphTabControl_AddTabRequested;
+            GraphTabControl.CloseTabRequested    += GraphTabControl_CloseTabRequested;
+            GraphTabControl.SelectedIndexChanged += GraphTabControl_SelectedIndexChanged;
 
-			if (!Enum.IsDefined(typeof(ModuleSelector.Style), Properties.Settings.Default.DefaultModuleOption))
-				Properties.Settings.Default.DefaultModuleOption = (int)ModuleSelector.Style.None;
-			GraphViewer.Graph.ModuleSelector.DefaultSelectionStyle = (ModuleSelector.Style)Properties.Settings.Default.DefaultModuleOption;
+            // Populate rate dropdown before any tab is created (SyncToolbarToActiveTab reads it)
+            RateOptionsDropDown.Items.AddRange(ProductionGraph.RateUnitNames);
 
-			if (!Enum.IsDefined(typeof(AssemblerSelector.Style), Properties.Settings.Default.DefaultAssemblerOption))
-				Properties.Settings.Default.DefaultAssemblerOption = (int)AssemblerSelector.Style.WorstNonBurner;
-			GraphViewer.Graph.AssemblerSelector.DefaultSelectionStyle = (AssemblerSelector.Style)Properties.Settings.Default.DefaultAssemblerOption;
+            // Create the first tab
+            _newTabCounter = 1;
+            var firstViewer = new ProductionGraphViewer();
+            firstViewer.KeyDown += GraphViewer_KeyDown;
 
-			GraphViewer.ArrowsOnLinks = Properties.Settings.Default.ArrowsOnLinks;
-			GraphViewer.DynamicLinkWidth = Properties.Settings.Default.DynamicLineWidth;
-			GraphViewer.ShowRecipeToolTip = Properties.Settings.Default.ShowRecipeToolTip;
-			GraphViewer.LockedRecipeEditPanelPosition = Properties.Settings.Default.LockedRecipeEditorPosition;
+            List<Preset> validPresets = GetValidPresetsList();
+            if (validPresets != null && validPresets.Count > 0)
+            {
+                Properties.Settings.Default.CurrentPresetName = validPresets[0].Name;
+                firstViewer.LoadPreset(validPresets[0]);
+            }
+            ApplyViewerSettings(firstViewer);
 
-			if (!Enum.IsDefined(typeof(ProductionGraphViewer.LOD), Properties.Settings.Default.LevelOfDetail))
-				Properties.Settings.Default.LevelOfDetail = (int)ProductionGraphViewer.LOD.Medium;
-			GraphViewer.LevelOfDetail = (ProductionGraphViewer.LOD)Properties.Settings.Default.LevelOfDetail;
+            var firstState = new GraphTabState
+            {
+                MinorGridlinesIndex = Properties.Settings.Default.MinorGridlines,
+                MajorGridlinesIndex = Properties.Settings.Default.MajorGridlines,
+                ShowGridlines       = Properties.Settings.Default.AltGridlines,
+            };
+            tabStates.Add(firstState);
+            GraphTabControl.AddGraphTab(firstViewer, "New Graph 1");
 
-			if (!Enum.IsDefined(typeof(NodeDirection), Properties.Settings.Default.DefaultNodeDirection))
-				Properties.Settings.Default.DefaultNodeDirection = (int)NodeDirection.Up;
-			GraphViewer.Graph.DefaultNodeDirection = (NodeDirection)Properties.Settings.Default.DefaultNodeDirection;
-
-			GraphViewer.SmartNodeDirection = Properties.Settings.Default.SmartNodeDirection;
-
-			GraphViewer.Graph.EnableExtraProductivityForNonMiners = Properties.Settings.Default.EnableExtraProductivityForNonMiners;
-			GraphViewer.NodeCountForSimpleView = Properties.Settings.Default.NodeCountForSimpleView;
-			GraphViewer.FlagOUSuppliedNodes = Properties.Settings.Default.FlagOUSuppliedNodes;
-
-			GraphViewer.ArrowRenderer.ShowErrorArrows = Properties.Settings.Default.ShowErrorArrows;
-			GraphViewer.ArrowRenderer.ShowWarningArrows = Properties.Settings.Default.ShowWarningArrows;
-			GraphViewer.ArrowRenderer.ShowDisconnectedArrows = Properties.Settings.Default.ShowDisconnectedArrows;
-			GraphViewer.ArrowRenderer.ShowOUNodeArrows = Properties.Settings.Default.ShowOUSuppliedArrows;
-
-			RateOptionsDropDown.Items.AddRange(ProductionGraph.RateUnitNames);
-			RateOptionsDropDown.SelectedIndex = (int)GraphViewer.Graph.SelectedRateUnit;
-			MinorGridlinesDropDown.SelectedIndex = Properties.Settings.Default.MinorGridlines;
-			MajorGridlinesDropDown.SelectedIndex = Properties.Settings.Default.MajorGridlines;
-			GridlinesCheckbox.Checked = Properties.Settings.Default.AltGridlines;
-
-			GraphViewer.Graph.DefaultToSimplePassthroughNodes = Properties.Settings.Default.SimplePassthroughNodes;
-
-			GraphViewer.IconsOnly = Properties.Settings.Default.IconsOnlyView;
-			IconViewCheckBox.Checked = GraphViewer.IconsOnly;
-			if (Properties.Settings.Default.IconsSize < 8) Properties.Settings.Default.IconsSize = 8;
-			if (Properties.Settings.Default.IconsSize > 256) Properties.Settings.Default.IconsSize = 256;
-			GraphViewer.IconsSize = Properties.Settings.Default.IconsSize;
-
-			Properties.Settings.Default.Save();
+            Properties.Settings.Default.Save();
 
             string lastFile = Properties.Settings.Default.LastOpenFile;
-            bool loadingFromFile = !string.IsNullOrEmpty(lastFile) && File.Exists(lastFile);
-
-            if (loadingFromFile)
+            if (!string.IsNullOrEmpty(lastFile) && File.Exists(lastFile))
                 LoadGraph(lastFile);
 
-            // If no save file was loaded, ensure a preset is still loaded so DCache is never null
-            if (!loadingFromFile)
+            ActiveViewer?.Invalidate();
+            ActiveViewer?.Focus();
+        }
+
+        //---------------------------------------------------------ApplyViewerSettings
+
+        private void ApplyViewerSettings(ProductionGraphViewer v)
+        {
+            v.Graph.SelectedRateUnit                        = (ProductionGraph.RateUnit)Properties.Settings.Default.DefaultRateUnit;
+            v.Graph.ModuleSelector.DefaultSelectionStyle    = (ModuleSelector.Style)Properties.Settings.Default.DefaultModuleOption;
+            v.Graph.AssemblerSelector.DefaultSelectionStyle = (AssemblerSelector.Style)Properties.Settings.Default.DefaultAssemblerOption;
+            v.Graph.DefaultNodeDirection                    = (NodeDirection)Properties.Settings.Default.DefaultNodeDirection;
+            v.Graph.EnableExtraProductivityForNonMiners     = Properties.Settings.Default.EnableExtraProductivityForNonMiners;
+            v.Graph.DefaultToSimplePassthroughNodes         = Properties.Settings.Default.SimplePassthroughNodes;
+            v.Graph.LowPriorityPower                       = 2f;
+            v.Graph.PullOutputNodes                        = false;
+            v.Graph.PullOutputNodesPower                   = 1f;
+            v.ArrowsOnLinks                                = Properties.Settings.Default.ArrowsOnLinks;
+            v.DynamicLinkWidth                             = Properties.Settings.Default.DynamicLineWidth;
+            v.ShowRecipeToolTip                            = Properties.Settings.Default.ShowRecipeToolTip;
+            v.LockedRecipeEditPanelPosition                = Properties.Settings.Default.LockedRecipeEditorPosition;
+            v.LevelOfDetail                                = (ProductionGraphViewer.LOD)Properties.Settings.Default.LevelOfDetail;
+            v.NodeCountForSimpleView                       = Properties.Settings.Default.NodeCountForSimpleView;
+            v.FlagOUSuppliedNodes                          = Properties.Settings.Default.FlagOUSuppliedNodes;
+            v.IconsOnly                                    = Properties.Settings.Default.IconsOnlyView;
+            v.IconsSize                                    = Properties.Settings.Default.IconsSize;
+            v.SmartNodeDirection                           = Properties.Settings.Default.SmartNodeDirection;
+            v.ArrowRenderer.ShowErrorArrows                = Properties.Settings.Default.ShowErrorArrows;
+            v.ArrowRenderer.ShowWarningArrows              = Properties.Settings.Default.ShowWarningArrows;
+            v.ArrowRenderer.ShowDisconnectedArrows         = Properties.Settings.Default.ShowDisconnectedArrows;
+            v.ArrowRenderer.ShowOUNodeArrows               = Properties.Settings.Default.ShowOUSuppliedArrows;
+        }
+
+        //---------------------------------------------------------Tab management
+
+        private void CreateNewTab(string title = null)
+        {
+            _newTabCounter++;
+            string tabTitle = title ?? $"New Graph {_newTabCounter}";
+            var viewer = new ProductionGraphViewer();
+            viewer.KeyDown += GraphViewer_KeyDown;
+
+            var srcViewer = GraphTabControl.RealTabCount > 0 ? GraphTabControl.GetViewer(0) : null;
+            if (srcViewer?.DCache != null)
             {
-                List<Preset> validPresets = GetValidPresetsList();
-                if (validPresets != null && validPresets.Count > 0)
-                {
-                    Properties.Settings.Default.CurrentPresetName = validPresets[0].Name;
-                    GraphViewer.LoadPreset(validPresets[0]);
-                    this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
-                    Properties.Settings.Default.Save();
-                }
+                viewer.DCache = srcViewer.DCache;
+                viewer.SavedPresetNames = new List<string>(srcViewer.SavedPresetNames);
             }
+            ApplyViewerSettings(viewer);
 
-            GraphViewer.Invalidate();
-            GraphViewer.Focus();
-#if DEBUG
-			//LoadGraph(Path.Combine(new string[] { Application.StartupPath, "Saved Graphs", "NodeLayoutTestpage.fjson" }));
-#endif
-		}
+            if (Properties.Settings.Default.FlagDarkMode)
+                ChangeTheme(Color.FromArgb(23, 23, 23), Color.FromArgb(124, 124, 124), viewer);
 
-		//---------------------------------------------------------Save/Load/New/Exit
+            var state = new GraphTabState
+            {
+                MinorGridlinesIndex = Properties.Settings.Default.MinorGridlines,
+                MajorGridlinesIndex = Properties.Settings.Default.MajorGridlines,
+                ShowGridlines       = Properties.Settings.Default.AltGridlines,
+            };
+            tabStates.Add(state);
+            GraphTabControl.AddGraphTab(viewer, tabTitle);
+        }
 
+        private void CloseTab(int index)
+        {
+            if (GraphTabControl.RealTabCount <= 1)
+            {
+                MessageBox.Show("At least one tab must remain open.", "Cannot close tab",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (!TestTabSavedStatus(index)) return;
+            tabStates[index].SummaryForm?.Close();
+            tabStates.RemoveAt(index);
+            GraphTabControl.RemoveGraphTab(index);
+            UpdateTitleBar();
+        }
 
-		private void SaveButton_Click(object sender, EventArgs e)
-		{
-			if (savefilePath == null || !SaveGraph(savefilePath))
-				SaveGraphAs();
-		}
+        private void SyncToolbarToActiveTab()
+        {
+            var v     = ActiveViewer;
+            var state = ActiveTabState;
+            if (v == null || state == null) return;
+
+            _suppressToolbarEvents = true;
+            try
+            {
+                RateOptionsDropDown.SelectedIndex    = (int)v.Graph.SelectedRateUnit;
+                PauseUpdatesCheckbox.Checked         = v.Graph.PauseUpdates;
+                IconViewCheckBox.Checked             = v.IconsOnly;
+                GridlinesCheckbox.Checked            = state.ShowGridlines;
+                MinorGridlinesDropDown.SelectedIndex = state.MinorGridlinesIndex;
+                MajorGridlinesDropDown.SelectedIndex = state.MajorGridlinesIndex;
+            }
+            finally { _suppressToolbarEvents = false; }
+
+            ApplyGridlinesToActiveViewer();
+            UpdateTitleBar();
+        }
+
+        private void ApplyGridlinesToActiveViewer()
+        {
+            var v = ActiveViewer;
+            if (v == null) return;
+            int minor = 0, major = 0;
+            if (MinorGridlinesDropDown.SelectedIndex > 0)
+                minor = 6 * (int)Math.Pow(2, MinorGridlinesDropDown.SelectedIndex - 1);
+            if (MajorGridlinesDropDown.SelectedIndex > 0)
+                major = 6 * (int)Math.Pow(2, MajorGridlinesDropDown.SelectedIndex - 1);
+            v.Grid.CurrentGridUnit      = minor;
+            v.Grid.CurrentMajorGridUnit = major;
+            v.Grid.ShowGrid             = GridlinesCheckbox.Checked;
+            v.Invalidate();
+        }
+
+        private void UpdateTitleBar()
+        {
+            var state = ActiveTabState;
+            string path = state?.SaveFilePath ?? "Untitled";
+            this.Text = $"{DefaultAppName} ({Properties.Settings.Default.CurrentPresetName}) - {path}";
+        }
+
+        private void UpdateTabTitle(int tabIndex)
+        {
+            if (tabIndex < 0 || tabIndex >= tabStates.Count) return;
+            string path = tabStates[tabIndex].SaveFilePath;
+            string label = path != null
+                ? Path.GetFileNameWithoutExtension(path)
+                : $"New Graph {tabIndex + 1}";
+            GraphTabControl.SetTabTitle(tabIndex, label);
+        }
+
+        private void GraphTabControl_AddTabRequested(object sender, EventArgs e) => CreateNewTab();
+
+        private void GraphTabControl_CloseTabRequested(object sender, int tabIndex) => CloseTab(tabIndex);
+
+        private void GraphTabControl_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            SyncToolbarToActiveTab();
+            ActiveViewer?.Focus();
+        }
+
+        //---------------------------------------------------------Save/Load/New/Exit
+
+        private void SaveButton_Click(object sender, EventArgs e)
+        {
+            var state = ActiveTabState;
+            if (state == null) return;
+            if (state.SaveFilePath == null || !SaveGraph(GraphTabControl.SelectedIndex, state.SaveFilePath))
+                SaveGraphAs();
+        }
 
 		private void SaveAsGraphButton_Click(object sender, EventArgs e)
 		{
@@ -179,150 +309,157 @@ namespace Foreman
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            e.Cancel = !TestGraphSavedStatus();
-            if (!e.Cancel)
+            for (int i = 0; i < GraphTabControl.RealTabCount; i++)
             {
-                Properties.Settings.Default.LastOpenFile = savefilePath ?? "";
-                Properties.Settings.Default.Save();
+                if (!TestTabSavedStatus(i))
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
+            Properties.Settings.Default.LastOpenFile = ActiveTabState?.SaveFilePath ?? "";
+            Properties.Settings.Default.Save();
+        }
+
+        private void SaveGraphAs() => SaveGraphAs(GraphTabControl.SelectedIndex);
+        private void SaveGraphAs(int tabIndex)
+        {
+            using (var dialog = new SaveFileDialog())
+            {
+                dialog.DefaultExt    = ".fjson";
+                dialog.Filter        = "Foreman files (*.fjson)|*.fjson|All files|*.*";
+                string lastSaveDir   = Properties.Settings.Default.LastSaveFileLocation;
+                dialog.InitialDirectory = (!string.IsNullOrEmpty(lastSaveDir) && Directory.Exists(lastSaveDir))
+                    ? lastSaveDir
+                    : Path.Combine(Application.StartupPath, "Saved Graphs");
+                if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
+                    Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
+                dialog.AddExtension    = true;
+                dialog.OverwritePrompt = true;
+                dialog.FileName        = "Flowchart.fjson";
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+                if (SaveGraph(tabIndex, dialog.FileName))
+                {
+                    Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(dialog.FileName);
+                    Properties.Settings.Default.Save();
+                }
             }
         }
 
-        private void SaveGraphAs()
-		{
-			SaveFileDialog dialog = new SaveFileDialog();
-			dialog.DefaultExt = ".fjson";
-			dialog.Filter = "Foreman files (*.fjson)|*.fjson|All files|*.*";
-			if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
-				Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
-            string lastSaveDir = Properties.Settings.Default.LastSaveFileLocation;
-            dialog.InitialDirectory = (!string.IsNullOrEmpty(lastSaveDir) && Directory.Exists(lastSaveDir))
-                ? lastSaveDir
-                : Path.Combine(Application.StartupPath, "Saved Graphs");
-            dialog.AddExtension = true;
-			dialog.OverwritePrompt = true;
-			dialog.FileName = "Flowchart.fjson";
-			if (dialog.ShowDialog() != DialogResult.OK)
-				return;
-
-			SaveGraph(dialog.FileName);
-		}
-
-        // Helper to extract the graph + annotations JSON for unsaved-changes comparison
-        private string GetCurrentGraphJson()
+        private string GetGraphJson(ProductionGraphViewer viewer)
         {
-            StringBuilder sb = new StringBuilder();
+            var sb     = new StringBuilder();
             var writer = new JsonTextWriter(new StringWriter(sb));
-            JsonSerializer serialiser = JsonSerializer.Create();
-            serialiser.Formatting = Formatting.Indented;
-            GraphViewer.Graph.SerializeNodeIdSet = null;
-            serialiser.Serialize(writer, GraphViewer);
+            var ser    = JsonSerializer.Create();
+            ser.Formatting = Formatting.Indented;
+            viewer.Graph.SerializeNodeIdSet = null;
+            ser.Serialize(writer, viewer);
             writer.Close();
             return sb.ToString();
         }
+        private string GetCurrentGraphJson() => GetGraphJson(ActiveViewer);
 
-        private bool SaveGraph(string path)
+        private bool SaveGraph(int tabIndex, string path)
         {
+            var state  = tabStates[tabIndex];
+            var viewer = GraphTabControl.GetViewer(tabIndex);
+            if (viewer == null) return false;
             try
             {
-                // Serialize to string first, capturing the snapshot in one pass
-                StringBuilder sb = new StringBuilder();
-                var sbWriter = new JsonTextWriter(new StringWriter(sb));
-                JsonSerializer serialiser = JsonSerializer.Create();
-                serialiser.Formatting = Formatting.Indented;
-                GraphViewer.Graph.SerializeNodeIdSet = null;
-                serialiser.Serialize(sbWriter, GraphViewer);
-                sbWriter.Close();
-
-                // Write that string to disk
-                File.WriteAllText(path, sb.ToString());
-
-                savefilePath = path;
-                lastSavedGraphJson = sb.ToString();
-                this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+                string json = GetGraphJson(viewer);
+                File.WriteAllText(path, json);
+                state.SaveFilePath       = path;
+                state.LastSavedGraphJson = json;
+                UpdateTabTitle(tabIndex);
+                if (tabIndex == GraphTabControl.SelectedIndex)
+                    UpdateTitleBar();
                 return true;
             }
-            catch (Exception exception)
+            catch (Exception ex)
             {
                 MessageBox.Show("Could not save this file. See log for more details");
-                ErrorLogging.LogLine(String.Format("Error saving file '{0}'. Error: '{1}'", path, exception.Message));
-                ErrorLogging.LogLine(string.Format("Full error output: {0}", exception.ToString()));
+                ErrorLogging.LogLine($"Error saving file '{path}'. Error: '{ex.Message}'");
+                ErrorLogging.LogLine($"Full error output: {ex}");
                 return false;
             }
         }
 
         private void LoadGraph()
         {
-            if (!TestGraphSavedStatus())
-                return;
-
-            OpenFileDialog dialog = new OpenFileDialog();
-            dialog.Filter = "Foreman files (*.fjson)|*.fjson|Old Foreman files (*.json)|*.json";
-            if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
-                Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
-            string lastLoadDir = Properties.Settings.Default.LastSaveFileLocation;
-            dialog.InitialDirectory = (!string.IsNullOrEmpty(lastLoadDir) && Directory.Exists(lastLoadDir))
-                ? lastLoadDir
-                : Path.Combine(Application.StartupPath, "Saved Graphs");
-            dialog.CheckFileExists = true;
-            if (dialog.ShowDialog() != DialogResult.OK)
-                return;
-
-            LoadGraph(dialog.FileName);
+            if (!TestGraphSavedStatus()) return;
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Filter = "Foreman files (*.fjson)|*.fjson|Old Foreman files (*.json)|*.json";
+                if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
+                    Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
+                string lastLoadDir = Properties.Settings.Default.LastSaveFileLocation;
+                dialog.InitialDirectory = (!string.IsNullOrEmpty(lastLoadDir) && Directory.Exists(lastLoadDir))
+                    ? lastLoadDir
+                    : Path.Combine(Application.StartupPath, "Saved Graphs");
+                dialog.CheckFileExists = true;
+                if (dialog.ShowDialog() != DialogResult.OK) return;
+                LoadGraph(dialog.FileName);
+            }
         }
 
         private async void LoadGraph(string path)
         {
+            int tabIndex = GraphTabControl.SelectedIndex;
+            var state    = ActiveTabState;
             try
             {
-                await GraphViewer.LoadFromJson(JObject.Parse(File.ReadAllText(path)), false, true);
-                savefilePath = path;
-                lastSavedGraphJson = GetCurrentGraphJson(); // snapshot after successful load
+                await ActiveViewer.LoadFromJson(JObject.Parse(File.ReadAllText(path)), false, true);
+                state.SaveFilePath       = path;
+                state.LastSavedGraphJson = GetCurrentGraphJson();
+                UpdateTabTitle(tabIndex);
+                Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
             }
-            catch (Exception exception)
+            catch (Exception ex)
             {
                 MessageBox.Show("Could not load this file. See log for more details");
-                ErrorLogging.LogLine(string.Format("Error loading file '{0}'. Error: '{1}'", path, exception.Message));
-                ErrorLogging.LogLine(string.Format("Full error output: {0}", exception.ToString()));
+                ErrorLogging.LogLine($"Error loading file '{path}'. Error: '{ex.Message}'");
+                ErrorLogging.LogLine($"Full error output: {ex}");
             }
 
-            RateOptionsDropDown.SelectedIndex = (int)GraphViewer.Graph.SelectedRateUnit;
-            Properties.Settings.Default.EnableExtraProductivityForNonMiners = GraphViewer.Graph.EnableExtraProductivityForNonMiners;
-            Properties.Settings.Default.DefaultRateUnit = (int)GraphViewer.Graph.SelectedRateUnit;
-            Properties.Settings.Default.DefaultAssemblerOption = (int)GraphViewer.Graph.AssemblerSelector.DefaultSelectionStyle;
-            Properties.Settings.Default.DefaultModuleOption = (int)GraphViewer.Graph.ModuleSelector.DefaultSelectionStyle;
-            Properties.Settings.Default.DefaultNodeDirection = (int)GraphViewer.Graph.DefaultNodeDirection;
-            Properties.Settings.Default.EnableExtraProductivityForNonMiners = GraphViewer.Graph.EnableExtraProductivityForNonMiners;
+            var v = ActiveViewer;
+            Properties.Settings.Default.EnableExtraProductivityForNonMiners = v.Graph.EnableExtraProductivityForNonMiners;
+            Properties.Settings.Default.DefaultRateUnit        = (int)v.Graph.SelectedRateUnit;
+            Properties.Settings.Default.DefaultAssemblerOption = (int)v.Graph.AssemblerSelector.DefaultSelectionStyle;
+            Properties.Settings.Default.DefaultModuleOption    = (int)v.Graph.ModuleSelector.DefaultSelectionStyle;
+            Properties.Settings.Default.DefaultNodeDirection   = (int)v.Graph.DefaultNodeDirection;
             Properties.Settings.Default.Save();
-            GraphViewer.Invalidate();
-            this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+            SyncToolbarToActiveTab();
+            v.Invalidate();
+            UpdateTitleBar();
         }
 
-		private void NewGraph()
-		{
-			if (!TestGraphSavedStatus())
-				return;
+        private void NewGraph()
+        {
+            if (!TestGraphSavedStatus()) return;
+            var v     = ActiveViewer;
+            var state = ActiveTabState;
+            if (v == null || state == null) return;
 
-            GraphViewer.ClearGraph();
-            GraphViewer.SavedPresetNames.Clear();
-            GraphViewer.Graph.LowPriorityPower = 2f;
-			GraphViewer.Graph.PullOutputNodes = false;
-			GraphViewer.Graph.PullOutputNodesPower = 1f;
+            v.ClearGraph();
+            v.SavedPresetNames.Clear();
 
-			List<Preset> validPresets = GetValidPresetsList();
-			if (validPresets != null && validPresets.Count > 0)
-			{
-				Properties.Settings.Default.CurrentPresetName = validPresets[0].Name;
-				GraphViewer.LoadPreset(validPresets[0]);
-				savefilePath = null;
-			}
-			else
-			{
-				Properties.Settings.Default.CurrentPresetName = "No Preset!";
-			}
-
-			Properties.Settings.Default.Save();
-			this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
-		}
+            List<Preset> validPresets = GetValidPresetsList();
+            if (validPresets != null && validPresets.Count > 0)
+            {
+                Properties.Settings.Default.CurrentPresetName = validPresets[0].Name;
+                v.LoadPreset(validPresets[0]);
+            }
+            else
+            {
+                Properties.Settings.Default.CurrentPresetName = "No Preset!";
+            }
+            ApplyViewerSettings(v);
+            state.SaveFilePath       = null;
+            state.LastSavedGraphJson = null;
+            UpdateTabTitle(GraphTabControl.SelectedIndex);
+            Properties.Settings.Default.Save();
+            UpdateTitleBar();
+        }
 
 		private void ImportGraph()
 		{
@@ -341,46 +478,67 @@ namespace Foreman
 			ImportGraph(dialog.FileName);
 		}
 
-		private void ImportGraph(string path)
-		{
-			try
-			{
-				GraphViewer.ImportNodesFromJson((JObject)JObject.Parse(File.ReadAllText(path))["ProductionGraph"], GraphViewer.ScreenToGraph(new Point(GraphViewer.Width / 2, GraphViewer.Height / 2)), true);
+        private void ImportGraph(string path)
+        {
+            var v = ActiveViewer;
+            if (v == null) return;
+            try
+            {
+                v.ImportNodesFromJson(
+                    (JObject)JObject.Parse(File.ReadAllText(path))["ProductionGraph"],
+                    v.ScreenToGraph(new Point(v.Width / 2, v.Height / 2)), true);
                 Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
                 Properties.Settings.Default.Save();
             }
-			catch (Exception exception)
-			{
-				MessageBox.Show("Could not import from this file. See log for more details");
-				ErrorLogging.LogLine(string.Format("Error importing from file '{0}'. Error: '{1}'", path, exception.Message));
-				ErrorLogging.LogLine(string.Format("Full error output: {0}", exception.ToString()));
-			}
-		}
+            catch (Exception ex)
+            {
+                MessageBox.Show("Could not import from this file. See log for more details");
+                ErrorLogging.LogLine($"Error importing from file '{path}'. Error: '{ex.Message}'");
+                ErrorLogging.LogLine($"Full error output: {ex}");
+            }
+        }
 
-        private bool TestGraphSavedStatus()
+        private bool TestTabSavedStatus(int tabIndex)
         {
-            if (savefilePath == null)
+            var state  = tabStates[tabIndex];
+            var viewer = GraphTabControl.GetViewer(tabIndex);
+            if (viewer == null) return true;
+            string tabLabel = GraphTabControl.TabPages[tabIndex].Text;
+
+            if (state.SaveFilePath == null)
             {
-                if (GraphViewer.Graph.Nodes.Any())
-                    return MessageBox.Show("The current graph hasnt been saved!\nIf you continue, you will loose it forever!", "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
-                else
-                    return true;
+                if (viewer.Graph.Nodes.Any())
+                    return MessageBox.Show(
+                        $"Tab \"{tabLabel}\" hasn't been saved!\nIf you continue you will lose it forever!",
+                        "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
+                return true;
             }
 
-            if (!File.Exists(savefilePath))
-                return MessageBox.Show("The current graph's save file has been deleted!\nIf you continue, you will lose it forever!", "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
+            if (!File.Exists(state.SaveFilePath))
+                return MessageBox.Show(
+                    $"Tab \"{tabLabel}\" save file has been deleted!\nIf you continue you will lose it forever!",
+                    "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
 
-            if (lastSavedGraphJson == null || GetCurrentGraphJson() != lastSavedGraphJson)
+            string currentJson = GetGraphJson(viewer);
+            if (state.LastSavedGraphJson == null || currentJson != state.LastSavedGraphJson)
             {
-                DialogResult result = MessageBox.Show("The current graph has been modified!\nDo you wish to save before continuing?", "Are you sure?", MessageBoxButtons.YesNoCancel);
-                if (result == DialogResult.Cancel)
-                    return false;
-                if (result == DialogResult.Yes) // was incorrectly DialogResult.OK before
-                    SaveGraph(savefilePath);
+                DialogResult r = MessageBox.Show(
+                    $"Tab \"{tabLabel}\" has been modified!\nDo you wish to save before continuing?",
+                    "Are you sure?", MessageBoxButtons.YesNoCancel);
+                if (r == DialogResult.Cancel) return false;
+                if (r == DialogResult.Yes)
+                {
+                    if (state.SaveFilePath != null)
+                        SaveGraph(tabIndex, state.SaveFilePath);
+                    else
+                        SaveGraphAs(tabIndex);
+                }
             }
-
             return true;
         }
+
+        private bool TestGraphSavedStatus() =>
+            TestTabSavedStatus(GraphTabControl.SelectedIndex);
 
         //---------------------------------------------------------Settings/export/additem/addrecipe
 
@@ -417,206 +575,220 @@ namespace Foreman
 			return presets;
 		}
 
-		private async void SettingsButton_Click(object sender, EventArgs e)
-		{
-			SettingsForm.SettingsFormOptions options = new SettingsForm.SettingsFormOptions(GraphViewer.DCache);
+        private async void SettingsButton_Click(object sender, EventArgs e)
+        {
+            var activeViewer = ActiveViewer;
+            if (activeViewer == null) return;
 
-			options.Presets = GetValidPresetsList();
-			options.SelectedPreset = options.Presets[0];
+            SettingsForm.SettingsFormOptions options = new SettingsForm.SettingsFormOptions(activeViewer.DCache);
 
-			options.QualitySteps = GraphViewer.Graph.MaxQualitySteps;
+            options.Presets        = GetValidPresetsList();
+            options.SelectedPreset = options.Presets[0];
 
-			options.LevelOfDetail = GraphViewer.LevelOfDetail;
-			options.NodeCountForSimpleView = GraphViewer.NodeCountForSimpleView;
-			options.IconsOnlyIconSize = GraphViewer.IconsSize;
+            options.QualitySteps           = activeViewer.Graph.MaxQualitySteps;
+            options.LevelOfDetail          = activeViewer.LevelOfDetail;
+            options.NodeCountForSimpleView = activeViewer.NodeCountForSimpleView;
+            options.IconsOnlyIconSize      = activeViewer.IconsSize;
 
-			options.ArrowsOnLinks = GraphViewer.ArrowsOnLinks;
-			options.SimplePassthroughNodes = GraphViewer.Graph.DefaultToSimplePassthroughNodes;
-			options.DynamicLinkWidth = GraphViewer.DynamicLinkWidth;
-			options.ShowRecipeToolTip = GraphViewer.ShowRecipeToolTip;
-			options.LockedRecipeEditPanelPosition = GraphViewer.LockedRecipeEditPanelPosition;
-			options.FlagOUSuppliedNodes = GraphViewer.FlagOUSuppliedNodes;
+            options.ArrowsOnLinks               = activeViewer.ArrowsOnLinks;
+            options.SimplePassthroughNodes      = activeViewer.Graph.DefaultToSimplePassthroughNodes;
+            options.DynamicLinkWidth            = activeViewer.DynamicLinkWidth;
+            options.ShowRecipeToolTip           = activeViewer.ShowRecipeToolTip;
+            options.LockedRecipeEditPanelPosition = activeViewer.LockedRecipeEditPanelPosition;
+            options.FlagOUSuppliedNodes         = activeViewer.FlagOUSuppliedNodes;
+            options.FlagDarkMode               = Properties.Settings.Default.FlagDarkMode;
 
-			options.FlagDarkMode = Properties.Settings.Default.FlagDarkMode;
+            options.DefaultAssemblerStyle = activeViewer.Graph.AssemblerSelector.DefaultSelectionStyle;
+            options.DefaultModuleStyle    = activeViewer.Graph.ModuleSelector.DefaultSelectionStyle;
+            options.DefaultNodeDirection  = activeViewer.Graph.DefaultNodeDirection;
+            options.SmartNodeDirection    = activeViewer.SmartNodeDirection;
 
-			options.DefaultAssemblerStyle = GraphViewer.Graph.AssemblerSelector.DefaultSelectionStyle;
-			options.DefaultModuleStyle = GraphViewer.Graph.ModuleSelector.DefaultSelectionStyle;
-			options.DefaultNodeDirection = GraphViewer.Graph.DefaultNodeDirection;
-			options.SmartNodeDirection = GraphViewer.SmartNodeDirection;
+            options.ShowErrorArrows       = activeViewer.ArrowRenderer.ShowErrorArrows;
+            options.ShowWarningArrows     = activeViewer.ArrowRenderer.ShowWarningArrows;
+            options.ShowDisconnectedArrows = activeViewer.ArrowRenderer.ShowDisconnectedArrows;
+            options.ShowOUSuppliedArrows  = activeViewer.ArrowRenderer.ShowOUNodeArrows;
 
-			options.ShowErrorArrows = GraphViewer.ArrowRenderer.ShowErrorArrows;
-			options.ShowWarningArrows = GraphViewer.ArrowRenderer.ShowWarningArrows;
-			options.ShowDisconnectedArrows = GraphViewer.ArrowRenderer.ShowDisconnectedArrows;
-			options.ShowOUSuppliedArrows = GraphViewer.ArrowRenderer.ShowOUNodeArrows;
+            options.RoundAssemblerCount = Properties.Settings.Default.RoundAssemblerCount;
+            options.AbbreviateSciPacks  = Properties.Settings.Default.AbbreviateSciPacks;
 
-			options.RoundAssemblerCount = Properties.Settings.Default.RoundAssemblerCount;
-			options.AbbreviateSciPacks = Properties.Settings.Default.AbbreviateSciPacks;
+            options.EnableExtraProductivityForNonMiners = activeViewer.Graph.EnableExtraProductivityForNonMiners;
+            options.DEV_ShowUnavailableItems            = Properties.Settings.Default.ShowUnavailable;
+            options.DEV_UseRecipeBWFilters              = Properties.Settings.Default.UseRecipeBWfilters;
 
-			options.EnableExtraProductivityForNonMiners = GraphViewer.Graph.EnableExtraProductivityForNonMiners;
-			options.DEV_ShowUnavailableItems = Properties.Settings.Default.ShowUnavailable;
-			options.DEV_UseRecipeBWFilters = Properties.Settings.Default.UseRecipeBWfilters;
+            options.Solver_LowPriorityPower        = activeViewer.Graph.LowPriorityPower;
+            options.Solver_PullConsumerNodes        = activeViewer.Graph.PullOutputNodes;
+            options.Solver_PullConsumerNodesPower   = activeViewer.Graph.PullOutputNodesPower;
 
-			options.Solver_LowPriorityPower = GraphViewer.Graph.LowPriorityPower;
-			options.Solver_PullConsumerNodes = GraphViewer.Graph.PullOutputNodes;
-			options.Solver_PullConsumerNodesPower = GraphViewer.Graph.PullOutputNodesPower;
-
-            if (GraphViewer.DCache != null)
+            if (activeViewer.DCache != null)
             {
-                options.EnabledObjects.UnionWith(GraphViewer.DCache.Recipes.Values.Where(r => r.Enabled));
-                options.EnabledObjects.UnionWith(GraphViewer.DCache.Assemblers.Values.Where(r => r.Enabled));
-                options.EnabledObjects.UnionWith(GraphViewer.DCache.Beacons.Values.Where(r => r.Enabled));
-                options.EnabledObjects.UnionWith(GraphViewer.DCache.Modules.Values.Where(r => r.Enabled));
-                options.EnabledObjects.UnionWith(GraphViewer.DCache.Qualities.Values.Where(r => r.Enabled));
+                options.EnabledObjects.UnionWith(activeViewer.DCache.Recipes.Values.Where(r => r.Enabled));
+                options.EnabledObjects.UnionWith(activeViewer.DCache.Assemblers.Values.Where(r => r.Enabled));
+                options.EnabledObjects.UnionWith(activeViewer.DCache.Beacons.Values.Where(r => r.Enabled));
+                options.EnabledObjects.UnionWith(activeViewer.DCache.Modules.Values.Where(r => r.Enabled));
+                options.EnabledObjects.UnionWith(activeViewer.DCache.Qualities.Values.Where(r => r.Enabled));
             }
-            options.FilePresetNames = GraphViewer.SavedPresetNames.Count > 0
-                ? new List<string>(GraphViewer.SavedPresetNames)
+            options.FilePresetNames = activeViewer.SavedPresetNames.Count > 0
+                ? new List<string>(activeViewer.SavedPresetNames)
                 : null;
 
             using (SettingsForm form = new SettingsForm(options, this))
             {
-				form.StartPosition = FormStartPosition.Manual;
-				form.Left = this.Left + 50;
-				form.Top = this.Top + 50;
-				if (form.ShowDialog() == DialogResult.OK)
-				{
-					if (options.SelectedPreset != options.Presets[0] || options.DEV_UseRecipeBWFilters != Properties.Settings.Default.UseRecipeBWfilters || options.RequireReload) //different preset or recipeBWFilter change -> need to reload datacache
-					{
-						Properties.Settings.Default.CurrentPresetName = form.Options.SelectedPreset.Name;
-						Properties.Settings.Default.UseRecipeBWfilters = true;  //Deprecated, this should work now.
+                form.StartPosition = FormStartPosition.Manual;
+                form.Left = this.Left + 50;
+                form.Top  = this.Top  + 50;
+                if (form.ShowDialog() == DialogResult.OK)
+                {
+                    if (options.SelectedPreset != options.Presets[0] || options.DEV_UseRecipeBWFilters != Properties.Settings.Default.UseRecipeBWfilters || options.RequireReload)
+                    {
+                        Properties.Settings.Default.CurrentPresetName  = form.Options.SelectedPreset.Name;
+                        Properties.Settings.Default.UseRecipeBWfilters = true;
 
-                        if (GraphViewer.DCache == null)
+                        if (activeViewer.DCache == null)
                         {
-                            // No graph loaded yet — just load the preset directly, nothing to serialize/restore
-                            GraphViewer.LoadPreset(form.Options.SelectedPreset);
-                            this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+                            activeViewer.LoadPreset(form.Options.SelectedPreset);
+                            UpdateTitleBar();
                         }
                         else
                         {
-                            // Existing graph — serialize it and reload under the new preset
-                            List<Preset> validPresets = GetValidPresetsList();
-                            await GraphViewer.LoadFromJson(JObject.Parse(JsonConvert.SerializeObject(GraphViewer)), true, false);
-                            lastSavedGraphJson = GetCurrentGraphJson();
-                            this.Text = string.Format(DefaultAppName + " ({0}) - {1}", Properties.Settings.Default.CurrentPresetName, savefilePath ?? "Untitled");
+                            // Reload every tab with the new preset
+                            for (int _ti = 0; _ti < GraphTabControl.RealTabCount; _ti++)
+                            {
+                                var _tv = GraphTabControl.GetViewer(_ti);
+                                if (_tv == null) continue;
+                                string _snapshot = JsonConvert.SerializeObject(_tv);
+                                await _tv.LoadFromJson(JObject.Parse(_snapshot), true, false);
+                                tabStates[_ti].LastSavedGraphJson = GetGraphJson(_tv);
+                            }
+                            SyncToolbarToActiveTab();
+                            UpdateTitleBar();
                         }
                     }
-                    else //not loading a new preset -> update the enabled statuses
+                    else
                     {
-                        if (GraphViewer.DCache != null)
+                        if (activeViewer.DCache != null)
                         {
-                            foreach (Recipe recipe in GraphViewer.DCache.Recipes.Values)
+                            foreach (Recipe recipe in activeViewer.DCache.Recipes.Values)
                                 recipe.Enabled = options.EnabledObjects.Contains(recipe);
-                            foreach (Assembler assembler in GraphViewer.DCache.Assemblers.Values)
+                            foreach (Assembler assembler in activeViewer.DCache.Assemblers.Values)
                                 assembler.Enabled = options.EnabledObjects.Contains(assembler);
-                            foreach (Beacon beacon in GraphViewer.DCache.Beacons.Values)
+                            foreach (Beacon beacon in activeViewer.DCache.Beacons.Values)
                                 beacon.Enabled = options.EnabledObjects.Contains(beacon);
-                            foreach (Module module in GraphViewer.DCache.Modules.Values)
+                            foreach (Module module in activeViewer.DCache.Modules.Values)
                                 module.Enabled = options.EnabledObjects.Contains(module);
-                            foreach (Quality quality in GraphViewer.DCache.Qualities.Values)
+                            foreach (Quality quality in activeViewer.DCache.Qualities.Values)
                                 quality.Enabled = options.EnabledObjects.Contains(quality);
-                            GraphViewer.DCache.DefaultQuality.Enabled = true;
-                            GraphViewer.DCache.RocketAssembler.Enabled = GraphViewer.DCache.Assemblers["rocket-silo"]?.Enabled ?? false;
+                            activeViewer.DCache.DefaultQuality.Enabled = true;
+                            activeViewer.DCache.RocketAssembler.Enabled = activeViewer.DCache.Assemblers["rocket-silo"]?.Enabled ?? false;
                         }
                     }
-                    GraphViewer.Graph.MaxQualitySteps = options.QualitySteps;
 
-					GraphViewer.LevelOfDetail = options.LevelOfDetail;
-					Properties.Settings.Default.LevelOfDetail = (int)options.LevelOfDetail;
-					GraphViewer.NodeCountForSimpleView = options.NodeCountForSimpleView;
-					Properties.Settings.Default.NodeCountForSimpleView = options.NodeCountForSimpleView;
-					GraphViewer.IconsSize = options.IconsOnlyIconSize;
-					Properties.Settings.Default.IconsSize = options.IconsOnlyIconSize;
+                    // Apply viewer settings to ALL tabs
+                    Properties.Settings.Default.LevelOfDetail             = (int)options.LevelOfDetail;
+                    Properties.Settings.Default.NodeCountForSimpleView     = options.NodeCountForSimpleView;
+                    Properties.Settings.Default.IconsSize                  = options.IconsOnlyIconSize;
+                    Properties.Settings.Default.ArrowsOnLinks              = options.ArrowsOnLinks;
+                    Properties.Settings.Default.SimplePassthroughNodes     = options.SimplePassthroughNodes;
+                    Properties.Settings.Default.DynamicLineWidth           = options.DynamicLinkWidth;
+                    Properties.Settings.Default.ShowRecipeToolTip          = options.ShowRecipeToolTip;
+                    Properties.Settings.Default.LockedRecipeEditorPosition = options.LockedRecipeEditPanelPosition;
+                    Properties.Settings.Default.FlagOUSuppliedNodes        = options.FlagOUSuppliedNodes;
+                    Properties.Settings.Default.FlagDarkMode               = options.FlagDarkMode;
+                    Properties.Settings.Default.DefaultAssemblerOption     = (int)options.DefaultAssemblerStyle;
+                    Properties.Settings.Default.DefaultModuleOption        = (int)options.DefaultModuleStyle;
+                    Properties.Settings.Default.DefaultNodeDirection       = (int)options.DefaultNodeDirection;
+                    Properties.Settings.Default.SmartNodeDirection         = options.SmartNodeDirection;
+                    Properties.Settings.Default.ShowErrorArrows            = options.ShowErrorArrows;
+                    Properties.Settings.Default.ShowWarningArrows          = options.ShowWarningArrows;
+                    Properties.Settings.Default.ShowDisconnectedArrows     = options.ShowDisconnectedArrows;
+                    Properties.Settings.Default.ShowOUSuppliedArrows       = options.ShowOUSuppliedArrows;
+                    Properties.Settings.Default.RoundAssemblerCount        = options.RoundAssemblerCount;
+                    Properties.Settings.Default.AbbreviateSciPacks         = options.AbbreviateSciPacks;
+                    Properties.Settings.Default.EnableExtraProductivityForNonMiners = options.EnableExtraProductivityForNonMiners;
+                    Properties.Settings.Default.ShowUnavailable            = options.DEV_ShowUnavailableItems;
+                    Properties.Settings.Default.Save();
 
-					GraphViewer.ArrowsOnLinks = options.ArrowsOnLinks;
-					Properties.Settings.Default.ArrowsOnLinks = options.ArrowsOnLinks;
-					GraphViewer.Graph.DefaultToSimplePassthroughNodes = options.SimplePassthroughNodes;
-					Properties.Settings.Default.SimplePassthroughNodes = options.SimplePassthroughNodes;
-					GraphViewer.DynamicLinkWidth = options.DynamicLinkWidth;
-					Properties.Settings.Default.DynamicLineWidth = options.DynamicLinkWidth;
-					GraphViewer.ShowRecipeToolTip = options.ShowRecipeToolTip;
-					Properties.Settings.Default.ShowRecipeToolTip = options.ShowRecipeToolTip;
-					GraphViewer.LockedRecipeEditPanelPosition = options.LockedRecipeEditPanelPosition;
-					Properties.Settings.Default.LockedRecipeEditorPosition = options.LockedRecipeEditPanelPosition;
-					GraphViewer.FlagOUSuppliedNodes = options.FlagOUSuppliedNodes;
-					Properties.Settings.Default.FlagOUSuppliedNodes = options.FlagOUSuppliedNodes;
-
-					Properties.Settings.Default.FlagDarkMode = options.FlagDarkMode;
-
-					GraphViewer.Graph.AssemblerSelector.DefaultSelectionStyle = options.DefaultAssemblerStyle;
-					Properties.Settings.Default.DefaultAssemblerOption = (int)options.DefaultAssemblerStyle;
-					GraphViewer.Graph.ModuleSelector.DefaultSelectionStyle = options.DefaultModuleStyle;
-					Properties.Settings.Default.DefaultModuleOption = (int)options.DefaultModuleStyle;
-					GraphViewer.Graph.DefaultNodeDirection = options.DefaultNodeDirection;
-					Properties.Settings.Default.DefaultNodeDirection = (int)options.DefaultNodeDirection;
-					GraphViewer.SmartNodeDirection = options.SmartNodeDirection;
-					Properties.Settings.Default.SmartNodeDirection = options.SmartNodeDirection;
-
-					GraphViewer.ArrowRenderer.ShowErrorArrows = options.ShowErrorArrows;
-					Properties.Settings.Default.ShowErrorArrows = options.ShowErrorArrows;
-					GraphViewer.ArrowRenderer.ShowWarningArrows = options.ShowWarningArrows;
-					Properties.Settings.Default.ShowWarningArrows = options.ShowWarningArrows;
-					GraphViewer.ArrowRenderer.ShowDisconnectedArrows = options.ShowDisconnectedArrows;
-					Properties.Settings.Default.ShowDisconnectedArrows = options.ShowDisconnectedArrows;
-					GraphViewer.ArrowRenderer.ShowOUNodeArrows = options.ShowOUSuppliedArrows;
-					Properties.Settings.Default.ShowOUSuppliedArrows = options.ShowOUSuppliedArrows;
-
-					Properties.Settings.Default.RoundAssemblerCount = options.RoundAssemblerCount;
-					Properties.Settings.Default.AbbreviateSciPacks = options.AbbreviateSciPacks;
-
-					GraphViewer.Graph.EnableExtraProductivityForNonMiners = options.EnableExtraProductivityForNonMiners;
-					Properties.Settings.Default.EnableExtraProductivityForNonMiners = options.EnableExtraProductivityForNonMiners;
-
-					GraphViewer.Graph.LowPriorityPower = options.Solver_LowPriorityPower;
-					GraphViewer.Graph.PullOutputNodesPower = options.Solver_PullConsumerNodesPower;
-					GraphViewer.Graph.PullOutputNodes = options.Solver_PullConsumerNodes;
-
-					Properties.Settings.Default.ShowUnavailable = options.DEV_ShowUnavailableItems;
-					Properties.Settings.Default.Save();
-
-					GraphViewer.Graph.UpdateNodeMaxQualities();
-					GraphViewer.Graph.UpdateNodeStates(true);
-					GraphViewer.Graph.UpdateNodeValues();
+                    for (int _ti = 0; _ti < GraphTabControl.RealTabCount; _ti++)
+                    {
+                        var _tv = GraphTabControl.GetViewer(_ti);
+                        if (_tv == null) continue;
+                        _tv.LevelOfDetail          = options.LevelOfDetail;
+                        _tv.NodeCountForSimpleView  = options.NodeCountForSimpleView;
+                        _tv.IconsSize               = options.IconsOnlyIconSize;
+                        _tv.ArrowsOnLinks           = options.ArrowsOnLinks;
+                        _tv.Graph.DefaultToSimplePassthroughNodes = options.SimplePassthroughNodes;
+                        _tv.DynamicLinkWidth        = options.DynamicLinkWidth;
+                        _tv.ShowRecipeToolTip       = options.ShowRecipeToolTip;
+                        _tv.LockedRecipeEditPanelPosition = options.LockedRecipeEditPanelPosition;
+                        _tv.FlagOUSuppliedNodes     = options.FlagOUSuppliedNodes;
+                        _tv.Graph.AssemblerSelector.DefaultSelectionStyle = options.DefaultAssemblerStyle;
+                        _tv.Graph.ModuleSelector.DefaultSelectionStyle    = options.DefaultModuleStyle;
+                        _tv.Graph.DefaultNodeDirection = options.DefaultNodeDirection;
+                        _tv.SmartNodeDirection      = options.SmartNodeDirection;
+                        _tv.ArrowRenderer.ShowErrorArrows        = options.ShowErrorArrows;
+                        _tv.ArrowRenderer.ShowWarningArrows      = options.ShowWarningArrows;
+                        _tv.ArrowRenderer.ShowDisconnectedArrows = options.ShowDisconnectedArrows;
+                        _tv.ArrowRenderer.ShowOUNodeArrows       = options.ShowOUSuppliedArrows;
+                        _tv.Graph.EnableExtraProductivityForNonMiners = options.EnableExtraProductivityForNonMiners;
+                        _tv.Graph.LowPriorityPower      = options.Solver_LowPriorityPower;
+                        _tv.Graph.PullOutputNodesPower  = options.Solver_PullConsumerNodesPower;
+                        _tv.Graph.PullOutputNodes       = options.Solver_PullConsumerNodes;
+                        _tv.Graph.MaxQualitySteps       = options.QualitySteps;
+                        _tv.Graph.UpdateNodeMaxQualities();
+                        _tv.Graph.UpdateNodeStates(true);
+                        _tv.Graph.UpdateNodeValues();
+                    }
 
                     if (options.RequireReload)
                         SettingsButton_Click(this, EventArgs.Empty);
 
                     if (options.FilePresetNames != null)
-                        GraphViewer.SavedPresetNames = new List<string>(options.FilePresetNames);
+                        activeViewer.SavedPresetNames = new List<string>(options.FilePresetNames);
                 }
-			}
-		}
+            }
+        }
 
-		private void ExportImageButton_Click(object sender, EventArgs e)
-		{
-			ImageExportForm form = new ImageExportForm(GraphViewer);
-			form.StartPosition = FormStartPosition.Manual;
-			form.Left = this.Left + 50;
-			form.Top = this.Top + 50;
-			form.ShowDialog();
-		}
+        private void ExportImageButton_Click(object sender, EventArgs e)
+        {
+            var v = ActiveViewer;
+            if (v == null) return;
+            ImageExportForm form = new ImageExportForm(v);
+            form.StartPosition = FormStartPosition.Manual;
+            form.Left = this.Left + 50;
+            form.Top  = this.Top  + 50;
+            form.ShowDialog();
+        }
 
-		private void AddRecipeButton_Click(object sender, EventArgs e)
-		{
-			Point location = GraphViewer.ScreenToGraph(new Point(GraphViewer.Width / 2, GraphViewer.Height / 2));
-			GraphViewer.AddNewNode(new Point(15, 15), new ItemQualityPair("adding disconnected recipe node"), location, NewNodeType.Disconnected);
-		}
+        private void AddRecipeButton_Click(object sender, EventArgs e)
+        {
+            var v = ActiveViewer;
+            if (v == null) return;
+            Point location = v.ScreenToGraph(new Point(v.Width / 2, v.Height / 2));
+            v.AddNewNode(new Point(15, 15), new ItemQualityPair("adding disconnected recipe node"), location, NewNodeType.Disconnected);
+        }
 
         private void AddShapeButton_Click(object sender, EventArgs e)
         {
-            Point location = GraphViewer.ScreenToGraph(new Point(GraphViewer.Width / 2, GraphViewer.Height / 2));
-            GraphViewer.AddShapeAnnotation(location);
+            var v = ActiveViewer;
+            if (v == null) return;
+            Point location = v.ScreenToGraph(new Point(v.Width / 2, v.Height / 2));
+            v.AddShapeAnnotation(location);
         }
 
         private void AddTextButton_Click(object sender, EventArgs e)
         {
-            Point location = GraphViewer.ScreenToGraph(new Point(GraphViewer.Width / 2, GraphViewer.Height / 2));
-            GraphViewer.AddTextAnnotation(location);
+            var v = ActiveViewer;
+            if (v == null) return;
+            Point location = v.ScreenToGraph(new Point(v.Width / 2, v.Height / 2));
+            v.AddTextAnnotation(location);
         }
 
         private void AddItemButton_Click(object sender, EventArgs e)
-		{
-			Point location = GraphViewer.ScreenToGraph(new Point(GraphViewer.Width / 2, GraphViewer.Height / 2));
-			GraphViewer.AddItem(new Point(15, 15), location);
-		}
+        {
+            var v = ActiveViewer;
+            if (v == null) return;
+            Point location = v.ScreenToGraph(new Point(v.Width / 2, v.Height / 2));
+            v.AddItem(new Point(15, 15), location);
+        }
 
 		private void HelpButton_Click(object sender, EventArgs e)
 		{
@@ -625,117 +797,148 @@ namespace Foreman
 
 		//---------------------------------------------------------Key & Mouse events
 
-		private void MainForm_KeyDown(object sender, KeyEventArgs e)
-		{
-			if(e.KeyCode == Keys.S && (Control.ModifierKeys & Keys.Control) == Keys.Control)
-				if (savefilePath == null || !SaveGraph(savefilePath))
-					SaveGraphAs();
-		}
+        private void MainForm_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.S && (Control.ModifierKeys & Keys.Control) == Keys.Control)
+            {
+                var state = ActiveTabState;
+                if (state == null) return;
+                if (state.SaveFilePath == null || !SaveGraph(GraphTabControl.SelectedIndex, state.SaveFilePath))
+                    SaveGraphAs();
+            }
+        }
 
 		//---------------------------------------------------------Production Graph properties
 
-		private void RateOptionsDropDown_SelectedIndexChanged(object sender, EventArgs e)
-		{
-			Properties.Settings.Default.DefaultRateUnit = RateOptionsDropDown.SelectedIndex;
-			GraphViewer.Graph.SelectedRateUnit = (ProductionGraph.RateUnit)RateOptionsDropDown.SelectedIndex;
-			Properties.Settings.Default.Save();
-			GraphViewer.Graph.UpdateNodeValues();
-		}
+        private void RateOptionsDropDown_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_suppressToolbarEvents) return;
+            var v = ActiveViewer;
+            if (v == null) return;
+            Properties.Settings.Default.DefaultRateUnit = RateOptionsDropDown.SelectedIndex;
+            v.Graph.SelectedRateUnit = (ProductionGraph.RateUnit)RateOptionsDropDown.SelectedIndex;
+            Properties.Settings.Default.Save();
+            v.Graph.UpdateNodeValues();
+        }
 
-		private void PauseUpdatesCheckbox_CheckedChanged(object sender, EventArgs e)
-		{
-			GraphViewer.Graph.PauseUpdates = PauseUpdatesCheckbox.Checked;
-			if (!GraphViewer.Graph.PauseUpdates)
-				GraphViewer.Graph.UpdateNodeValues();
-			else
-				GraphViewer.Invalidate();
-		}
+        private void PauseUpdatesCheckbox_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_suppressToolbarEvents) return;
+            var v = ActiveViewer;
+            if (v == null) return;
+            v.Graph.PauseUpdates = PauseUpdatesCheckbox.Checked;
+            if (!v.Graph.PauseUpdates)
+                v.Graph.UpdateNodeValues();
+            else
+                v.Invalidate();
+        }
 
-		private void IconViewCheckBox_CheckedChanged(object sender, EventArgs e)
-		{
-			GraphViewer.IconsOnly = IconViewCheckBox.Checked;
-			Properties.Settings.Default.IconsOnlyView = IconViewCheckBox.Checked;
-			Properties.Settings.Default.Save();
-			GraphViewer.Invalidate();
+        private void IconViewCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_suppressToolbarEvents) return;
+            var v = ActiveViewer;
+            if (v == null) return;
+            v.IconsOnly = IconViewCheckBox.Checked;
+            Properties.Settings.Default.IconsOnlyView = IconViewCheckBox.Checked;
+            Properties.Settings.Default.Save();
+            v.Invalidate();
+        }
 
-		}
-
-		private void GraphSummaryButton_Click(object sender, EventArgs e)
-		{
-			if (graphSummaryForm == null || graphSummaryForm.IsDisposed)
-			{
-                graphSummaryForm = new GraphSummaryForm(GraphViewer.Graph, GraphViewer);
-                graphSummaryForm.StartPosition = FormStartPosition.Manual;
-				graphSummaryForm.Left = this.Left + 50;
-				graphSummaryForm.Top = this.Top + 50;
-				graphSummaryForm.FormClosed += (s, args) => graphSummaryForm = null;
-				graphSummaryForm.Show(this);
-			}
-			else
-			{
-				graphSummaryForm.BringToFront();
-			}
-		}
+        private void GraphSummaryButton_Click(object sender, EventArgs e)
+        {
+            var state  = ActiveTabState;
+            var viewer = ActiveViewer;
+            if (state == null || viewer == null) return;
+            if (state.SummaryForm == null || state.SummaryForm.IsDisposed)
+            {
+                state.SummaryForm = new GraphSummaryForm(viewer.Graph, viewer);
+                state.SummaryForm.StartPosition = FormStartPosition.Manual;
+                state.SummaryForm.Left = this.Left + 50;
+                state.SummaryForm.Top  = this.Top  + 50;
+                state.SummaryForm.FormClosed += (s, args) => state.SummaryForm = null;
+                state.SummaryForm.Show(this);
+            }
+            else
+            {
+                state.SummaryForm.BringToFront();
+            }
+        }
 
 		//---------------------------------------------------------Gridlines
 
-		private void MinorGridlinesDropDown_SelectedIndexChanged(object sender, EventArgs e)
-		{
-			int updatedGridUnit = 0;
-			if (MinorGridlinesDropDown.SelectedIndex > 0)
-				updatedGridUnit = 6 * (int)(Math.Pow(2, MinorGridlinesDropDown.SelectedIndex - 1));
+        private void MinorGridlinesDropDown_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_suppressToolbarEvents) return;
+            var v = ActiveViewer;
+            if (v == null) return;
+            int updatedGridUnit = 0;
+            if (MinorGridlinesDropDown.SelectedIndex > 0)
+                updatedGridUnit = 6 * (int)Math.Pow(2, MinorGridlinesDropDown.SelectedIndex - 1);
+            if (v.Grid.CurrentGridUnit != updatedGridUnit)
+            {
+                v.Grid.CurrentGridUnit = updatedGridUnit;
+                v.Invalidate();
+            }
+            Properties.Settings.Default.MinorGridlines = MinorGridlinesDropDown.SelectedIndex;
+            Properties.Settings.Default.Save();
+            if (ActiveTabState != null) ActiveTabState.MinorGridlinesIndex = MinorGridlinesDropDown.SelectedIndex;
+        }
 
-			if (GraphViewer.Grid.CurrentGridUnit != updatedGridUnit)
-			{
-				GraphViewer.Grid.CurrentGridUnit = updatedGridUnit;
-				GraphViewer.Invalidate();
-			}
+        private void MajorGridlinesDropDown_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_suppressToolbarEvents) return;
+            var v = ActiveViewer;
+            if (v == null) return;
+            int updatedGridUnit = 0;
+            if (MajorGridlinesDropDown.SelectedIndex > 0)
+                updatedGridUnit = 6 * (int)Math.Pow(2, MajorGridlinesDropDown.SelectedIndex - 1);
+            if (v.Grid.CurrentMajorGridUnit != updatedGridUnit)
+            {
+                v.Grid.CurrentMajorGridUnit = updatedGridUnit;
+                v.Invalidate();
+            }
+            Properties.Settings.Default.MajorGridlines = MajorGridlinesDropDown.SelectedIndex;
+            Properties.Settings.Default.Save();
+            if (ActiveTabState != null) ActiveTabState.MajorGridlinesIndex = MajorGridlinesDropDown.SelectedIndex;
+        }
 
-			Properties.Settings.Default.MinorGridlines = MinorGridlinesDropDown.SelectedIndex;
-			Properties.Settings.Default.Save();
-		}
+        private void GridlinesCheckbox_CheckedChanged(object sender, EventArgs e)
+        {
+            if (_suppressToolbarEvents) return;
+            var v = ActiveViewer;
+            if (v == null) return;
+            if (v.Grid.ShowGrid != GridlinesCheckbox.Checked)
+            {
+                v.Grid.ShowGrid = GridlinesCheckbox.Checked;
+                v.Invalidate();
+            }
+            Properties.Settings.Default.AltGridlines = GridlinesCheckbox.Checked;
+            Properties.Settings.Default.Save();
+            if (ActiveTabState != null) ActiveTabState.ShowGridlines = GridlinesCheckbox.Checked;
+        }
 
-		private void MajorGridlinesDropDown_SelectedIndexChanged(object sender, EventArgs e)
-		{
-			int updatedGridUnit = 0;
-			if (MajorGridlinesDropDown.SelectedIndex > 0)
-				updatedGridUnit = 6 * (int)(Math.Pow(2, MajorGridlinesDropDown.SelectedIndex - 1));
+        private void AlignSelectionButton_Click(object sender, EventArgs e)
+        {
+            ActiveViewer?.AlignSelected();
+        }
 
-			if (GraphViewer.Grid.CurrentMajorGridUnit != updatedGridUnit)
-			{
-				GraphViewer.Grid.CurrentMajorGridUnit = updatedGridUnit;
-				GraphViewer.Invalidate();
-			}
-
-			Properties.Settings.Default.MajorGridlines = MajorGridlinesDropDown.SelectedIndex;
-			Properties.Settings.Default.Save();
-		}
-
-		private void GridlinesCheckbox_CheckedChanged(object sender, EventArgs e)
-		{
-			if (GraphViewer.Grid.ShowGrid != GridlinesCheckbox.Checked)
-			{
-				GraphViewer.Grid.ShowGrid = GridlinesCheckbox.Checked;
-				GraphViewer.Invalidate();
-			}
-
-			Properties.Settings.Default.AltGridlines = (GridlinesCheckbox.Checked);
-			Properties.Settings.Default.Save();
-		}
-
-		private void AlignSelectionButton_Click(object sender, EventArgs e)
-		{
-			GraphViewer.AlignSelected();
-		}
-
-		private void GraphViewer_KeyDown(object sender, KeyEventArgs e)
-		{
-			if (e.KeyCode == Keys.Space)
-			{
-				GraphViewer.Grid.ShowGrid = !GraphViewer.Grid.ShowGrid;
-				GridlinesCheckbox.Checked = GraphViewer.Grid.ShowGrid;
-			}
-		}
+        private void GraphViewer_KeyDown(object sender, KeyEventArgs e)
+        {
+            var v = sender as ProductionGraphViewer ?? ActiveViewer;
+            if (v == null) return;
+            if (e.KeyCode == Keys.Space)
+            {
+                v.Grid.ShowGrid = !v.Grid.ShowGrid;
+                if (v == ActiveViewer)
+                {
+                    _suppressToolbarEvents = true;
+                    GridlinesCheckbox.Checked = v.Grid.ShowGrid;
+                    _suppressToolbarEvents = false;
+                    if (ActiveTabState != null)
+                        ActiveTabState.ShowGridlines = v.Grid.ShowGrid;
+                }
+            }
+        }
 
 		//---------------------------------------------------------double buffering commands
 

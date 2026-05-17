@@ -30,7 +30,7 @@
 		{
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainForm));
             this.MainLayoutPanel = new System.Windows.Forms.TableLayoutPanel();
-            this.GraphViewer = new Foreman.ProductionGraphViewer();
+            this.GraphTabControl = new Foreman.GraphTabControl();
             this.MenuTable = new System.Windows.Forms.TableLayoutPanel();
             this.MenuButtonsTable = new System.Windows.Forms.TableLayoutPanel();
             this.HelpButton = new System.Windows.Forms.Button();
@@ -74,7 +74,7 @@
             // 
             this.MainLayoutPanel.ColumnCount = 1;
             this.MainLayoutPanel.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
-            this.MainLayoutPanel.Controls.Add(this.GraphViewer, 0, 1);
+            this.MainLayoutPanel.Controls.Add(this.GraphTabControl, 0, 1);
             this.MainLayoutPanel.Controls.Add(this.MenuTable, 0, 0);
             this.MainLayoutPanel.Dock = System.Windows.Forms.DockStyle.Fill;
             this.MainLayoutPanel.Location = new System.Drawing.Point(0, 0);
@@ -85,31 +85,16 @@
             this.MainLayoutPanel.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
             this.MainLayoutPanel.Size = new System.Drawing.Size(934, 761);
             this.MainLayoutPanel.TabIndex = 1;
-            // 
-            // GraphViewer
-            // 
-            this.GraphViewer.AllowDrop = true;
-            this.GraphViewer.ArrowsOnLinks = false;
-            this.GraphViewer.AutoSize = true;
-            this.GraphViewer.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
-            this.GraphViewer.BackColor = System.Drawing.Color.White;
-            this.GraphViewer.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.GraphViewer.DCache = null;
-            this.GraphViewer.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.GraphViewer.IconsOnly = false;
-            this.GraphViewer.IconsSize = 32;
-            this.GraphViewer.LevelOfDetail = Foreman.ProductionGraphViewer.LOD.Medium;
-            this.GraphViewer.Location = new System.Drawing.Point(3, 136);
-            this.GraphViewer.Margin = new System.Windows.Forms.Padding(3, 0, 3, 3);
-            this.GraphViewer.MouseDownElement = null;
-            this.GraphViewer.Name = "GraphViewer";
-            this.GraphViewer.NodeCountForSimpleView = 200;
-            this.GraphViewer.ShowRecipeToolTip = false;
-            this.GraphViewer.Size = new System.Drawing.Size(928, 622);
-            this.GraphViewer.SmartNodeDirection = false;
-            this.GraphViewer.TabIndex = 12;
-            this.GraphViewer.TooltipsEnabled = true;
-            this.GraphViewer.KeyDown += new System.Windows.Forms.KeyEventHandler(this.GraphViewer_KeyDown);
+            //
+            // GraphTabControl
+            //
+            this.GraphTabControl.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.GraphTabControl.Location = new System.Drawing.Point(3, 136);
+            this.GraphTabControl.Margin = new System.Windows.Forms.Padding(3, 0, 3, 3);
+            this.GraphTabControl.Name = "GraphTabControl";
+            this.GraphTabControl.SelectedIndex = -1;
+            this.GraphTabControl.TabIndex = 12;
+            this.GraphTabControl.SelectedIndexChanged += new System.EventHandler(this.GraphTabControl_SelectedIndexChanged);
             // 
             // MenuTable
             // 
@@ -639,7 +624,7 @@
         private System.Windows.Forms.Label label2;
         private System.Windows.Forms.ComboBox MajorGridlinesDropDown;
         private System.Windows.Forms.ComboBox MinorGridlinesDropDown;
-        private ProductionGraphViewer GraphViewer;
+        private GraphTabControl GraphTabControl;
         private System.Windows.Forms.Button AddItemButton;
         private System.Windows.Forms.Button AddRecipeButton;
         private System.Windows.Forms.Button AddShapeButton;
