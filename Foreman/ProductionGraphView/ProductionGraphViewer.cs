@@ -29,7 +29,9 @@ namespace Foreman
 		public int IconsSize { get; set; }
 		public int IconsDrawSize { get { return ViewScale > ((double)IconsSize / 96)? 96 : (int)(IconsSize / ViewScale); } }
 
-		public int NodeCountForSimpleView { get; set; } //if the number of elements to draw is over this amount then the drawing functions will switch to simple view draws (mostly for FPS during zoomed out views)
+        private bool suppressInvalidate = false;
+
+        public int NodeCountForSimpleView { get; set; } //if the number of elements to draw is over this amount then the drawing functions will switch to simple view draws (mostly for FPS during zoomed out views)
 		public bool ShowRecipeToolTip { get; set; }
 		public bool TooltipsEnabled { get; set; }
 		private bool SubwindowOpen; //used together with tooltip enabled -> if we open up an item/recipe/assembler window, this will halt tooltip show.
@@ -1385,10 +1387,11 @@ namespace Foreman
             else
                 Trace.Fail("Unexpected node type created in graph.");
 
-			nodeElementDictionary.Add(e.node, element);
-			nodeElements.Add(element);
-			Invalidate();
-		}
+            nodeElementDictionary.Add(e.node, element);
+            nodeElements.Add(element);
+            if (!suppressInvalidate)
+                Invalidate();
+        }
 
 		//----------------------------------------------Mouse events
 
@@ -2583,14 +2586,15 @@ namespace Foreman
                 }
             }
 
-			//clear graph
-			ClearGraph();
+            //clear graph
+            ClearGraph();
 
-			//load new preset
-			LoadPreset(chosenPreset);
+            //load new preset (skip if already loaded — avoids re-reading icon cache .dat from disk)
+            if (DCache == null || DCache.PresetName != chosenPreset.Name)
+                LoadPreset(chosenPreset);
 
-			//set up graph options
-			Graph.SelectedRateUnit = (ProductionGraph.RateUnit)(int)json["Unit"];
+            //set up graph options
+            Graph.SelectedRateUnit = (ProductionGraph.RateUnit)(int)json["Unit"];
 			Graph.AssemblerSelector.DefaultSelectionStyle = (AssemblerSelector.Style)(int)json["AssemblerSelectorStyle"];
 			Graph.ModuleSelector.DefaultSelectionStyle = (ModuleSelector.Style)(int)json["ModuleSelectorStyle"];
 			foreach (string fuelType in json["FuelPriorityList"].Select(t => (string)t))
@@ -2641,10 +2645,12 @@ namespace Foreman
                 RecipeChooserPanel.ApplyTechTierSetting((string)json["EnabledTechTiers"]);
 
             //add all nodes
+            suppressInvalidate = true;
             ProductionGraph.NewNodeCollection collection = Graph.InsertNodesFromJson(DCache, (JObject)json["ProductionGraph"], true);
+            suppressInvalidate = false;
 
-			//check for old import
-			if (json["OldImport"] != null)
+            //check for old import
+            if (json["OldImport"] != null)
 				foreach (ReadOnlyRecipeNode rNode in collection.newNodes.Where(node => node is ReadOnlyRecipeNode))
 					((RecipeNodeController)Graph.RequestNodeController(rNode)).AutoSetAssembler(AssemblerSelector.Style.BestNonBurner);
 

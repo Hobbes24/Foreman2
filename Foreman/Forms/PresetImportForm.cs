@@ -264,12 +264,12 @@ namespace Foreman
 
 				progress.Report(new KeyValuePair<int, string>(10, "Running Factorio - creating test save."));
 				process.StartInfo.Arguments = string.Format("--mod-directory \"{0}\" --create temp-save.zip", modsPath);
-				process.StartInfo.UseShellExecute = false;
-				process.StartInfo.CreateNoWindow = true;
-				process.StartInfo.RedirectStandardOutput = true;
-				process.StartInfo.RedirectStandardInput = true;
-				process.Start();
-				string resultString = "";
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.CreateNoWindow = true;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardInput = true;
+                process.StartInfo.StandardOutputEncoding = System.Text.Encoding.UTF8;
+                process.Start(); string resultString = "";
 				while (!process.HasExited)
 				{
 					resultString += process.StandardOutput.ReadToEnd();
