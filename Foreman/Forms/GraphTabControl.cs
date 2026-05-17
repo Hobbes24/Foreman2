@@ -137,6 +137,7 @@ namespace Foreman
 
         protected override void OnDrawItem(DrawItemEventArgs e)
         {
+            if (e.Index < 0 || e.Index >= TabPages.Count) return;
             bool isPlus     = TabPages[e.Index].Name == PlusTabKey;
             bool isSelected = e.Index == SelectedIndex;
 
