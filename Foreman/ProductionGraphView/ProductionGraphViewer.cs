@@ -396,7 +396,7 @@ namespace Foreman
             using (var form = new TextPropertiesForm(element))
             {
                 form.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
-                var result = form.ShowDialog(ParentForm);
+                var result = form.ShowDialog(FindForm());
                 if (result == System.Windows.Forms.DialogResult.OK)
                 {
                     // Enter placement mode — element stays in annotationElements and follows the mouse
@@ -2445,8 +2445,9 @@ namespace Foreman
 			using (DataLoadForm form = new DataLoadForm(preset))
 			{
 				form.StartPosition = FormStartPosition.Manual;
-				form.Left = ParentForm.Left + 150;
-				form.Top = ParentForm.Top + 200;
+				Form _pf = FindForm();
+				form.Left = (_pf?.Left ?? 50) + 150;
+				form.Top  = (_pf?.Top  ?? 50) + 200;
 				DialogResult result = form.ShowDialog(); //LOAD FACTORIO DATA
 				if (DCache != null)
 					DCache.Clear();
@@ -2462,8 +2463,8 @@ namespace Foreman
 					using (DataLoadForm form2 = new DataLoadForm(new Preset(MainForm.DefaultPreset, false, true)))
 					{
 						form2.StartPosition = FormStartPosition.Manual;
-						form2.Left = ParentForm.Left + 150;
-						form2.Top = ParentForm.Top + 200;
+						form2.Left = (_pf?.Left ?? 50) + 150;
+						form2.Top  = (_pf?.Top  ?? 50) + 200;
 						DialogResult result2 = form2.ShowDialog(); //LOAD default preset
 						if (DCache != null)
 							DCache.Clear();
@@ -2564,8 +2565,9 @@ namespace Foreman
                     using (PresetSelectionForm form = new PresetSelectionForm(presetErrors))
                     {
                         form.StartPosition = FormStartPosition.Manual;
-                        form.Left = ParentForm.Left + 50;
-                        form.Top = ParentForm.Top + 50;
+                        Form _pf2 = FindForm();
+                        form.Left = (_pf2?.Left ?? 50) + 50;
+                        form.Top  = (_pf2?.Top  ?? 50) + 50;
 
                         if (form.ShowDialog() != DialogResult.OK || form.ChosenPreset == null)
                             return;

@@ -169,7 +169,7 @@ namespace Foreman
             using (ShapePropertiesForm form = new ShapePropertiesForm(this))
             {
                 form.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
-                if (form.ShowDialog(graphViewer.ParentForm) == System.Windows.Forms.DialogResult.OK)
+                if (form.ShowDialog(graphViewer.FindForm()) == System.Windows.Forms.DialogResult.OK)
                 {
                     RebuildGdiObjects();
                     graphViewer.Invalidate();
