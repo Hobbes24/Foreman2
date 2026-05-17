@@ -173,8 +173,13 @@ namespace Foreman
             Invalidate();
         }
 
+		public bool IsDirty { get; private set; }
+		public void MarkClean() { IsDirty = false; }
+		public void MarkDirty() { IsDirty = true; }
+
 		public void ClearGraph()
 		{
+			IsDirty = false;
 			undoRedo.Clear(); // reset undo/redo history when clearing the graph
 			DisposeLinkDrag();
 			Graph.ClearGraph();
@@ -215,6 +220,7 @@ namespace Foreman
 		/// </summary>
 		public void PushUndoState()
 		{
+			IsDirty = true;
 			undoRedo.PushUndoState(CaptureSnapshot());
 		}
 		/// <summary>
@@ -1662,6 +1668,7 @@ namespace Foreman
                         && _pendingDragUndoSnapshot != null
                         && !(MouseDownElement is DraggedLinkElement))
                     {
+                        IsDirty = true;
                         undoRedo.PushUndoState(_pendingDragUndoSnapshot);
                     }
                     _pendingDragUndoSnapshot = null;

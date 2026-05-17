@@ -709,7 +709,7 @@ namespace Foreman
 			foreach (Beacon beacon in Options.DCache.Beacons.Values.Where(m => m.AssociatedItems.Any(i => i.Available)))
 				Options.EnabledObjects.Add(beacon);
 
-			foreach (Module module in Options.DCache.Modules.Values.Where(m => m.AssociatedItem.Available))
+			foreach (Module module in Options.DCache.Modules.Values.Where(m => m.AssociatedItem?.Available ?? false))
 				Options.EnabledObjects.Add(module);
 
 			foreach (Recipe recipe in Options.DCache.Recipes.Values.Where(r => r.Available))

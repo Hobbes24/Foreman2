@@ -165,7 +165,7 @@ namespace Foreman
 			foreach (Module module in DCache.Modules.Values)
 			{
 				bool enabled = false;
-				foreach (Recipe recipe in module.AssociatedItem.ProductionRecipes)
+				foreach (Recipe recipe in module.AssociatedItem?.ProductionRecipes ?? Enumerable.Empty<Recipe>())
 					enabled |= EnabledObjects.Contains(recipe);
 				if (enabled)
 					EnabledObjects.Add(module);
