@@ -2450,6 +2450,14 @@ namespace Foreman
 
             Invalidate();
         }
+        public void ShareDCacheFrom(ProductionGraphViewer src)
+        {
+            DCache = src.DCache;
+            LastAssemblerQuality = src.LastAssemblerQuality ?? src.DCache?.DefaultQuality;
+            Graph.DefaultAssemblerQuality = src.DCache?.DefaultQuality;
+            Graph.MaxQualitySteps = src.Graph.MaxQualitySteps;
+        }
+
         public void LoadPreset(Preset preset)
 		{
 			using (DataLoadForm form = new DataLoadForm(preset))

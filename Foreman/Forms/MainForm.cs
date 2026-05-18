@@ -242,7 +242,7 @@ namespace Foreman
             var srcViewer = ActiveViewer;
             if (srcViewer?.DCache != null)
             {
-                viewer.DCache = srcViewer.DCache;
+                viewer.ShareDCacheFrom(srcViewer);
                 viewer.SavedPresetNames = new List<string>(srcViewer.SavedPresetNames);
             }
             ApplyViewerSettings(viewer);
