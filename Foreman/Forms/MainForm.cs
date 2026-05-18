@@ -239,7 +239,7 @@ namespace Foreman
             var viewer = new ProductionGraphViewer();
             viewer.KeyDown += GraphViewer_KeyDown;
 
-            var srcViewer = GraphTabControl.RealTabCount > 0 ? GraphTabControl.GetViewer(0) : null;
+            var srcViewer = ActiveViewer;
             if (srcViewer?.DCache != null)
             {
                 viewer.DCache = srcViewer.DCache;
