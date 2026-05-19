@@ -10,6 +10,13 @@
 
 ---
 
+### 🗂️ Full Pyanodons Support Through Py Logistic Science
+
+Through extensive testing I know that this mod works through Py Logistics.  It may work beyond that, I 
+haven't advanced my game far enough to test it, if you do please let me know.
+
+---
+
 ### 🗂️ Multi-Tab Graph Support
 Open and work on multiple production graphs simultaneously in a tabbed interface.
 - Full `GraphTabControl` with add, close, and rename tabs
