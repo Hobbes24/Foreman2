@@ -1,3 +1,232 @@
+# Foreman2 — Community Fork: Feature & Improvement Log
+
+> A fork of [Foreman](https://github.com/DanielKote/Foreman2) — the Factorio 2.0 production planner.  
+> This fork extends the original with quality-of-life features, workflow improvements, and bug fixes  
+> developed through a series of AI-assisted sessions.
+
+---
+
+## ✨ New Features
+
+---
+
+### 🗂️ Multi-Tab Graph Support
+Open and work on multiple production graphs simultaneously in a tabbed interface.
+- Full `GraphTabControl` with add, close, and rename tabs
+- Each tab maintains its own graph, preset, and undo history
+- **Tabs persist across sessions** — reopen Foreman and your tabs are restored exactly as you left them
+- New tabs inherit the active tab's preset automatically
+- Paste operations correctly target the active tab
+- Per-tab gridline settings saved and restored on switch
+
+---
+
+### ↩️ Undo / Redo
+Full snapshot-based undo and redo for all graph editing operations.
+- `Ctrl+Z` / `Ctrl+Y` to step back and forward through history
+- Works for node creation, deletion, moves, connections, annotations, grouping, and more
+- Snapshot taken before every destructive operation — nothing is lost
+- Coverage across all right-click context menu operations including assembler/module changes
+
+---
+
+### 📝 Shapes & Text Annotations
+Draw directly on the production graph canvas to label and organize your factory plans.
+- **Drag-to-draw** rectangles and ellipses anywhere on the canvas using a crosshair cursor
+- **Text labels** — place floating text with full font, size, color, and style control
+- **Text placement workflow** — a popup dialog lets you set format first, then the label attaches to the mouse for precise placement on the canvas
+- **Auto-resizing** text boxes that grow with your content as you type
+- Left, center, and right **text alignment** options
+- **Properties menus** for both shapes (color, type) and text (font, size, style) with color picker dialog
+- **Anchor point resizing** — click any annotation to get a bordered selection with drag handles
+- Annotations participate in **rubber-band selection**, grouping, and copy/paste
+- Annotation style defaults (font, color, shape type) **persist across sessions**
+- DPI-aware scaling so annotations look correct on any display or machine
+
+---
+
+### 📦 Node & Annotation Grouping
+Select any mix of nodes and annotations and group them into a single moveable unit.
+- Drag the group header to move everything together
+- Groups can be expanded and collapsed
+- Annotations co-move with grouped nodes during drag operations
+- Grouping works across the full canvas
+
+---
+
+### 🔍 Ctrl+F Node Search
+Quickly find any node in a large or complex graph.
+- `Ctrl+F` opens a search panel; type any item or recipe name
+- **Result highlighting** — matching nodes are visually highlighted
+- **Auto-zoom** — the view centers and zooms to the found node
+- Navigate through multiple results with Next/Previous
+
+---
+
+### ➡️ Convert Node to Passthrough
+One-click conversion of any recipe or supply node into a passthrough node.
+- Snapshot-based: fully undoable
+- Keeps all existing connections intact
+- Right-click on any connection or node to access
+
+---
+
+### 🔀 Merge Passthrough Nodes
+Select multiple passthrough nodes for the same item and merge them into one.
+- Consolidates all upstream and downstream connections
+- Cleans up graphs that have grown sprawling passthroughs
+
+---
+
+### ↕️ Align Selected Nodes
+Right-click → Align to snap selected nodes to a clean grid.
+- Align left, right, top, bottom, or center (horizontal and vertical)
+- Makes large graphs dramatically easier to read
+
+---
+
+### ⚡ Shift+Click / Shift+Drag Supplier & Consumer Shortcuts
+Speed up graph building with keyboard-mouse shortcuts for creating supply and demand nodes.
+- **Shift+click** a passthrough to instantly create a supplier node
+- **Shift+drag** from a passthrough to place a supplier or consumer
+- **Axis-lock drag** with Shift held: constrain movement to horizontal or vertical
+- **Ctrl / Ctrl+Shift** shortcuts during link dragging for passthrough wiring
+
+---
+
+### 🔬 Science Pack Filter
+Filter the recipe chooser by technology tier so you only see recipes you've unlocked.
+- Filter persists **globally** across all panel instances in the session
+- **Persists per save file** — each graph remembers its last tech filter
+- Works in the recipe chooser panel during node creation
+
+---
+
+### 🧪 Research Pack (Tech Tier) Filter Persistence
+The selected research pack and tech tier filter are saved with each graph file.
+- Reopen a graph and the filter is exactly where you left it
+
+---
+
+### 📊 Factory Summary — Non-Modal & Live Refresh
+The Factory Summary window no longer blocks your workflow.
+- Runs as a **non-modal** window — keep it open while editing the graph
+- **Live refresh** — summary updates automatically as you change the graph
+- **Double-click any unlinked item** to zoom to and highlight the relevant node in the graph
+
+---
+
+### 📊 Factory Summary — "All" Tab
+A new **All** tab in the Factory Summary shows every item and fluid together in one combined view, alongside the existing Items and Fluids tabs. Defaults to open on first launch.
+
+---
+
+### 📋 Copy for Factorio Button + Companion Mod
+Export your production plan directly into a running Factorio game.
+- **"Copy for Factorio"** button in the Factory Summary serializes the building list to clipboard
+- Companion **Factorio mod** (`foremantasklist`) reads the clipboard data and creates a persistent in-game task list toggled with Ctrl+B
+- **Double-click any item** in the in-game list to find all machines producing it — places map pins and opens remote map view centered on the first producer
+- **Clear Pins** button removes all search map tags
+- Auto-zip build step keeps the mod versioned alongside the application
+
+---
+
+### 💾 Multi-Preset Alias List
+Save files now store a list of preset aliases.
+- Supports workflows where graphs are opened with different-but-compatible presets
+- Aliases resolve automatically on load
+
+---
+
+### 🚀 Icon Cache Performance
+Startup time significantly reduced for large mod presets (e.g. Pyanodon's, AngelBob).
+- Icon cache uses **GZip compression** — smaller disk footprint, faster reads
+- **Local mirror** — icons are downloaded once and cached locally in `%LOCALAPPDATA%\Foreman2\IconCache\`
+- **Async preparation** — preset JSON parsing and graph file reads moved off the UI thread
+- **Batch invalidation** — per-node `Invalidate()` suppressed during graph load; single repaint at the end
+- Progress reporting throttled to once-per-percent to reduce overhead during load
+
+---
+
+### 📁 Remember Last Directory
+Foreman now remembers the last folder you opened or saved a graph from.
+- No more navigating from scratch every time
+
+---
+
+### 📂 Auto-Load Last File on Startup
+Foreman automatically reopens the last graph you had open when you start the application.
+- Falls back to loading the default preset if no previous file exists, ensuring the UI is always ready
+
+---
+
+### 🧮 Right-Click Node Math Breakdown
+Right-click any recipe node to see the full calculation breakdown — inputs, outputs, assembler count, and rates — in a readable format.
+
+---
+
+### 🔗 Unlinked Outputs in Cross-Link Summary
+Items and fluids that are unlinked outputs are now correctly included in the cross-link item and fluid summary totals.
+
+---
+
+### ⚡ Electricity Display
+Power consumption and production data is now shown in the Factory Summary Buildings tab, giving an accurate picture of your factory's electrical load.
+
+---
+
+### 📋 Copy Item Name from Right-Click Menu
+Right-click any item tab on a node to copy the item's internal or friendly name to the clipboard — useful for searching in-game or in external tools.
+
+---
+
+## 🐛 Bug Fixes
+
+| Fix | Description |
+|-----|-------------|
+| False unsaved-changes warning | Opening a graph no longer triggers a "save?" prompt immediately after loading |
+| False save prompt on view changes | Switching views (zoom, pan, tab changes) no longer marks the file as dirty |
+| Annotation-only unsaved changes | Adding or modifying annotations without touching nodes now correctly triggers the unsaved-changes prompt |
+| Pyanodon fluid-mining recipes | Fluid-mining recipes in Pyanodon's mods now appear correctly in the node selector |
+| Coke Oven Gas fluid temperature | Fixed Lua export typo (`product.temperate` → `product.temperature`) that caused all fluid product temperatures to export as nil, resulting in incorrect 15°c defaults across all fluid-output recipes |
+| Barreling recipes | Barreling recipes now appear properly in production graphs (resolved Korlex milk display as a side effect) |
+| GraphSummaryForm sort crash | Fixed `InvalidCastException` when sorting columns containing quality item pairs |
+| Science pack filter persistence | Filter and preset now correctly saved and restored on graph load |
+| Recipe book icon glitch | Fixed garbled item names and missing icons in the recipe chooser caused by the Factorio data exporter outputting UTF-8 while `PresetImportForm` read stdout as Windows-1252 ANSI; fixed by setting `StandardOutputEncoding = UTF8` on the process |
+| Item summary bugs | Various display and calculation bugs in the item summary panel resolved |
+| Node drag state bugs | Fixed ghost-drag and stuck-drag states in `BaseNodeElement` and the graph viewer; `DragStarted` now reset in `MouseDown` as well as `MouseUp` |
+| Post-convert node fly bug | Fixed node flying to random location and locking after converting a node; `CleanupNodeFromGroups` is now called before `DeleteNode` in `ConvertNodeToPassthrough` |
+| Fish farm / Wood Processing Unit not found | The Lua companion mod now searches by entity name directly with a `-turd` suffix fallback for Pyanodon's recipe variant naming convention |
+| Annotation DPI scaling | Annotations now scale correctly across machines with different display DPIs |
+| Annotation selection | Annotation hit boxes no longer block rubber-band selection of nodes behind them |
+| Text annotation hit testing | Right-click context menu on text annotations now correctly triggers |
+| Mixed selection delete | Deleting a selection containing both nodes and annotations now works correctly in a single operation |
+| Copy/paste relative positioning | Pasting a selection containing both nodes and annotations now preserves their relative positions; both groups use the same computed offset |
+| Find panel focus | Find panel now correctly captures keyboard input on open |
+| NullReferenceException (graph before preset) | Fixed crash when interacting with graph before preset finishes loading; startup now loads a default preset when no save file is present |
+| NullReferenceException (paste to new tab) | Fixed crash when pasting content into a freshly created tab |
+| NullReferenceException (ParentForm) | Replaced `ParentForm` references with `FindForm()` for reliability in tabbed context |
+| ArgumentOutOfRangeException (tab drawing) | Fixed crash in `GraphTabControl.OnDrawItem` when tab list changes during render |
+| KeyNotFoundException (missing modules) | Fixed crash when a save file references a module no longer in the active preset |
+| Settings crash on blank graph | Fixed `NullReferenceException` when opening Settings before a preset is loaded; DCache is now always initialized on startup |
+| Async race condition on startup | Fixed race where DCache null-check could fire before `LoadGraph` completed by switching to a `loadingFromFile` flag |
+
+---
+
+## 🛠️ Technical Notes
+
+- All undo/redo is **snapshot-based** — the full graph state is serialized before each destructive operation using the existing `ProductionGraph.GetObjectData` / `InsertNodesFromJson` infrastructure, making it robust across all feature areas without per-feature undo instrumentation.
+- Annotations are full first-class citizens: they serialize to JSON with the graph, participate in selection, copy/paste, grouping, and undo.
+- Tab state (open files, scroll positions, active tab, gridline settings) serializes to a sidecar file alongside the graph JSON.
+- The companion Factorio mod uses `storage` (not the Factorio 1.x `global`), `player.set_controller{type = defines.controllers.remote}` for map navigation (replacing removed `open_map`/`zoom_to_world`), and tag scanning via `force.find_chart_tags()` with a `"[F2] "` prefix since `LuaCustomChartTag` no longer has an `id` property in Factorio 2.0.
+- WinForms Designer limitations with `TableLayoutPanel`: layout changes to forms with filling `TableLayoutPanel` controls must be made directly in `Designer.cs` rather than through the Visual Studio Designer UI.
+
+---
+
+*Built with AI-assisted development sessions using [Claude](https://claude.ai), May 2026.*
+
+---
+
 # Foreman 2.0 #
 ![1: Foreman 2.0](https://puu.sh/Im6D4/5a42f137e2.jpg)
 
