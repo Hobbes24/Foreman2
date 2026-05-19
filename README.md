@@ -1,3 +1,4 @@
+<img width="3829" height="1669" alt="Foreman2 Screenshot" src="https://github.com/user-attachments/assets/66b1ac98-e237-4c70-b4d9-3e18cbf3d60a" />
 # Foreman2 — Community Fork: Feature & Improvement Log
 
 > A fork of [Foreman](https://github.com/DanielKote/Foreman2) — the Factorio 2.0 production planner.  
