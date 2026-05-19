@@ -5,3 +5,7 @@
 /ForemanTest/bin/
 /ForemanTest/obj/
 /packages/
+*.pfx
+*.key
+*.pem
+*.p12
