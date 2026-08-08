@@ -9,3 +9,7 @@
 *.key
 *.pem
 *.p12
+
+# Local Claude Code state - machine-specific paths, not for the public repo
+/.claude/settings.local.json
+/.claude/worktrees/
