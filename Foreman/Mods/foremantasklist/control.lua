@@ -1,31 +1,34 @@
 -- control.lua
 -- Foreman2 Task List mod
 
-local FRAME_NAME = "foreman_tasklist_frame"
-local DOUBLE_CLICK_TICKS = 30  -- ~0.5 seconds at 60UPS
-local TAG_PREFIX = "[F2] "     -- prefix on all our chart tags so we can find and remove them
+local FRAME_NAME         = "foreman_tasklist_frame"
+local DOUBLE_CLICK_TICKS = 30  -- ~0.5 seconds at 60 UPS
 
 -- ============================================================
 -- Storage init
 -- ============================================================
 
 script.on_init(function()
-    storage.tasks = {}
-    storage.last_click = {}
+    storage.tasks        = {}   -- [player_index] = { {display, internal_name, count, done}, ... }
+    storage.last_click   = {}   -- [player_index] = { name, tick }
+    storage.search_tags  = {}   -- [player_index] = { position, ... }
+    storage.item_cache   = {}   -- [internal_name] = item_name  (or false if none found)
 end)
 
 script.on_configuration_changed(function()
-    storage.tasks = storage.tasks or {}
-    storage.last_click = storage.last_click or {}
+    storage.tasks       = storage.tasks       or {}
+    storage.last_click  = storage.last_click  or {}
+    storage.search_tags = storage.search_tags or {}
+    storage.item_cache  = storage.item_cache  or {}
 end)
 
 -- ============================================================
--- Toggle UI on keybind
+-- Toggle UI on keybind  (Ctrl+B)
 -- ============================================================
 
 script.on_event("foreman-tasklist-toggle", function(event)
     local player = game.players[event.player_index]
-    local frame = player.gui.screen[FRAME_NAME]
+    local frame  = player.gui.screen[FRAME_NAME]
     if frame then
         frame.destroy()
     else
@@ -34,151 +37,314 @@ script.on_event("foreman-tasklist-toggle", function(event)
 end)
 
 -- ============================================================
+-- Inventory helpers
+-- ============================================================
+
+-- Resolves an entity internal name to the item name used in inventory.
+-- Tries direct match first; falls back to scanning item prototypes for
+-- one whose place_result matches the entity. Result is cached in storage.
+function resolve_item_name(internal_name)
+    -- Lazy-init: handles saves that pre-date this storage key
+    if not storage.item_cache then storage.item_cache = {} end
+    local cached = storage.item_cache[internal_name]
+    if cached ~= nil then
+        -- false means "no item found"; nil means "not yet looked up"
+        return cached or nil
+    end
+
+    -- Direct match (the common case — entity name == item name)
+    if prototypes.item[internal_name] then
+        storage.item_cache[internal_name] = internal_name
+        return internal_name
+    end
+
+    -- Fallback: scan all items for one that places this entity
+    for item_name, item_proto in pairs(prototypes.item) do
+        if item_proto.place_result and item_proto.place_result.name == internal_name then
+            storage.item_cache[internal_name] = item_name
+            return item_name
+        end
+    end
+
+    -- Nothing found — cache the miss so we don't scan again
+    storage.item_cache[internal_name] = false
+    return nil
+end
+
+-- Returns how many of this entity's corresponding item the player is carrying.
+function get_inventory_count(player, internal_name)
+    if not storage.tasks       then storage.tasks       = {} end
+    if not storage.search_tags then storage.search_tags = {} end
+    local item_name = resolve_item_name(internal_name)
+    if not item_name then return 0 end
+    local inv = player.get_main_inventory()
+    if not inv then return 0 end
+    return inv.get_item_count(item_name)
+end
+
+-- Walks all tasks for a player; if they have >= needed and the task isn't
+-- already done, marks it done. Never un-checks a task (one-way).
+function auto_check_tasks(player)
+    local tasks = storage.tasks[player.index]
+    if not tasks then return end
+    for _, task in ipairs(tasks) do
+        if not task.done then
+            local have = get_inventory_count(player, task.internal_name)
+            if have >= task.count then
+                task.done = true
+            end
+        end
+    end
+end
+
+-- ============================================================
 -- Build the GUI
 -- ============================================================
 
 function build_gui(player)
     local frame = player.gui.screen.add{
-        type = "frame",
-        name = FRAME_NAME,
+        type      = "frame",
+        name      = FRAME_NAME,
         direction = "vertical",
-        caption = "Foreman2 Task List"
+        caption   = "Foreman2 Task List"
     }
     frame.auto_center = true
 
+    -- Scrollable task list
     local scroll = frame.add{
-        type = "scroll-pane",
-        name = "task_scroll",
+        type      = "scroll-pane",
+        name      = "task_scroll",
         direction = "vertical"
     }
     scroll.style.maximal_height = 400
-    scroll.style.minimal_width = 350
-    scroll.style.padding = 4
+    scroll.style.minimal_width  = 400
+    scroll.style.padding        = 4
 
-    render_tasks(scroll)
+    render_tasks(player, scroll)
 
     frame.add{ type = "line" }
 
+    -- Paste area
     local paste_section = frame.add{
-        type = "flow",
-        name = "paste_section",
+        type      = "flow",
+        name      = "paste_section",
         direction = "vertical"
     }
     paste_section.add{
-        type = "label",
+        type    = "label",
         caption = "Paste Foreman2 export here, then click Import:"
     }
     local textbox = paste_section.add{
         type = "text-box",
         name = "paste_box"
     }
-    textbox.style.width = 350
-    textbox.style.height = 100
+    textbox.style.width  = 380
+    textbox.style.height = 80
 
-    paste_section.visible = (#storage.tasks == 0)
+    -- Hide paste area if tasks already exist
+    local tasks = storage.tasks[player.index]
+    if tasks and #tasks > 0 then
+        paste_section.visible = false
+    end
 
     frame.add{ type = "line" }
 
-    frame.add{
-        type = "label",
-        name = "hint_label",
-        caption = "[color=150,150,150][italic]Double-click a task to find buildings on map[/italic][/color]"
-    }
-
-    local buttons = frame.add{
-        type = "flow",
-        name = "button_row",
+    -- Button row
+    local btn_row = frame.add{
+        type      = "flow",
+        name      = "button_row",
         direction = "horizontal"
     }
-    local import_caption = (#storage.tasks == 0) and "Import" or "Import More"
-    buttons.add{ type = "button", name = "foreman_import_btn",     caption = import_caption }
-    buttons.add{ type = "button", name = "foreman_clear_btn",      caption = "Clear All"   }
-    buttons.add{ type = "button", name = "foreman_clear_pins_btn", caption = "Clear Pins"  }
-    buttons.add{ type = "button", name = "foreman_close_btn",      caption = "Close"       }
+    btn_row.style.horizontal_spacing = 6
+
+    btn_row.add{
+        type    = "button",
+        name    = "foreman_import_btn",
+        caption = (tasks and #tasks > 0) and "Import More" or "Import"
+    }
+    btn_row.add{
+        type    = "button",
+        name    = "foreman_clear_btn",
+        caption = "Clear All"
+    }
+    btn_row.add{
+        type    = "button",
+        name    = "foreman_clearpins_btn",
+        caption = "Clear Pins"
+    }
 end
 
 -- ============================================================
--- Render task checkboxes
+-- Render task list into the scroll pane
 -- ============================================================
 
-function render_tasks(scroll)
+function render_tasks(player, scroll)
     scroll.clear()
-    if #storage.tasks == 0 then
+
+    local tasks = storage.tasks[player.index]
+    if not tasks or #tasks == 0 then
         scroll.add{
-            type = "label",
-            name = "empty_label",
-            caption = "[italic]No tasks yet. Paste a list and click Import.[/italic]"
+            type    = "label",
+            caption = "[color=150,150,150]No tasks. Paste a Foreman2 list and click Import.[/color]"
         }
         return
     end
-    for i, task in ipairs(storage.tasks) do
-        local display = task.display_name or task.text
-        local cb = scroll.add{
-            type = "checkbox",
-            name = "task_" .. i,
-            caption = display,
-            state = task.done
-        }
+
+    for i, task in ipairs(tasks) do
+        local have = get_inventory_count(player, task.internal_name)
+        local met  = (have >= task.count)
+
+        -- Label format:
+        --   Incomplete, not met:  "12x Assembling Machine 3 [asm-3]  [color=orange](5)[/color]"
+        --   Incomplete, met:      "12x Assembling Machine 3 [asm-3]  [color=green](20)[/color]"
+        --   Done (any):           "[color=grey]12x Assembling Machine 3 [asm-3][/color]  [color=green](20)[/color]"
+        local base      = task.display .. " [" .. task.internal_name .. "]"
+        local count_col = met and "0,200,0" or "200,150,0"
+        local count_tag = "  [color=" .. count_col .. "](" .. have .. ")[/color]"
+        local caption
         if task.done then
-            cb.style.font_color = { r = 0.5, g = 0.5, b = 0.5 }
+            caption = "[color=100,100,100]" .. base .. "[/color]" .. count_tag
+        else
+            caption = base .. count_tag
         end
+
+        local row = scroll.add{
+            type      = "flow",
+            name      = "task_row_" .. i,
+            direction = "horizontal"
+        }
+        row.style.vertical_align = "center"
+
+        row.add{
+            type    = "checkbox",
+            name    = "task_check_" .. i,
+            state   = task.done,
+            caption = ""
+        }
+
+        local lbl = row.add{
+            type    = "label",
+            name    = "task_label_" .. i,
+            caption = caption
+        }
+        lbl.style.left_margin = 4
     end
 end
 
 -- ============================================================
--- Parse pasted text
--- Format: "12x Friendly Name [internal-name]"
+-- Refresh (redraw) the task list in an open GUI
 -- ============================================================
 
-function parse_and_append(text)
+function refresh_gui(player)
+    local frame = player.gui.screen[FRAME_NAME]
+    if not frame then return end
+    local scroll = frame.task_scroll
+    if scroll then
+        render_tasks(player, scroll)
+    end
+end
+
+-- ============================================================
+-- Inventory change event — auto-check and refresh counts
+-- ============================================================
+
+script.on_event(defines.events.on_player_main_inventory_changed, function(event)
+    local player = game.players[event.player_index]
+    auto_check_tasks(player)
+    -- Always refresh so counts stay current while GUI is open
+    refresh_gui(player)
+end)
+
+-- ============================================================
+-- Parse pasted Foreman2 export into tasks
+-- Format expected:  "12x Assembling Machine 3 [assembling-machine-3]"
+-- ============================================================
+
+function parse_and_store_tasks(player, text)
+    local tasks = storage.tasks[player.index] or {}
+    storage.tasks[player.index] = tasks
+
     for line in text:gmatch("[^\r\n]+") do
-        line = line:match("^%s*(.-)%s*$")
+        line = line:match("^%s*(.-)%s*$")   -- trim whitespace
         if line ~= "" then
-            local internal_name = line:match("%[(.-)%]$")
-            local display_name
-            if internal_name then
-                display_name = line:match("^(.-)%s*%[.-%]$")
-            else
-                display_name = line
+            local count_str, display_name, internal_name =
+                line:match("^(%d+)x%s+(.-)%s+%[([^%]]+)%]$")
+
+            if count_str and display_name and internal_name then
+                local needed = tonumber(count_str)
+                local have = get_inventory_count(player, internal_name)
+                table.insert(tasks, {
+                    display       = count_str .. "x " .. display_name,
+                    name          = display_name,
+                    internal_name = internal_name,
+                    count         = needed,
+                    done          = (have >= needed)
+                })
             end
-            table.insert(storage.tasks, {
-                text          = line,
-                display_name  = display_name,
-                internal_name = internal_name,
-                done          = false
-            })
         end
     end
 end
 
 -- ============================================================
--- Map search
+-- Map pin search
 -- ============================================================
 
-function search_for_entity(player, internal_name, display_name)
+local CRAFTING_TYPES = {
+    "assembling-machine", "furnace", "rocket-silo", "agricultural-tower"
+}
+
+-- Find all machines on this surface whose active recipe produces item_name
+function find_producers_for_item(player, item_name)
+    local results = {}
+    for _, etype in ipairs(CRAFTING_TYPES) do
+        for _, machine in ipairs(player.surface.find_entities_filtered{ type = etype }) do
+            local ok, recipe = pcall(machine.get_recipe, machine)
+            if ok and recipe then
+                for _, product in ipairs(recipe.products) do
+                    if product.name == item_name then
+                        table.insert(results, machine)
+                        break
+                    end
+                end
+            end
+        end
+    end
+    return results
+end
+
+function search_for_producers(player, internal_name, display_name)
     clear_search_tags(player)
 
-    local found = player.surface.find_entities_filtered{ name = internal_name }
+    -- internal_name == the item name (entity and item share the same name for placeables).
+    -- Search for assemblers whose recipe produces this item.
+    local search_item = internal_name
+    local found = find_producers_for_item(player, search_item)
 
-    -- Pyanodon's '-turd' suffix denotes a recipe variant, not a distinct building.
-    -- If no entities found, fall back to the base building name.
-    local search_name = internal_name
+    -- Pyanodon's '-turd' suffix exists on the entity name but NOT on the item name.
+    -- e.g. entity "fish-farm-mk01-turd", item "fish-farm-mk01"
+    -- Strip the suffix and retry the item search.
     if #found == 0 and internal_name:sub(-5) == "-turd" then
-        search_name = internal_name:sub(1, -6)
-        found = player.surface.find_entities_filtered{ name = search_name }
+        search_item = internal_name:sub(1, -6)
+        found = find_producers_for_item(player, search_item)
     end
 
     if #found == 0 then
-        player.print("[Foreman2] No '" .. display_name .. "' found on this surface.")
+        player.print("[Foreman2] No assemblers producing '" .. display_name .. "' found on this surface.")
         return
     end
 
+    -- Place chart tag pins at every producing machine
+    storage.search_tags[player.index] = {}
+    local icon_item = resolve_item_name(search_item) or "iron-gear-wheel"
     for _, machine in ipairs(found) do
-        player.force.add_chart_tag(player.surface, {
+        local tag = player.force.add_chart_tag(player.surface, {
             position = machine.position,
-            icon     = { type = "entity", name = search_name },
-            text     = TAG_PREFIX .. display_name
+            text     = "[F2] " .. display_name,
+            icon     = { type = "item", name = icon_item }
         })
+        if tag then
+            table.insert(storage.search_tags[player.index], tag.position)
+        end
     end
 
     player.set_controller{
@@ -186,107 +352,134 @@ function search_for_entity(player, internal_name, display_name)
         position = found[1].position,
         surface  = player.surface
     }
+    player.zoom = 0.3
 
-    player.print("[Foreman2] Found " .. #found .. " " .. display_name .. " — map pins added.")
+    player.print("[Foreman2] Found " .. #found .. " assembler(s) producing " .. display_name .. ". Click 'Clear Pins' to remove.")
 end
 
 function clear_search_tags(player)
-    -- Find all chart tags on this surface belonging to this force,
-    -- and remove any that were placed by this mod (identified by TAG_PREFIX)
-    local all_tags = player.force.find_chart_tags(player.surface)
-    for _, tag in pairs(all_tags) do
-        if tag.text:sub(1, #TAG_PREFIX) == TAG_PREFIX then
-            tag.destroy()
+    local tags = storage.search_tags[player.index]
+    if tags then
+        for _, pos in ipairs(tags) do
+            local nearby = player.force.find_chart_tags(player.surface, {
+                left_top     = { x = pos.x - 0.5, y = pos.y - 0.5 },
+                right_bottom = { x = pos.x + 0.5, y = pos.y + 0.5 }
+            })
+            for _, tag in ipairs(nearby) do
+                if tag.text:sub(1, 5) == "[F2] " then
+                    tag.destroy()
+                end
+            end
         end
     end
+    storage.search_tags[player.index] = {}
 end
 
 -- ============================================================
--- GUI click handler
+-- GUI event handler
 -- ============================================================
 
 script.on_event(defines.events.on_gui_click, function(event)
-    local el = event.element
-    if not el or not el.valid then return end
+    local player  = game.players[event.player_index]
+    local element = event.element
+    if not element or not element.valid then return end
 
-    local player = game.players[event.player_index]
-    local frame  = player.gui.screen[FRAME_NAME]
-    if not frame then return end
+    local name = element.name
 
-    local paste_section = frame.paste_section
-    local import_btn    = frame.button_row.foreman_import_btn
+    -- Import button
+    if name == "foreman_import_btn" then
+        local frame = player.gui.screen[FRAME_NAME]
+        if not frame then return end
+        local paste_section = frame.paste_section
+        if not paste_section then return end
 
-    -- Check for double-click on a task checkbox
-    local task_idx = el.name:match("^task_(%d+)$")
-    if task_idx then
-        local now  = game.tick
-        local last = storage.last_click[event.player_index]
-
-        if last and last.name == el.name and (now - last.tick) <= DOUBLE_CLICK_TICKS then
-            storage.last_click[event.player_index] = nil
-            local idx  = tonumber(task_idx)
-            local task = storage.tasks[idx]
-            if task and task.internal_name then
-                search_for_entity(player, task.internal_name, task.display_name or task.text)
-            else
-                player.print("[Foreman2] No internal entity name available — was this imported from Foreman2?")
+        if paste_section.visible then
+            local textbox = paste_section.paste_box
+            if textbox and textbox.text ~= "" then
+                parse_and_store_tasks(player, textbox.text)
+                textbox.text = ""
             end
+            local tasks = storage.tasks[player.index]
+            if tasks and #tasks > 0 then
+                paste_section.visible = false
+                frame.button_row.foreman_import_btn.caption = "Import More"
+            end
+            refresh_gui(player)
         else
-            storage.last_click[event.player_index] = { name = el.name, tick = now }
+            paste_section.visible = true
+            frame.button_row.foreman_import_btn.caption = "Import"
         end
         return
     end
 
-    if el.name == "foreman_import_btn" then
-        if paste_section.visible then
-            local text = paste_section.paste_box.text
-            if text and text ~= "" then
-                parse_and_append(text)
-                paste_section.paste_box.text = ""
-            end
-            if #storage.tasks > 0 then
-                paste_section.visible = false
-                import_btn.caption = "Import More"
-            end
-            render_tasks(frame.task_scroll)
-        else
-            paste_section.visible = true
-            import_btn.caption = "Import"
+    -- Clear All button
+    if name == "foreman_clear_btn" then
+        storage.tasks[player.index] = {}
+        local frame = player.gui.screen[FRAME_NAME]
+        if frame then
+            frame.paste_section.visible = true
+            frame.button_row.foreman_import_btn.caption = "Import"
         end
+        refresh_gui(player)
+        return
+    end
 
-    elseif el.name == "foreman_clear_btn" then
-        storage.tasks = {}
-        paste_section.visible = true
-        import_btn.caption = "Import"
-        render_tasks(frame.task_scroll)
-
-    elseif el.name == "foreman_clear_pins_btn" then
+    -- Clear Pins button
+    if name == "foreman_clearpins_btn" then
         clear_search_tags(player)
         player.print("[Foreman2] Map pins cleared.")
+        return
+    end
 
-    elseif el.name == "foreman_close_btn" then
-        frame.destroy()
+    -- Checkbox toggle — manual check/uncheck
+    local check_idx = name:match("^task_check_(%d+)$")
+    if check_idx then
+        local idx   = tonumber(check_idx)
+        local tasks = storage.tasks[player.index]
+        if tasks and tasks[idx] then
+            tasks[idx].done = element.state
+            refresh_gui(player)
+        end
+        return
+    end
+
+    -- Task label — single vs double click for map search
+    local label_idx = name:match("^task_label_(%d+)$")
+    if label_idx then
+        local idx   = tonumber(label_idx)
+        local tasks = storage.tasks[player.index]
+        if not tasks or not tasks[idx] then return end
+
+        local task = tasks[idx]
+        local lc   = storage.last_click[player.index]
+        local tick = event.tick or game.tick
+
+        if lc and lc.name == name and (tick - lc.tick) <= DOUBLE_CLICK_TICKS then
+            storage.last_click[player.index] = nil
+            search_for_producers(player, task.internal_name, task.name or task.display)
+        else
+            storage.last_click[player.index] = { name = name, tick = tick }
+        end
+        return
     end
 end)
 
 -- ============================================================
--- Checkbox state change
+-- Keyboard checkbox toggle (in case user tabs to checkbox)
 -- ============================================================
 
 script.on_event(defines.events.on_gui_checked_state_changed, function(event)
-    local el = event.element
-    if not el or not el.valid then return end
+    local player  = game.players[event.player_index]
+    local element = event.element
+    if not element or not element.valid then return end
 
-    local idx = el.name:match("^task_(%d+)$")
-    if idx then
-        idx = tonumber(idx)
-        if storage.tasks[idx] then
-            storage.tasks[idx].done = el.state
-            if el.state then
-                el.style.font_color = { r = 0.5, g = 0.5, b = 0.5 }
-            else
-                el.style.font_color = { r = 1, g = 1, b = 1 }
-            end
+    local check_idx = element.name:match("^task_check_(%d+)$")
+    if check_idx then
+        local idx   = tonumber(check_idx)
+        local tasks = storage.tasks[player.index]
+        if tasks and tasks[idx] then
+            tasks[idx].done = element.state
+            refresh_gui(player)
         end
     end
 end)
