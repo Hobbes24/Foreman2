@@ -60,10 +60,21 @@ namespace Foreman
             this.BeaconsHeaderCounter = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.BeaconsHeaderName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.BeaconsHeaderPower = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.ModulesPage = new System.Windows.Forms.TabPage();
+            this.ModuleListView = new System.Windows.Forms.ListView();
+            this.ModulesHeaderCounter = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.ModulesHeaderName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.ModulesHeaderBuildings = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.BeaconModulesPage = new System.Windows.Forms.TabPage();
+            this.BeaconModuleListView = new System.Windows.Forms.ListView();
+            this.BeaconModulesHeaderCounter = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.BeaconModulesHeaderName = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.BeaconModulesHeaderBeacons = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.BuildingsExportButton = new System.Windows.Forms.Button();
             this.ExportToFactorioButton = new System.Windows.Forms.Button();
             this.tableLayoutPanel2 = new System.Windows.Forms.TableLayoutPanel();
             this.BeaconCountLabel = new System.Windows.Forms.Label();
+            this.ModuleCountLabel = new System.Windows.Forms.Label();
             this.BuildingCountLabel = new System.Windows.Forms.Label();
             this.PowerConsumptionLabel = new System.Windows.Forms.Label();
             this.PowerProductionLabel = new System.Windows.Forms.Label();
@@ -136,6 +147,8 @@ namespace Foreman
             this.MinersPage.SuspendLayout();
             this.PowersPage.SuspendLayout();
             this.BeaconsPage.SuspendLayout();
+            this.ModulesPage.SuspendLayout();
+            this.BeaconModulesPage.SuspendLayout();
             this.tableLayoutPanel2.SuspendLayout();
             this.ItemsTabPage.SuspendLayout();
             this.ItemsTable.SuspendLayout();
@@ -232,6 +245,8 @@ namespace Foreman
             this.BuildingsTabControl.Controls.Add(this.MinersPage);
             this.BuildingsTabControl.Controls.Add(this.PowersPage);
             this.BuildingsTabControl.Controls.Add(this.BeaconsPage);
+            this.BuildingsTabControl.Controls.Add(this.ModulesPage);
+            this.BuildingsTabControl.Controls.Add(this.BeaconModulesPage);
             this.BuildingsTabControl.Dock = System.Windows.Forms.DockStyle.Fill;
             this.BuildingsTabControl.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F);
             this.BuildingsTabControl.Location = new System.Drawing.Point(6, 86);
@@ -470,9 +485,111 @@ namespace Foreman
             // 
             this.BeaconsHeaderPower.Text = "Power (Beacon)";
             this.BeaconsHeaderPower.Width = 100;
-            // 
+            //
+            // ModulesPage
+            //
+            this.ModulesPage.Controls.Add(this.ModuleListView);
+            this.ModulesPage.Location = new System.Drawing.Point(4, 31);
+            this.ModulesPage.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
+            this.ModulesPage.Name = "ModulesPage";
+            this.ModulesPage.Size = new System.Drawing.Size(1102, 582);
+            this.ModulesPage.TabIndex = 7;
+            this.ModulesPage.Text = "Modules";
+            this.ModulesPage.UseVisualStyleBackColor = true;
+            //
+            // ModuleListView
+            //
+            this.ModuleListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+            this.ModulesHeaderCounter,
+            this.ModulesHeaderName,
+            this.ModulesHeaderBuildings});
+            this.ModuleListView.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.ModuleListView.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F);
+            this.ModuleListView.FullRowSelect = true;
+            this.ModuleListView.GridLines = true;
+            this.ModuleListView.HideSelection = false;
+            this.ModuleListView.LabelWrap = false;
+            this.ModuleListView.Location = new System.Drawing.Point(0, 0);
+            this.ModuleListView.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
+            this.ModuleListView.MultiSelect = false;
+            this.ModuleListView.Name = "ModuleListView";
+            this.ModuleListView.Size = new System.Drawing.Size(1102, 582);
+            this.ModuleListView.SmallImageList = this.IconList;
+            this.ModuleListView.TabIndex = 20;
+            this.ModuleListView.UseCompatibleStateImageBehavior = false;
+            this.ModuleListView.View = System.Windows.Forms.View.Details;
+            this.ModuleListView.VirtualMode = true;
+            this.ModuleListView.ColumnClick += new System.Windows.Forms.ColumnClickEventHandler(this.ModuleListView_ColumnClick);
+            this.ModuleListView.RetrieveVirtualItem += new System.Windows.Forms.RetrieveVirtualItemEventHandler(this.ModuleListView_RetrieveVirtualItem);
+            //
+            // ModulesHeaderCounter
+            //
+            this.ModulesHeaderCounter.Text = "#";
+            this.ModulesHeaderCounter.Width = 100;
+            //
+            // ModulesHeaderName
+            //
+            this.ModulesHeaderName.Text = "Name";
+            this.ModulesHeaderName.Width = 250;
+            //
+            // ModulesHeaderBuildings
+            //
+            this.ModulesHeaderBuildings.Text = "Buildings";
+            this.ModulesHeaderBuildings.Width = 100;
+            //
+            // BeaconModulesPage
+            //
+            this.BeaconModulesPage.Controls.Add(this.BeaconModuleListView);
+            this.BeaconModulesPage.Location = new System.Drawing.Point(4, 31);
+            this.BeaconModulesPage.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
+            this.BeaconModulesPage.Name = "BeaconModulesPage";
+            this.BeaconModulesPage.Size = new System.Drawing.Size(1102, 582);
+            this.BeaconModulesPage.TabIndex = 8;
+            this.BeaconModulesPage.Text = "Beacon Modules";
+            this.BeaconModulesPage.UseVisualStyleBackColor = true;
+            //
+            // BeaconModuleListView
+            //
+            this.BeaconModuleListView.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+            this.BeaconModulesHeaderCounter,
+            this.BeaconModulesHeaderName,
+            this.BeaconModulesHeaderBeacons});
+            this.BeaconModuleListView.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.BeaconModuleListView.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F);
+            this.BeaconModuleListView.FullRowSelect = true;
+            this.BeaconModuleListView.GridLines = true;
+            this.BeaconModuleListView.HideSelection = false;
+            this.BeaconModuleListView.LabelWrap = false;
+            this.BeaconModuleListView.Location = new System.Drawing.Point(0, 0);
+            this.BeaconModuleListView.Margin = new System.Windows.Forms.Padding(4, 5, 4, 5);
+            this.BeaconModuleListView.MultiSelect = false;
+            this.BeaconModuleListView.Name = "BeaconModuleListView";
+            this.BeaconModuleListView.Size = new System.Drawing.Size(1102, 582);
+            this.BeaconModuleListView.SmallImageList = this.IconList;
+            this.BeaconModuleListView.TabIndex = 21;
+            this.BeaconModuleListView.UseCompatibleStateImageBehavior = false;
+            this.BeaconModuleListView.View = System.Windows.Forms.View.Details;
+            this.BeaconModuleListView.VirtualMode = true;
+            this.BeaconModuleListView.ColumnClick += new System.Windows.Forms.ColumnClickEventHandler(this.BeaconModuleListView_ColumnClick);
+            this.BeaconModuleListView.RetrieveVirtualItem += new System.Windows.Forms.RetrieveVirtualItemEventHandler(this.BeaconModuleListView_RetrieveVirtualItem);
+            //
+            // BeaconModulesHeaderCounter
+            //
+            this.BeaconModulesHeaderCounter.Text = "#";
+            this.BeaconModulesHeaderCounter.Width = 100;
+            //
+            // BeaconModulesHeaderName
+            //
+            this.BeaconModulesHeaderName.Text = "Name";
+            this.BeaconModulesHeaderName.Width = 250;
+            //
+            // BeaconModulesHeaderBeacons
+            //
+            this.BeaconModulesHeaderBeacons.Text = "Beacons";
+            this.BeaconModulesHeaderBeacons.Width = 100;
+            //
             // BuildingsExportButton
-            // 
+            //
             this.BuildingsExportButton.Dock = System.Windows.Forms.DockStyle.Fill;
             this.BuildingsExportButton.Location = new System.Drawing.Point(826, 51);
             this.BuildingsExportButton.Margin = new System.Windows.Forms.Padding(0, 3, 7, 3);
@@ -499,16 +616,18 @@ namespace Foreman
             // 
             this.tableLayoutPanel2.AutoSize = true;
             this.tableLayoutPanel2.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
-            this.tableLayoutPanel2.ColumnCount = 4;
+            this.tableLayoutPanel2.ColumnCount = 5;
             this.BuildingsTable.SetColumnSpan(this.tableLayoutPanel2, 3);
+            this.tableLayoutPanel2.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
             this.tableLayoutPanel2.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
             this.tableLayoutPanel2.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
             this.tableLayoutPanel2.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
             this.tableLayoutPanel2.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
             this.tableLayoutPanel2.Controls.Add(this.BeaconCountLabel, 1, 0);
             this.tableLayoutPanel2.Controls.Add(this.BuildingCountLabel, 0, 0);
-            this.tableLayoutPanel2.Controls.Add(this.PowerConsumptionLabel, 2, 0);
-            this.tableLayoutPanel2.Controls.Add(this.PowerProductionLabel, 3, 0);
+            this.tableLayoutPanel2.Controls.Add(this.ModuleCountLabel, 2, 0);
+            this.tableLayoutPanel2.Controls.Add(this.PowerConsumptionLabel, 3, 0);
+            this.tableLayoutPanel2.Controls.Add(this.PowerProductionLabel, 4, 0);
             this.tableLayoutPanel2.Dock = System.Windows.Forms.DockStyle.Fill;
             this.tableLayoutPanel2.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F);
             this.tableLayoutPanel2.Location = new System.Drawing.Point(69, 5);
@@ -528,7 +647,17 @@ namespace Foreman
             this.BeaconCountLabel.Size = new System.Drawing.Size(100, 22);
             this.BeaconCountLabel.TabIndex = 34;
             this.BeaconCountLabel.Text = "#Beacons: ";
-            // 
+            //
+            // ModuleCountLabel
+            //
+            this.ModuleCountLabel.AutoSize = true;
+            this.ModuleCountLabel.Location = new System.Drawing.Point(277, 8);
+            this.ModuleCountLabel.Margin = new System.Windows.Forms.Padding(10, 8, 22, 8);
+            this.ModuleCountLabel.Name = "ModuleCountLabel";
+            this.ModuleCountLabel.Size = new System.Drawing.Size(100, 22);
+            this.ModuleCountLabel.TabIndex = 35;
+            this.ModuleCountLabel.Text = "#Modules: ";
+            //
             // BuildingCountLabel
             // 
             this.BuildingCountLabel.AutoSize = true;
@@ -1254,6 +1383,8 @@ namespace Foreman
             this.MinersPage.ResumeLayout(false);
             this.PowersPage.ResumeLayout(false);
             this.BeaconsPage.ResumeLayout(false);
+            this.ModulesPage.ResumeLayout(false);
+            this.BeaconModulesPage.ResumeLayout(false);
             this.tableLayoutPanel2.ResumeLayout(false);
             this.tableLayoutPanel2.PerformLayout();
             this.ItemsTabPage.ResumeLayout(false);
@@ -1374,7 +1505,18 @@ namespace Foreman
 		private System.Windows.Forms.ColumnHeader KeyNodesHeaderBuildings;
 		private System.Windows.Forms.TableLayoutPanel tableLayoutPanel2;
 		private System.Windows.Forms.Label BeaconCountLabel;
+		private System.Windows.Forms.Label ModuleCountLabel;
 		private System.Windows.Forms.Label BuildingCountLabel;
+		private System.Windows.Forms.TabPage ModulesPage;
+		private System.Windows.Forms.ListView ModuleListView;
+		private System.Windows.Forms.ColumnHeader ModulesHeaderCounter;
+		private System.Windows.Forms.ColumnHeader ModulesHeaderName;
+		private System.Windows.Forms.ColumnHeader ModulesHeaderBuildings;
+		private System.Windows.Forms.TabPage BeaconModulesPage;
+		private System.Windows.Forms.ListView BeaconModuleListView;
+		private System.Windows.Forms.ColumnHeader BeaconModulesHeaderCounter;
+		private System.Windows.Forms.ColumnHeader BeaconModulesHeaderName;
+		private System.Windows.Forms.ColumnHeader BeaconModulesHeaderBeacons;
 		private System.Windows.Forms.TextBox BuildingsFilterTextBox;
 	}
 }

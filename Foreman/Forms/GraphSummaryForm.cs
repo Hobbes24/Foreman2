@@ -32,6 +32,8 @@ namespace Foreman
 		private List<ListViewItem> unfilteredMinerList;
 		private List<ListViewItem> unfilteredPowerList;
 		private List<ListViewItem> unfilteredBeaconList;
+		private List<ListViewItem> unfilteredModuleList;
+		private List<ListViewItem> unfilteredBeaconModuleList;
 
 		private List<ListViewItem> unfilteredItemsList;
 		private List<ListViewItem> unfilteredFluidsList;
@@ -43,6 +45,8 @@ namespace Foreman
 		private List<ListViewItem> filteredMinerList;
 		private List<ListViewItem> filteredPowerList;
 		private List<ListViewItem> filteredBeaconList;
+		private List<ListViewItem> filteredModuleList;
+		private List<ListViewItem> filteredBeaconModuleList;
 
 		private List<ListViewItem> filteredItemsList;
 		private List<ListViewItem> filteredFluidsList;
@@ -56,7 +60,7 @@ namespace Foreman
 
         private readonly ProductionGraphViewer graphViewer;
 
-        private ItemQualityPair? navLastItem = null;
+        private object navLastTarget = null; //the row that was last double clicked (item or module) - a repeat click on it steps to the next matching node
         private int navCycleIndex = 0;
 
         private string rateString;
@@ -64,6 +68,7 @@ namespace Foreman
 		private string itemsTabBaseText;
 		private string buildingCountBaseText;
 		private string beaconCountBaseText;
+		private string moduleCountBaseText;
 		private string powerConsumptionBaseText;
 		private string powerProductionBaseText;
 
@@ -77,6 +82,8 @@ namespace Foreman
 			MainForm.SetDoubleBuffered(MinerListView);
 			MainForm.SetDoubleBuffered(PowerListView);
 			MainForm.SetDoubleBuffered(BeaconListView);
+			MainForm.SetDoubleBuffered(ModuleListView);
+			MainForm.SetDoubleBuffered(BeaconModuleListView);
 			MainForm.SetDoubleBuffered(ItemsListView);
 			MainForm.SetDoubleBuffered(FluidsListView);
 			MainForm.SetDoubleBuffered(AllListView);
@@ -86,6 +93,7 @@ namespace Foreman
 			itemsTabBaseText = ItemsTabPage.Text;
 			buildingCountBaseText = BuildingCountLabel.Text;
 			beaconCountBaseText = BeaconCountLabel.Text;
+			moduleCountBaseText = ModuleCountLabel.Text;
 			powerConsumptionBaseText = PowerConsumptionLabel.Text;
 			powerProductionBaseText = PowerProductionLabel.Text;
 
@@ -93,6 +101,8 @@ namespace Foreman
 			unfilteredMinerList = new List<ListViewItem>();
 			unfilteredPowerList = new List<ListViewItem>();
 			unfilteredBeaconList = new List<ListViewItem>();
+			unfilteredModuleList = new List<ListViewItem>();
+			unfilteredBeaconModuleList = new List<ListViewItem>();
 			unfilteredItemsList = new List<ListViewItem>();
 			unfilteredFluidsList = new List<ListViewItem>();
 			unfilteredAllList = new List<ListViewItem>();
@@ -102,6 +112,8 @@ namespace Foreman
 			filteredMinerList = new List<ListViewItem>();
 			filteredPowerList = new List<ListViewItem>();
 			filteredBeaconList = new List<ListViewItem>();
+			filteredModuleList = new List<ListViewItem>();
+			filteredBeaconModuleList = new List<ListViewItem>();
 			filteredItemsList = new List<ListViewItem>();
 			filteredFluidsList = new List<ListViewItem>();
 			filteredAllList = new List<ListViewItem>();
@@ -112,6 +124,8 @@ namespace Foreman
 			lastSortOrder.Add(MinerListView, 2);
 			lastSortOrder.Add(PowerListView, 2);
 			lastSortOrder.Add(BeaconListView, 2);
+			lastSortOrder.Add(ModuleListView, 2);
+			lastSortOrder.Add(BeaconModuleListView, 2);
 			lastSortOrder.Add(ItemsListView, 1);
 			lastSortOrder.Add(FluidsListView, 1);
 			lastSortOrder.Add(AllListView, 1);
@@ -125,6 +139,8 @@ namespace Foreman
             FluidsListView.DoubleClick += ItemsOrFluids_DoubleClick;
             AllListView.DoubleClick += ItemsOrFluids_DoubleClick;
             KeyNodesListView.DoubleClick += KeyNodes_DoubleClick;
+            ModuleListView.DoubleClick += Modules_DoubleClick;
+            BeaconModuleListView.DoubleClick += Modules_DoubleClick;
 
             graph.NodeAdded += Graph_Changed;
 			graph.NodeDeleted += Graph_Changed;
@@ -136,6 +152,25 @@ namespace Foreman
 
 			RefreshData();
 		}
+
+        //centers the graph on one of the matching nodes; repeat calls with the same navTarget step through the rest of them
+        private void CycleToNode(object navTarget, List<ReadOnlyBaseNode> targets)
+        {
+            if (targets.Count == 0) return;
+
+            if (navLastTarget == null || !navLastTarget.Equals(navTarget))
+            {
+                navLastTarget = navTarget;
+                navCycleIndex = 0;
+            }
+            else
+            {
+                navCycleIndex = (navCycleIndex + 1) % targets.Count;
+            }
+
+            if (graphViewer.NodeElementDictionary.TryGetValue(targets[navCycleIndex], out BaseNodeElement element))
+                graphViewer.CenterOnNode(element, targetScale: 1.0f);
+        }
 
         private void ItemsOrFluids_DoubleClick(object sender, EventArgs e)
         {
@@ -152,20 +187,27 @@ namespace Foreman
                     (n.Outputs.Contains(item) && !n.OutputLinks.Any(l => l.Item == item)))
                 .ToList();
 
-            if (targets.Count == 0) return;
+            CycleToNode(item, targets);
+        }
 
-            if (!navLastItem.HasValue || !item.Equals(navLastItem.Value))
-            {
-                navLastItem = item;
-                navCycleIndex = 0;
-            }
-            else
-            {
-                navCycleIndex = (navCycleIndex + 1) % targets.Count;
-            }
+        private void Modules_DoubleClick(object sender, EventArgs e)
+        {
+            if (graphViewer == null) return;
+            ListView lv = (ListView)sender;
+            bool beaconModules = (lv == BeaconModuleListView);
 
-            if (graphViewer.NodeElementDictionary.TryGetValue(targets[navCycleIndex], out BaseNodeElement element))
-                graphViewer.CenterOnNode(element, targetScale: 1.0f);
+            Point hit = lv.PointToClient(Cursor.Position);
+            ListViewHitTestInfo info = lv.HitTest(hit);
+            if (info.Item == null || !(info.Item.Tag is ModuleQualityPair module)) return;
+
+            List<ReadOnlyBaseNode> targets = graph.Nodes
+                .Where(n => n is ReadOnlyRecipeNode rNode && (beaconModules ?
+                    rNode.SelectedBeacon && rNode.BeaconModules.Contains(module) :
+                    rNode.AssemblerModules.Contains(module)))
+                .ToList();
+
+            //the same module in the assembler & beacon lists points at different nodes -> keep their cycles apart
+            CycleToNode(Tuple.Create(module, beaconModules), targets);
         }
 
         private void KeyNodes_DoubleClick(object sender, EventArgs e)
@@ -205,6 +247,8 @@ namespace Foreman
 			unfilteredMinerList.Clear();
 			unfilteredPowerList.Clear();
 			unfilteredBeaconList.Clear();
+			unfilteredModuleList.Clear();
+			unfilteredBeaconModuleList.Clear();
 			unfilteredItemsList.Clear();
 			unfilteredFluidsList.Clear();
 			unfilteredAllList.Clear();
@@ -220,6 +264,8 @@ namespace Foreman
 			LoadUnfilteredSelectedAssemblerList(nodes.Where(n => n is ReadOnlyRecipeNode rNode && (rNode.SelectedAssembler.Assembler.EntityType == EntityType.Miner || rNode.SelectedAssembler.Assembler.EntityType == EntityType.OffshorePump)).Select(n => (ReadOnlyRecipeNode)n), unfilteredMinerList);
 			LoadUnfilteredSelectedAssemblerList(nodes.Where(n => n is ReadOnlyRecipeNode rNode && (rNode.SelectedAssembler.Assembler.EntityType == EntityType.Boiler || rNode.SelectedAssembler.Assembler.EntityType == EntityType.BurnerGenerator || rNode.SelectedAssembler.Assembler.EntityType == EntityType.Generator || rNode.SelectedAssembler.Assembler.EntityType == EntityType.Reactor)).Select(n => (ReadOnlyRecipeNode)n), unfilteredPowerList);
 			LoadUnfilteredBeaconList(nodes.Where(n => n is ReadOnlyRecipeNode rNode && rNode.SelectedBeacon).Select(n => (ReadOnlyRecipeNode)n), unfilteredBeaconList);
+			LoadUnfilteredModuleList(nodes.Where(n => n is ReadOnlyRecipeNode).Select(n => (ReadOnlyRecipeNode)n), false, unfilteredModuleList);
+			LoadUnfilteredModuleList(nodes.Where(n => n is ReadOnlyRecipeNode).Select(n => (ReadOnlyRecipeNode)n), true, unfilteredBeaconModuleList);
 			LoadUnfilteredItemLists(nodes, links, false, unfilteredItemsList);
 			LoadUnfilteredItemLists(nodes, links, true, unfilteredFluidsList);
 			unfilteredAllList.AddRange(unfilteredItemsList);
@@ -228,8 +274,10 @@ namespace Foreman
 
 			double buildingTotal = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => Math.Ceiling(((ReadOnlyRecipeNode)n).ActualSetValue));
 			double beaconTotal = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n).GetTotalBeacons());
+			double moduleTotal = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => GetNodeModuleTotal((ReadOnlyRecipeNode)n, false) + GetNodeModuleTotal((ReadOnlyRecipeNode)n, true));
 			BuildingCountLabel.Text = buildingCountBaseText + GraphicsStuff.DoubleToString(buildingTotal);
 			BeaconCountLabel.Text = beaconCountBaseText + GraphicsStuff.DoubleToString(beaconTotal);
+			ModuleCountLabel.Text = moduleCountBaseText + GraphicsStuff.DoubleToString(moduleTotal);
 
 			double powerConsumption = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n).GetTotalAssemblerElectricalConsumption() + ((ReadOnlyRecipeNode)n).GetTotalBeaconElectricalConsumption());
 			double powerProduction = nodes.Where(n => n is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n).GetTotalGeneratorElectricalProduction());
@@ -320,6 +368,64 @@ namespace Foreman
 				lvItem.SubItems.Add(beacon.FriendlyName);
 				double beaconPowerConsumption = beaconCounters[beacon] * (beacon.Beacon.GetEnergyConsumption(beacon.Quality) + beacon.Beacon.GetEnergyDrain());  //QUALITY UPDATE REQUIRED
 				lvItem.SubItems.Add(new ListViewItem.ListViewSubItem() { Text = beaconCounters[beacon] == 0 ? "-" : GraphicsStuff.DoubleToEnergy(beaconPowerConsumption, "W"), Tag = beaconPowerConsumption });
+				lviList.Add(lvItem);
+			}
+		}
+
+		//number of module items required to fill every assembler (or every beacon) of a single recipe node
+		private static int GetNodeModuleTotal(ReadOnlyRecipeNode rnode, bool beaconModules)
+		{
+			if (beaconModules)
+				return rnode.SelectedBeacon ? rnode.BeaconModules.Count * rnode.GetTotalBeacons() : 0;
+			return rnode.AssemblerModules.Count * (int)Math.Ceiling(rnode.ActualSetValue);
+		}
+
+		private void LoadUnfilteredModuleList(IEnumerable<ReadOnlyRecipeNode> origin, bool beaconModules, List<ListViewItem> lviList)
+		{
+			Dictionary<ModuleQualityPair, int> moduleCounters = new Dictionary<ModuleQualityPair, int>();
+			Dictionary<ModuleQualityPair, int> holderCounters = new Dictionary<ModuleQualityPair, int>(); //buildings (or beacons) that hold at least one of this module
+
+			foreach (ReadOnlyRecipeNode rnode in origin)
+			{
+				IReadOnlyList<ModuleQualityPair> modules = beaconModules ? rnode.BeaconModules : rnode.AssemblerModules;
+				if (modules.Count == 0 || (beaconModules && !rnode.SelectedBeacon))
+					continue;
+
+				int holders = beaconModules ? rnode.GetTotalBeacons() : (int)Math.Ceiling(rnode.ActualSetValue);
+
+				foreach (ModuleQualityPair module in modules) //one entry per filled module slot -> duplicates are intentional
+				{
+					if (!moduleCounters.ContainsKey(module))
+					{
+						moduleCounters.Add(module, 0);
+						holderCounters.Add(module, 0);
+					}
+					moduleCounters[module] += holders;
+				}
+				foreach (ModuleQualityPair module in modules.Distinct())
+					holderCounters[module] += holders;
+			}
+
+			foreach (ModuleQualityPair module in moduleCounters.Keys.OrderByDescending(m => m.Module.Available).ThenBy(m => m.Module.FriendlyName).ThenBy(m => m.Quality.Level).ThenBy(m => m.Quality.FriendlyName))
+			{
+				ListViewItem lvItem = new ListViewItem();
+				if (module.Module.Icon != null)
+				{
+					IconList.Images.Add(module.Icon);
+					lvItem.ImageIndex = IconList.Images.Count - 1;
+				}
+				else
+				{
+					lvItem.ImageIndex = 0;
+				}
+
+				lvItem.Text = moduleCounters[module] >= 10000000 ? moduleCounters[module].ToString("0.##e0") : moduleCounters[module].ToString("N0");
+				lvItem.SubItems[0].Tag = (double)moduleCounters[module];
+				lvItem.Tag = module;
+				lvItem.Name = module.Module.Name + ":" + module.Quality.Name; //key
+				lvItem.BackColor = module.Module.Available ? AvailableObjectColor : UnavailableObjectColor;
+				lvItem.SubItems.Add(new ListViewItem.ListViewSubItem() { Text = module.FriendlyName });
+				lvItem.SubItems.Add(new ListViewItem.ListViewSubItem() { Text = holderCounters[module].ToString("N0"), Tag = (double)holderCounters[module] });
 				lviList.Add(lvItem);
 			}
 		}
@@ -499,6 +605,22 @@ namespace Foreman
 			UpdateFilteredBuildingList(unfilteredMinerList, filteredMinerList, MinerListView);
 			UpdateFilteredBuildingList(unfilteredPowerList, filteredPowerList, PowerListView);
 			UpdateFilteredBuildingList(unfilteredBeaconList, filteredBeaconList, BeaconListView);
+			UpdateFilteredBuildingList(unfilteredModuleList, filteredModuleList, ModuleListView);
+			UpdateFilteredBuildingList(unfilteredBeaconModuleList, filteredBeaconModuleList, BeaconModuleListView);
+		}
+
+		//tags of the building/module lists are quality pair structs -> they dont share a common base to pull the name from
+		private static string GetTagLFriendlyName(object tag)
+		{
+			switch (tag)
+			{
+				case AssemblerQualityPair assembler: return assembler.Assembler.LFriendlyName;
+				case BeaconQualityPair beacon: return beacon.Beacon.LFriendlyName;
+				case ModuleQualityPair module: return module.Module.LFriendlyName;
+				case ItemQualityPair item: return item.Item.LFriendlyName;
+				case DataObjectBase dob: return dob.LFriendlyName;
+				default: return "";
+			}
 		}
 
 		private void UpdateFilteredBuildingList(List<ListViewItem> unfilteredList, List<ListViewItem> filteredList, ListView owner)
@@ -508,7 +630,7 @@ namespace Foreman
 			filteredList.Clear();
 
 			foreach (ListViewItem lvItem in unfilteredList)
-				if (string.IsNullOrEmpty(filterString) || ((DataObjectBase)lvItem.Tag).LFriendlyName.Contains(filterString))
+				if (string.IsNullOrEmpty(filterString) || GetTagLFriendlyName(lvItem.Tag).Contains(filterString))
 					filteredList.Add(lvItem);
 
 			owner.VirtualListSize = filteredList.Count;
@@ -590,6 +712,8 @@ namespace Foreman
 		private void MinerListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredMinerList[e.ItemIndex]; }
 		private void PowerListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredPowerList[e.ItemIndex]; }
 		private void BeaconListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredBeaconList[e.ItemIndex]; }
+		private void ModuleListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredModuleList[e.ItemIndex]; }
+		private void BeaconModuleListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredBeaconModuleList[e.ItemIndex]; }
 		private void ItemsListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredItemsList[e.ItemIndex]; }
 		private void FluidsListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredFluidsList[e.ItemIndex]; }
 		private void AllListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredAllList[e.ItemIndex]; }
@@ -611,6 +735,8 @@ namespace Foreman
 		private void MinerListView_ColumnClick(object sender, ColumnClickEventArgs e) { BuildingListView_ColumnSort(unfilteredMinerList, filteredMinerList, MinerListView, e.Column); }
 		private void PowerListView_ColumnClick(object sender, ColumnClickEventArgs e) { BuildingListView_ColumnSort(unfilteredPowerList, filteredPowerList, PowerListView, e.Column); }
 		private void BeaconListView_ColumnClick(object sender, ColumnClickEventArgs e) { BuildingListView_ColumnSort(unfilteredBeaconList, filteredBeaconList, BeaconListView, e.Column); }
+		private void ModuleListView_ColumnClick(object sender, ColumnClickEventArgs e) { BuildingListView_ColumnSort(unfilteredModuleList, filteredModuleList, ModuleListView, e.Column); }
+		private void BeaconModuleListView_ColumnClick(object sender, ColumnClickEventArgs e) { BuildingListView_ColumnSort(unfilteredBeaconModuleList, filteredBeaconModuleList, BeaconModuleListView, e.Column); }
 
 		private void BuildingListView_ColumnSort(List<ListViewItem> unfilteredList, List<ListViewItem> filteredList, ListView owner, int column)
 		{
@@ -723,12 +849,14 @@ namespace Foreman
 		private void BuildingsExportButton_Click(object sender, EventArgs e)
 		{
 			ExportCSV(
-				new List<ListViewItem>[] { filteredAssemblerList, filteredMinerList, filteredPowerList, filteredBeaconList },
-				new string[][] { 
-					new string[] { "#", "Assembler", "Electrical power consumed by assemblers (in W)", "Electrical power consumed by beacons (in W)" }, 
-					new string[] { "#", "Miner", "Electrical power consumed by assemblers (in W)", "Electrical power consumed by beacons (in W)" }, 
-					new string[] { "#", "Power Building", "Electrical power generated (in W)", "Electrical power consumed (in W)" }, 
-					new string[] { "#", "Beacon", "Electrical power consumed by beacons (in W)" }
+				new List<ListViewItem>[] { filteredAssemblerList, filteredMinerList, filteredPowerList, filteredBeaconList, filteredModuleList, filteredBeaconModuleList },
+				new string[][] {
+					new string[] { "#", "Assembler", "Electrical power consumed by assemblers (in W)", "Electrical power consumed by beacons (in W)" },
+					new string[] { "#", "Miner", "Electrical power consumed by assemblers (in W)", "Electrical power consumed by beacons (in W)" },
+					new string[] { "#", "Power Building", "Electrical power generated (in W)", "Electrical power consumed (in W)" },
+					new string[] { "#", "Beacon", "Electrical power consumed by beacons (in W)" },
+					new string[] { "#", "Module (in buildings)", "Buildings holding this module" },
+					new string[] { "#", "Module (in beacons)", "Beacons holding this module" }
 				});
 		}
 
@@ -809,7 +937,8 @@ namespace Foreman
             {
                 foreach (ListViewItem lvi in list)
                 {
-                    string count = lvi.SubItems[0].Text;
+                    // the mod parses "<digits>x " -> group separators would make the line unparsable
+                    string count = lvi.SubItems[0].Text.Replace(",", "");
                     string friendlyName = lvi.SubItems[1].Text;
                     // lvi.Name is "internal-name:quality-name" — grab just the internal name
                     string internalName = lvi.Name.Split(':')[0];
@@ -819,9 +948,33 @@ namespace Foreman
                 }
             }
 
+            //a module can sit in both assemblers and beacons -> the task list wants a single total per module item
+            var moduleCounts = new Dictionary<string, Tuple<string, double>>();
+            var moduleOrder = new List<string>();
+            foreach (var list in new[] { filteredModuleList, filteredBeaconModuleList })
+            {
+                foreach (ListViewItem lvi in list)
+                {
+                    string key = lvi.Name;
+                    double count = (double)lvi.SubItems[0].Tag;
+                    if (count <= 0)
+                        continue;
+
+                    if (!moduleCounts.ContainsKey(key))
+                    {
+                        moduleCounts.Add(key, new Tuple<string, double>(lvi.SubItems[1].Text, 0));
+                        moduleOrder.Add(key);
+                    }
+                    moduleCounts[key] = new Tuple<string, double>(moduleCounts[key].Item1, moduleCounts[key].Item2 + count);
+                }
+            }
+
+            foreach (string key in moduleOrder)
+                lines.Add($"{moduleCounts[key].Item2:0}x {moduleCounts[key].Item1} [{key.Split(':')[0]}]");
+
             if (lines.Count == 0)
             {
-                MessageBox.Show("No buildings in current graph.", "Foreman2 → Factorio",
+                MessageBox.Show("No buildings or modules in current graph.", "Foreman2 → Factorio",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
