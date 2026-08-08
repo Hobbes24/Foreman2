@@ -10,6 +10,64 @@
 
 ---
 
+### 🛟 Crash-Tolerant IO & Session Recovery *(2.4.0)*
+Work in progress now survives closing the program, a crash, or losing access to the original save location.
+- `SessionManager` stores every open tab in `%LOCALAPPDATA%\Foreman\Session`, falling back to the user temp folder
+- All session operations no-op rather than throw when the directory is unusable
+- `SafeIO` wraps file access so an unreachable path (network share, removed drive) degrades gracefully instead of taking the program down
+- `SafeSettings.Save` replaces direct `Settings.Default.Save` calls, which could throw on a locked or unwritable `user.config`
+- Open tabs are restored on launch, and unused snapshots are pruned automatically
+
+---
+
+### 🛤️ Gutter Nodes *(2.4.0)*
+A passthrough node can now be drawn as a long axis-aligned line with its links attaching along its length.
+- Connections become short perpendicular stubs instead of long diagonal crossings — a bus lane for your graph
+- Drag either end to resize; create a gutter from a selection, add nodes to an existing one, or remove it
+- Attach unconnected selected nodes to a gutter in one action
+- **Rate math is unchanged** — the solver never sees a gutter
+
+---
+
+### 🙈 Utility-Link Hiding *(2.4.0)*
+Links carrying utility items collapse to a marked stub at each end so they stop crossing the whole graph.
+- Per-item toggle: *Hide links for this item*
+- Selecting either endpoint brings the link back in full, so nothing is lost
+- Dedicated **Utility Items** tab in settings for managing the list
+- Image export gets an opt-in *Show hidden utility links* checkbox
+
+---
+
+### 🔎 Find Overhaul *(2.4.0)*
+The Ctrl+F find panel was reworked end to end.
+- Results are retired the moment the query or scope changes — stale matches no longer stay highlighted or remain reachable via *Go to Next*
+- Enter and *Go to Next* zoom in on the individual hit rather than framing every result at once
+- Scope dropdown selects **All / Nodes / Links**, with links matched on the item they carry
+- Node matching now also covers the building, beacon, modules, fuel, and key-node title
+- Panel is laid out by flow rather than fixed coordinates, so it survives display scaling
+
+---
+
+### 📦 Task-List Mod — Inventory Scanning & Producer Search *(2.4.0)*
+The companion `foremantasklist` Factorio mod control script was reworked, and the packaged mod zip rebuilt to match.
+- Scans player and platform inventories to track task progress against what you actually have
+- Correct producer search for locating the machine that makes a given item
+- Mod zip is regenerated automatically by a post-build step, so the shipped zip never drifts from source
+
+---
+
+### 🧩 Factory Summary — Module Tabs *(2.4.0)*
+Two new tabs in the Factory Summary break down every module your factory needs.
+- **Modules (in buildings)** and **Modules (in beacons)** are tracked separately — the same module in an assembler and in a beacon points at different nodes
+- Counts are per *filled slot*, multiplied by the number of buildings (or beacons) holding them, so the total is what you actually have to produce
+- Second column reports how many buildings/beacons hold each module
+- A **Modules** total joins the building and beacon counters in the summary header
+- Sorting, filtering, and quality pairs work exactly as on the existing building tabs
+- **Double-click a module** to center the graph on a node using it; double-click again to step through the rest
+- Both tabs are included in the **CSV export** and in **Copy for Factorio**, where assembler and beacon usage are merged into a single per-module total for the task list
+
+---
+
 ### 🗂️ Full Pyanodons Support Through Py Logistic Science
 
 Through extensive testing I know that this mod works through Py Logistics.  It may work beyond that, I 
@@ -220,6 +278,8 @@ Right-click any item tab on a node to copy the item's internal or friendly name 
 | KeyNotFoundException (missing modules) | Fixed crash when a save file references a module no longer in the active preset |
 | Settings crash on blank graph | Fixed `NullReferenceException` when opening Settings before a preset is loaded; DCache is now always initialized on startup |
 | Async race condition on startup | Fixed race where DCache null-check could fire before `LoadGraph` completed by switching to a `loadingFromFile` flag |
+| Summary filter crash | Fixed `InvalidCastException` when typing in the Factory Summary filter box; building/module rows tag quality-pair structs that don't derive from `DataObjectBase`, so the name lookup now switches on the tag type instead of blind-casting |
+| Comma in Copy for Factorio export | Module and building counts of 1,000+ were formatted with thousands separators, which broke the companion mod's `"<digits>x "` line parser; separators are now stripped from the exported count |
 
 ---
 
@@ -230,6 +290,8 @@ Right-click any item tab on a node to copy the item's internal or friendly name 
 - Tab state (open files, scroll positions, active tab, gridline settings) serializes to a sidecar file alongside the graph JSON.
 - The companion Factorio mod uses `storage` (not the Factorio 1.x `global`), `player.set_controller{type = defines.controllers.remote}` for map navigation (replacing removed `open_map`/`zoom_to_world`), and tag scanning via `force.find_chart_tags()` with a `"[F2] "` prefix since `LuaCustomChartTag` no longer has an `id` property in Factorio 2.0.
 - WinForms Designer limitations with `TableLayoutPanel`: layout changes to forms with filling `TableLayoutPanel` controls must be made directly in `Designer.cs` rather than through the Visual Studio Designer UI.
+- File access goes through `SafeIO` rather than `System.IO` directly. The guiding rule is that a storage failure should never be fatal: an unreachable network share, a removed drive, or a locked `user.config` degrades to a no-op or a fallback location instead of an unhandled exception.
+- Gutters are a **presentation-layer** concept living in `PassthroughNodeElement`. A gutter changes only how a passthrough node is drawn and where its links attach — it carries no rate semantics, so the solver is entirely unaware of it and throughput results are identical with or without gutters.
 
 ---
 
