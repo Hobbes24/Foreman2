@@ -107,6 +107,11 @@ namespace Foreman
 
         private void EndDrag(Point graph_point)
         {
+            //MouseDown and MouseUp both end the drag (a link drag can be finished by either a click or a
+            //release), so without this guard a single click runs the whole node-creation path twice - the
+            //second run works on an already disposed drag and throws.
+            if (dragEnded)
+                return;
             dragEnded = true;
 
             if (SupplierElement != null && ConsumerElement != null) //no nulls -> link 2 nodes, or with Ctrl: insert a passthrough between them

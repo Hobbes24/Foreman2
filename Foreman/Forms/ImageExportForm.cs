@@ -27,7 +27,26 @@ namespace Foreman
 			ScaleSelectionBox.Items.AddRange(multiplierNames);
 			ScaleSelectionBox.SelectedIndex = initialIndex;
 			UpdateSizeLabel();
+
+			//added in code so the form grows to fit rather than the new control landing on whatever sits below it.
+			//defaults to unticked: an export matching what you are looking at is the expectation, and a complete
+			//picture including hidden links is the deliberate choice
+			const int addedHeight = 24;
+			foreach (Control existing in Controls)
+				if (existing.Top > TransparencyCheckBox.Bottom)
+					existing.Top += addedHeight;
+			ClientSize = new Size(ClientSize.Width, ClientSize.Height + addedHeight);
+
+			showUtilityLinksCheckBox = new CheckBox()
+			{
+				Text = "Show hidden utility links",
+				AutoSize = true,
+				Location = new Point(TransparencyCheckBox.Left, TransparencyCheckBox.Bottom + 6)
+			};
+			Controls.Add(showUtilityLinksCheckBox);
 		}
+
+		private readonly CheckBox showUtilityLinksCheckBox;
 
 		private void button1_Click(object sender, EventArgs e)
 		{
@@ -84,7 +103,9 @@ namespace Foreman
 					if (!TransparencyCheckBox.Checked)
 						graphics.Clear(Color.White);
 
-					graphViewer.Paint(graphics, true);
+						graphViewer.IgnoreUtilityHiding = showUtilityLinksCheckBox.Checked;
+					try { graphViewer.Paint(graphics, true); }
+					finally { graphViewer.IgnoreUtilityHiding = false; }
 
 					try
 					{

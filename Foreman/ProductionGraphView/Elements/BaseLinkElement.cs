@@ -189,16 +189,107 @@ namespace Foreman
 			return false;
 		}
 
+		//a link is traced whenever either node it joins is selected. the viewer redraws these in a pass after everything
+		//else, so a selected gutter's connections can be followed across a crowded graph instead of vanishing into it
+		public bool IsTraced { get { return SupplierElement != null && ConsumerElement != null && (SupplierElement.Highlighted || ConsumerElement.Highlighted); } }
+
+		//the core keeps a fixed share of the halo so the item colour stays readable at any highlight size
+		private static float TraceHaloWidth { get { return Math.Max(2, Properties.Settings.Default.LinkTraceWidth); } }
+		private static float TraceCoreWidth { get { return TraceHaloWidth * 0.43f; } }
+		private static readonly Color traceHaloColor = Color.FromArgb(190, 20, 20, 25);
+
+		public void DrawTrace(Graphics graphics)
+		{
+			UpdateCurve();
+
+			//widths are divided by the view scale so the trace keeps a constant thickness on screen - zoomed out far
+			//enough to need tracing is exactly where a graph-space width would shrink to nothing
+			float scale = (float)Math.Max(0.05, graphViewer.ViewScale);
+
+			using (Pen halo = new Pen(traceHaloColor, LinkWidth + (TraceHaloWidth / scale)) { EndCap = LineCap.Round, StartCap = LineCap.Round })
+				DrawCurve(graphics, halo);
+			using (Pen core = new Pen(Item.Item.AverageColor, LinkWidth + (TraceCoreWidth / scale)) { EndCap = LineCap.Round, StartCap = LineCap.Round })
+				DrawCurve(graphics, core);
+		}
+
+		//set by the viewer's find feature when this link's item matches the search. drawn in its own pass on top of
+		//the graph, same as tracing, so a matched link is not buried under whatever gets painted after it
+		public bool FindHighlighted { get; set; }
+		private static readonly Color findHaloColor = Color.FromArgb(210, 255, 60, 60);
+
+		//same halo-then-core construction as DrawTrace, but in the find colour - the core keeps the item colour so a
+		//highlighted link still reads as the item it carries
+		public void DrawFindHighlight(Graphics graphics)
+		{
+			UpdateCurve();
+
+			float scale = (float)Math.Max(0.05, graphViewer.ViewScale);
+
+			using (Pen halo = new Pen(findHaloColor, LinkWidth + (TraceHaloWidth / scale)) { EndCap = LineCap.Round, StartCap = LineCap.Round })
+				DrawCurve(graphics, halo);
+			using (Pen core = new Pen(Item.Item.AverageColor, LinkWidth + (TraceCoreWidth / scale)) { EndCap = LineCap.Round, StartCap = LineCap.Round })
+				DrawCurve(graphics, core);
+		}
+
+		private const int UtilityStubLength = 14;
+		private const int UtilityStubDotRadius = 3;
+
+		//a hidden utility link keeps a mark at each end so you can still see the connection exists and what it carries -
+		//what is given up is only the line between them, which is the part that was crossing the whole graph
+		private void DrawUtilityStubs(Graphics graphics)
+		{
+			Tuple<Point, Point> endpoints = GetCurveEndpoints();
+			if (endpoints == null)
+				return;
+
+			using (Pen pen = new Pen(Item.Item.AverageColor, LinkWidth) { EndCap = LineCap.Round, StartCap = LineCap.Round })
+			using (Brush dot = new SolidBrush(Item.Item.AverageColor))
+			{
+				DrawUtilityStub(graphics, pen, dot, endpoints.Item1, endpoints.Item2);
+				DrawUtilityStub(graphics, pen, dot, endpoints.Item2, endpoints.Item1);
+			}
+		}
+
+		//the stub points the way the link would have gone, so a node with several hidden links still shows them fanning
+		//towards their different destinations rather than collapsing into one mark
+		private void DrawUtilityStub(Graphics graphics, Pen pen, Brush dot, Point from, Point towards)
+		{
+			double dx = towards.X - from.X;
+			double dy = towards.Y - from.Y;
+			double distance = Math.Sqrt((dx * dx) + (dy * dy));
+			if (distance < 1)
+				return;
+
+			int endX = from.X + (int)(dx / distance * UtilityStubLength);
+			int endY = from.Y + (int)(dy / distance * UtilityStubLength);
+			graphics.DrawLine(pen, from.X, from.Y, endX, endY);
+			graphics.FillEllipse(dot, endX - UtilityStubDotRadius, endY - UtilityStubDotRadius, UtilityStubDotRadius * 2, UtilityStubDotRadius * 2);
+		}
+
 		protected override void Draw(Graphics graphics, NodeDrawingStyle style)
 		{
 			iconOnlyDraw = (style == NodeDrawingStyle.IconsOnly);
 			UpdateCurve();
+
+			//selecting either end brings a hidden link back in full - the same condition the trace pass uses
+			if (!iconOnlyDraw && !IsTraced && !graphViewer.IgnoreUtilityHiding && graphViewer.Graph.IsUtilityItemHidden(Item))
+			{
+				DrawUtilityStubs(graphics);
+				return;
+			}
 
 			using (Pen pen = new Pen(Item.Item.AverageColor, LinkWidth) { EndCap = System.Drawing.Drawing2D.LineCap.Round, StartCap = System.Drawing.Drawing2D.LineCap.Round })
 			{
 				if (graphViewer.ArrowsOnLinks && !graphViewer.DynamicLinkWidth && !iconOnlyDraw)
 					pen.CustomEndCap = arrowCap;
 
+				DrawCurve(graphics, pen);
+			}
+		}
+
+		private void DrawCurve(Graphics graphics, Pen pen)
+		{
+			{
 				switch(Type)
 				{
 					case LineType.Simple:

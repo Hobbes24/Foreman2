@@ -63,6 +63,13 @@ namespace Foreman
 		public double LowPriorityPower { get; set; } //this is the multiplier of the factory cost function for low priority nodes. aka: low priority recipes will be picked if the alternative involves this much more factories (10,000 is a nice value here)
 		public bool EnableExtraProductivityForNonMiners { get; set; }
 
+		//per-graph roster of items whose links are drawn as stubs rather than full lines. an entry means the item is
+		//tracked as a utility item, the value means it is currently hidden - so turning water back on for a moment
+		//does not lose it from the list. keyed by ItemQualityPair to match how links themselves are keyed
+		public readonly Dictionary<ItemQualityPair, bool> UtilityItems = new Dictionary<ItemQualityPair, bool>();
+
+		public bool IsUtilityItemHidden(ItemQualityPair item) { return UtilityItems.TryGetValue(item, out bool hidden) && hidden; }
+
 		public AssemblerSelector AssemblerSelector { get; private set; }
 		public ModuleSelector ModuleSelector { get; private set; }
 		public FuelSelector FuelSelector { get; private set; }
@@ -230,8 +237,14 @@ namespace Foreman
 
 		public ReadOnlyNodeLink CreateLink(ReadOnlyBaseNode supplier, ReadOnlyBaseNode consumer, ItemQualityPair item)
 		{
-			if (!roToNode.ContainsKey(supplier) || !roToNode.ContainsKey(consumer) || !supplier.Outputs.Contains(item) || !consumer.Inputs.Contains(item))
-				Trace.Fail(string.Format("Node link creation called with invalid parameters! consumer:{0}. supplier:{1}. item:{2}.", consumer.ToString(), supplier.ToString(), item.ToString()));
+			//invalid link requests (deleted node, item the node doesnt handle) are logged and dropped - they used to
+			//trigger an assert dialog and then crash on the dictionary lookups below.
+			if (supplier == null || consumer == null || !item || !roToNode.ContainsKey(supplier) || !roToNode.ContainsKey(consumer) || !supplier.Outputs.Contains(item) || !consumer.Inputs.Contains(item))
+			{
+				ErrorLogging.LogLine(string.Format("Node link creation called with invalid parameters! consumer:{0}. supplier:{1}. item:{2}.",
+					consumer?.ToString() ?? "(null)", supplier?.ToString() ?? "(null)", item ? item.ToString() : "(none)"));
+				return null;
+			}
 			if (supplier.OutputLinks.Any(l => l.Item == item && l.Consumer == consumer)) //check for an already existing connection
 				return supplier.OutputLinks.First(l => l.Item == item && l.Consumer == consumer);
 
@@ -252,8 +265,11 @@ namespace Foreman
 
 		public void DeleteNode(ReadOnlyBaseNode node)
 		{
-			if (!roToNode.ContainsKey(node))
-				Trace.Fail(string.Format("Node deletion called on a node ({0}) that isnt part of the graph!", node.ToString()));
+			if (node == null || !roToNode.ContainsKey(node))
+			{
+				ErrorLogging.LogLine(string.Format("Node deletion called on a node ({0}) that isnt part of the graph!", node?.ToString() ?? "(null)"));
+				return;
+			}
 
 			foreach (ReadOnlyNodeLink link in node.InputLinks.ToList())
 				DeleteLink(link);
@@ -273,8 +289,11 @@ namespace Foreman
 
 		public void DeleteLink(ReadOnlyNodeLink link)
 		{
-			if (!roToLink.ContainsKey(link) || !roToNode.ContainsKey(link.Consumer) || !roToNode.ContainsKey(link.Supplier))
-				Trace.Fail(string.Format("Link deletion called with a link ({0}) that isnt part of the graph, or whose node(s) ({1}), ({2}) is/are not part of the graph!", link.ToString(), link.Consumer.ToString(), link.Supplier.ToString()));
+			if (link == null || !roToLink.ContainsKey(link) || !roToNode.ContainsKey(link.Consumer) || !roToNode.ContainsKey(link.Supplier))
+			{
+				ErrorLogging.LogLine(string.Format("Link deletion called with a link ({0}) that isnt part of the graph, or whose node(s) is/are not part of the graph!", link?.ToString() ?? "(null)"));
+				return;
+			}
 
 			NodeLink nodeLink = roToLink[link];
 			nodeLink.ConsumerNode.InputLinks.Remove(nodeLink);
@@ -500,6 +519,25 @@ namespace Foreman
 			info.AddValue("Object", "ProductionGraph");
 
 			info.AddValue("EnableExtraProductivityForNonMiners", EnableExtraProductivityForNonMiners);
+
+			//three parallel arrays built in one pass so the triples cannot drift apart
+			if (UtilityItems.Count > 0)
+			{
+				string[] utilityNames = new string[UtilityItems.Count];
+				string[] utilityQualities = new string[UtilityItems.Count];
+				bool[] utilityHidden = new bool[UtilityItems.Count];
+				int u = 0;
+				foreach (KeyValuePair<ItemQualityPair, bool> tracked in UtilityItems)
+				{
+					utilityNames[u] = tracked.Key.Item.Name;
+					utilityQualities[u] = tracked.Key.Quality.Name;
+					utilityHidden[u] = tracked.Value;
+					u++;
+				}
+				info.AddValue("UtilityItems", utilityNames);
+				info.AddValue("UtilityQualities", utilityQualities);
+				info.AddValue("UtilityHidden", utilityHidden);
+			}
 			info.AddValue("DefaultNodeDirection", (int)DefaultNodeDirection);
 			info.AddValue("Solver_PullOutputNodes", PullOutputNodes);
 			info.AddValue("Solver_PullOutputNodesPower", PullOutputNodesPower);
@@ -553,6 +591,27 @@ namespace Foreman
 					DefaultAssemblerQuality = qualityLinks[(string)json["DefaultQuality"]];
 				}
 
+				//utility items - absent on any graph saved before the feature existed, which reads as an empty roster.
+				//an item the current preset no longer has is dropped rather than guessed at
+				if (json["UtilityItems"] != null && json["UtilityQualities"] != null && json["UtilityHidden"] != null)
+				{
+					JToken utilityNames = json["UtilityItems"];
+					JToken utilityQualities = json["UtilityQualities"];
+					JToken utilityHidden = json["UtilityHidden"];
+					int utilityCount = Math.Min(utilityNames.Count(), Math.Min(utilityQualities.Count(), utilityHidden.Count()));
+					for (int u = 0; u < utilityCount; u++)
+					{
+						string utilityName = (string)utilityNames[u];
+						if (!cache.Items.ContainsKey(utilityName) || !qualityLinks.ContainsKey((string)utilityQualities[u]))
+							continue;
+						UtilityItems[new ItemQualityPair(cache.Items[utilityName], qualityLinks[(string)utilityQualities[u]])] = (bool)utilityHidden[u];
+					}
+				}
+
+				//gutter link offsets are keyed by node id, and ids are regenerated on load - they have to wait until
+				//oldNodeIndices is complete and then be remapped through it, exactly as the links themselves are
+				List<KeyValuePair<PassthroughNode, JToken>> pendingGutterOffsets = new List<KeyValuePair<PassthroughNode, JToken>>();
+
 				//add in all the graph nodes
 				foreach (JToken nodeJToken in json["Nodes"].ToList())
 				{
@@ -590,6 +649,16 @@ namespace Foreman
 							else
 								newNode = roToNode[CreatePassthroughNode(new ItemQualityPair(cache.MissingItems[itemName], quality), location)];
 							((PassthroughNode)newNode).SimpleDraw = (bool)nodeJToken["SDraw"];
+							//gutter values are absent on any save written before gutters existed, and on every plain passthrough node.
+							//absent means length 0, which is "not a gutter" - so no version migration is needed here
+							if (nodeJToken["GLength"] != null)
+							{
+								((PassthroughNode)newNode).GutterLength = (int)nodeJToken["GLength"];
+								if (nodeJToken["GOrient"] != null)
+									((PassthroughNode)newNode).GutterOrientation = (GutterOrientation)(int)nodeJToken["GOrient"];
+								if (nodeJToken["GLinkIDs"] != null && nodeJToken["GLinkOffs"] != null)
+									pendingGutterOffsets.Add(new KeyValuePair<PassthroughNode, JToken>((PassthroughNode)newNode, nodeJToken));
+							}
 							newNodeCollection.newNodes.Add(newNode.ReadOnlyNode);
 							break;
 						case NodeType.Spoil:
@@ -705,6 +774,19 @@ namespace Foreman
 					oldNodeIndices.Add((int)nodeJToken["NodeID"], newNode.ReadOnlyNode);
 				}
 
+				//now that every node exists, translate the saved ids on each gutter's pinned connections into live ones.
+				//an id with no entry in the table belonged to a node that did not survive the load, so it is dropped
+				//rather than left pointing at whatever node happens to hold that id now
+				foreach (KeyValuePair<PassthroughNode, JToken> pending in pendingGutterOffsets)
+				{
+					JToken savedIDs = pending.Value["GLinkIDs"];
+					JToken savedOffsets = pending.Value["GLinkOffs"];
+					int pairCount = Math.Min(savedIDs.Count(), savedOffsets.Count());
+					for (int i = 0; i < pairCount; i++)
+						if (oldNodeIndices.TryGetValue((int)savedIDs[i], out ReadOnlyBaseNode farNode))
+							pending.Key.GutterLinkOffsets[farNode.NodeID] = (int)savedOffsets[i];
+				}
+
 				//link the new nodes
 				foreach (JToken nodeLinkJToken in json["NodeLinks"].ToList())
 				{
@@ -720,7 +802,11 @@ namespace Foreman
 						item = new ItemQualityPair(cache.MissingItems[itemName], quality);
 
 					if (LinkChecker.IsPossibleConnection(item, supplier, consumer)) //not necessary to test if connection is valid. It must be valid based on json
-						newNodeCollection.newLinks.Add(CreateLink(supplier, consumer, item));
+					{
+						ReadOnlyNodeLink newLink = CreateLink(supplier, consumer, item);
+						if (newLink != null)
+							newNodeCollection.newLinks.Add(newLink);
+					}
 				}
 			}
 			catch (Exception e) //there was something wrong with the json (probably someone edited it by hand and it didnt link properly). Delete all added nodes and return empty

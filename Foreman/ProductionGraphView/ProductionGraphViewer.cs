@@ -77,6 +77,7 @@ namespace Foreman
 		private Dictionary<ReadOnlyNodeLink, LinkElement> linkElementDictionary;
 		private List<LinkElement> linkElements;
 		private DraggedLinkElement draggedLinkElement;
+		private bool linkDragEndedOnClick = false; //set when a mouse-down finished a link drag, so the matching mouse-up is ignored
 
 		private Point mouseDownStartScreenPoint;
 		private MouseButtons downButtons; //we use this to ensure that any mouse operations only count if they started on this panel
@@ -122,12 +123,18 @@ namespace Foreman
         internal Dictionary<ReadOnlyPassthroughNode, RecipeNodeSnapshot> ConversionSnapshots
 			= new Dictionary<ReadOnlyPassthroughNode, RecipeNodeSnapshot>();
         // -------Find feature fields
+        // What a search is allowed to match. Nodes and links are matched by different rules, so the scope is
+        // part of the query: changing it invalidates the current results exactly like editing the text does.
+        private enum FindScope { NodesAndLinks, Nodes, Links }
+
         private Panel findPanel;
 		private TextBox findTextBox;
 		private Label findStatusLabel;
-		private List<BaseNodeElement> findResults = new List<BaseNodeElement>();
+		//holds BaseNodeElement and BaseLinkElement together - "Go to Next" walks node and link hits as one list
+		private List<GraphElement> findResults = new List<GraphElement>();
 		private int findResultIndex = -1;
         private CheckBox autoZoomCheckBox;
+        private ComboBox findScopeComboBox;
 
         public ProductionGraphViewer()
 		{
@@ -173,7 +180,21 @@ namespace Foreman
             Invalidate();
         }
 
-		public bool IsDirty { get; private set; }
+		/// <summary>Raised whenever the graph switches between having and not having unsaved changes.</summary>
+		public event EventHandler DirtyStateChanged;
+
+		private bool isDirty = false;
+		public bool IsDirty
+		{
+			get { return isDirty; }
+			private set
+			{
+				if (isDirty == value)
+					return;
+				isDirty = value;
+				DirtyStateChanged?.Invoke(this, EventArgs.Empty);
+			}
+		}
 		public void MarkClean() { IsDirty = false; }
 		public void MarkDirty() { IsDirty = true; }
 
@@ -439,9 +460,32 @@ namespace Foreman
 			draggedLinkElement = null;
 		}
 
+		/// <summary>
+		/// Direction to give a node that is being created at the end of a link drag. The drag element may
+		/// already be gone (drag finished/disposed, or the node is being added from a menu), so it is only
+		/// consulted when it still exists.
+		/// </summary>
+		private NodeDirection GetNewNodeDirection(BaseNodeElement originElement)
+		{
+			if (originElement == null || !SmartNodeDirection)
+				return Graph.DefaultNodeDirection;
+			if (draggedLinkElement == null || draggedLinkElement.Type != BaseLinkElement.LineType.UShape)
+				return originElement.DisplayedNode.NodeDirection;
+			return originElement.DisplayedNode.NodeDirection == NodeDirection.Up ? NodeDirection.Down : NodeDirection.Up;
+		}
+
+		/// <summary>Element of a freshly created node - null if the graph did not produce one (should not happen, but never crash over it).</summary>
+		private BaseNodeElement GetElement(ReadOnlyBaseNode node)
+		{
+			if (node != null && nodeElementDictionary.TryGetValue(node, out BaseNodeElement element))
+				return element;
+			ErrorLogging.LogLine("No graph element exists for node " + (node?.ToString() ?? "(null)"));
+			return null;
+		}
+
 		public void AddItem(Point drawOrigin, Point newLocation)
 		{
-			if (string.IsNullOrEmpty(DCache.PresetName))
+			if (DCache == null || string.IsNullOrEmpty(DCache.PresetName))
 			{
 				MessageBox.Show("The current preset (" + Properties.Settings.Default.CurrentPresetName + ") is corrupt.");
 				return;
@@ -460,7 +504,7 @@ namespace Foreman
 
 		public void AddNewNode(Point drawOrigin, ItemQualityPair baseItem, Point newLocation, NewNodeType nNodeType, BaseNodeElement originElement = null, bool offsetLocationToItemTabLevel = false)
 		{
-			if(string.IsNullOrEmpty(DCache.PresetName))
+			if(DCache == null || string.IsNullOrEmpty(DCache.PresetName))
 			{
 				DisposeLinkDrag();
 				MessageBox.Show("The current preset (" + Properties.Settings.Default.CurrentPresetName + ") is corrupt.");
@@ -468,17 +512,22 @@ namespace Foreman
 			}
 
 			if ((nNodeType != NewNodeType.Disconnected) && (originElement == null || !baseItem))
-				Trace.Fail("Origin element or base item not provided for a new (linked) node");
-			
+			{
+				ErrorLogging.LogLine("Origin element or base item not provided for a new (linked) node - request ignored.");
+				DisposeLinkDrag();
+				return;
+			}
+
+
 			if (Grid.ShowGrid)
 				newLocation = Grid.AlignToGrid(newLocation);
 
 			int lastNodeWidth = 0;
-			NodeDirection newNodeDirection = (originElement == null || !SmartNodeDirection) ? Graph.DefaultNodeDirection :
-				draggedLinkElement.Type != BaseLinkElement.LineType.UShape ? originElement.DisplayedNode.NodeDirection :
-				originElement.DisplayedNode.NodeDirection == NodeDirection.Up ? NodeDirection.Down : NodeDirection.Up;
+			NodeDirection newNodeDirection = GetNewNodeDirection(originElement);
 
-            if ((Control.ModifierKeys & Keys.Control) == Keys.Control) //control key pressed -> we are making a passthrough node.
+            //control key pressed -> we are making a passthrough node. Requires a valid item: the 'add recipe'
+            //menu/button passes a placeholder item pair, and a passthrough of nothing crashes on creation.
+            if ((Control.ModifierKeys & Keys.Control) == Keys.Control && baseItem)
             {
                 ProcessNodeRequest(null, new RecipeRequestArgs(NodeType.Passthrough));
                 DisposeLinkDrag();
@@ -627,10 +676,15 @@ namespace Foreman
 
 			//internal helper funtion: once a node has been created it will be placed where it needs to be and all intermediate states (ex: dragged item line) finalized
 			void FinalizeNodePosition(ReadOnlyBaseNode newNode)
-			{ 
+			{
 				//this is the offset to take into account multiple recipe additions (holding shift while selecting recipe). First node isnt shifted, all subsequent ones are 'attempted' to be spaced.
 				//should be updated once the node graphics are updated (so that the node size doesnt depend as much on the text)
-				BaseNodeElement newNodeElement = NodeElementDictionary[newNode];
+				BaseNodeElement newNodeElement = GetElement(newNode);
+				if (newNodeElement == null)
+				{
+					DisposeLinkDrag();
+					return;
+				}
 				int offsetDistance = lastNodeWidth / 2;
 				lastNodeWidth = newNodeElement.Width; //effectively: this recipe width
 				if (offsetDistance > 0)
@@ -666,13 +720,14 @@ namespace Foreman
 		{
 			PushUndoState(); // undo: add passthrough nodes from selection drag
 			List<BaseNodeElement> newPassthroughNodes = new List<BaseNodeElement>();
-			foreach(PassthroughNodeElement passthroughNode in selectedNodes)
+			//OfType: the selection can hold non-passthrough nodes (ex: selection changed mid-drag) - those are simply skipped
+			foreach(PassthroughNodeElement passthroughNode in selectedNodes.OfType<PassthroughNodeElement>().ToList())
 			{
-				NodeDirection newNodeDirection = !SmartNodeDirection ? Graph.DefaultNodeDirection :
-					draggedLinkElement.Type != BaseLinkElement.LineType.UShape ? passthroughNode.DisplayedNode.NodeDirection :
-					passthroughNode.DisplayedNode.NodeDirection == NodeDirection.Up ? NodeDirection.Down : NodeDirection.Up;
-
 				ItemQualityPair passthroughItem = ((ReadOnlyPassthroughNode)passthroughNode.DisplayedNode).PassthroughItem;
+				if (!passthroughItem)
+					continue;
+
+				NodeDirection newNodeDirection = GetNewNodeDirection(passthroughNode);
 
 				int yoffset = linkType == LinkType.Input ? passthroughNode.Height / 2 : -passthroughNode.Height / 2;
 				yoffset *= newNodeDirection == NodeDirection.Up ? 1 : -1;
@@ -680,14 +735,16 @@ namespace Foreman
 
 				ReadOnlyPassthroughNode newNode = Graph.CreatePassthroughNode(passthroughItem, new Point(passthroughNode.Location.X + offset.Width, passthroughNode.Location.Y + yoffset));
 				PassthroughNodeController controller = (PassthroughNodeController)Graph.RequestNodeController(newNode);
-				controller.SetDirection(newNodeDirection);
+				controller?.SetDirection(newNodeDirection);
 
 				if (linkType == LinkType.Input)
 					Graph.CreateLink(newNode, passthroughNode.DisplayedNode, passthroughItem );
 				else
 					Graph.CreateLink(passthroughNode.DisplayedNode, newNode, passthroughItem );
 
-				newPassthroughNodes.Add(nodeElementDictionary[newNode]);
+				BaseNodeElement newElement = GetElement(newNode);
+				if (newElement != null)
+					newPassthroughNodes.Add(newElement);
 			}
 			SetSelection(newPassthroughNodes);
 
@@ -700,9 +757,11 @@ namespace Foreman
         {
             PushUndoState(); // undo: add source nodes for selection drag
             List<BaseNodeElement> newNodes = new List<BaseNodeElement>();
-            foreach (PassthroughNodeElement passthroughNode in selectedNodes)
+            foreach (PassthroughNodeElement passthroughNode in selectedNodes.OfType<PassthroughNodeElement>().ToList())
             {
                 ItemQualityPair passthroughItem = ((ReadOnlyPassthroughNode)passthroughNode.DisplayedNode).PassthroughItem;
+                if (!passthroughItem)
+                    continue;
 
                 int yoffset = linkType == LinkType.Input ? passthroughNode.Height / 2 : -passthroughNode.Height / 2;
                 yoffset *= passthroughNode.DisplayedNode.NodeDirection == NodeDirection.Up ? 1 : -1;
@@ -723,7 +782,9 @@ namespace Foreman
                     newNode = Graph.CreateConsumerNode(passthroughItem, nodeLocation);
                     Graph.CreateLink(passthroughNode.DisplayedNode, newNode, passthroughItem);
                 }
-                newNodes.Add(nodeElementDictionary[newNode]);
+                BaseNodeElement newElement = GetElement(newNode);
+                if (newElement != null)
+                    newNodes.Add(newElement);
             }
             SetSelection(newNodes);
 
@@ -748,12 +809,15 @@ namespace Foreman
             foreach (PassthroughNodeElement pNode in targets)
             {
                 ItemQualityPair item = ((ReadOnlyPassthroughNode)pNode.DisplayedNode).PassthroughItem;
+                if (!item) continue;
                 int yDelta = pNode.DisplayedNode.NodeDirection == NodeDirection.Up ? 200 : -200;
                 Point loc = new Point(pNode.Location.X, pNode.Location.Y + yDelta);
                 if (Grid.ShowGrid) loc = Grid.AlignToGrid(loc);
                 ReadOnlyBaseNode newNode = Graph.CreateSupplierNode(item, loc);
                 Graph.CreateLink(newNode, pNode.DisplayedNode, item);
-                newNodes.Add(nodeElementDictionary[newNode]);
+                BaseNodeElement newElement = GetElement(newNode);
+                if (newElement != null)
+                    newNodes.Add(newElement);
             }
             SetSelection(newNodes);
             Graph.UpdateNodeValues();
@@ -799,11 +863,61 @@ namespace Foreman
             Invalidate();
         }
 
+        public enum NodeDistribution { Horizontal, Vertical }
+
+        public void DistributeSelectedNodes(NodeDistribution distribution)
+        {
+            if (selectedNodes.Count < 3) return;
+            PushUndoState(); // undo: distribute nodes
+
+            //the two outermost nodes stay put and everything between them is respaced.
+            //gaps are measured edge to edge so a column of mixed node sizes still ends up evenly spaced
+            List<BaseNodeElement> ordered = (distribution == NodeDistribution.Horizontal
+                ? selectedNodes.OrderBy(n => n.X)
+                : selectedNodes.OrderBy(n => n.Y)).ToList();
+
+            if (distribution == NodeDistribution.Horizontal)
+            {
+                int start = ordered.First().X - (ordered.First().Width / 2);
+                int end = ordered.Last().X + (ordered.Last().Width / 2);
+                double gap = (double)(end - start - ordered.Sum(n => n.Width)) / (ordered.Count - 1);
+
+                double cursor = start;
+                foreach (BaseNodeElement n in ordered)
+                {
+                    n.SetLocation(new Point((int)Math.Round(cursor + (n.Width / 2.0)), n.Y));
+                    cursor += n.Width + gap;
+                }
+            }
+            else
+            {
+                int start = ordered.First().Y - (ordered.First().Height / 2);
+                int end = ordered.Last().Y + (ordered.Last().Height / 2);
+                double gap = (double)(end - start - ordered.Sum(n => n.Height)) / (ordered.Count - 1);
+
+                double cursor = start;
+                foreach (BaseNodeElement n in ordered)
+                {
+                    n.SetLocation(new Point(n.X, (int)Math.Round(cursor + (n.Height / 2.0))));
+                    cursor += n.Height + gap;
+                }
+            }
+
+            Graph.UpdateNodeValues();
+            Invalidate();
+        }
+
         // Ctrl + drag from any node tab to empty space:
         // Creates a passthrough node for every item on that side of the origin node,
         // spaced 80px apart horizontally starting at the drop location.
         public void AddPassthroughNodesForAllItems(LinkType linkType, BaseNodeElement originElement, Point dropLocation)
         {
+            if (originElement == null)
+            {
+                DisposeLinkDrag();
+                return;
+            }
+
             PushUndoState(); // undo: add passthrough nodes for all items
             IEnumerable<ItemQualityPair> items = linkType == LinkType.Input
                 ? originElement.DisplayedNode.Inputs
@@ -811,27 +925,29 @@ namespace Foreman
 
             List<BaseNodeElement> newPassthroughNodes = new List<BaseNodeElement>();
             int index = 0;
+            NodeDirection newNodeDirection = GetNewNodeDirection(originElement);
 
-            foreach (ItemQualityPair item in items)
+            foreach (ItemQualityPair item in items.ToList())
             {
+                if (!item)
+                    continue;
+
                 Point nodeLocation = new Point(dropLocation.X + index * 80, dropLocation.Y);
                 if (Grid.ShowGrid)
                     nodeLocation = Grid.AlignToGrid(nodeLocation);
 
-                NodeDirection newNodeDirection = !SmartNodeDirection ? Graph.DefaultNodeDirection :
-                    draggedLinkElement.Type != BaseLinkElement.LineType.UShape ? originElement.DisplayedNode.NodeDirection :
-                    originElement.DisplayedNode.NodeDirection == NodeDirection.Up ? NodeDirection.Down : NodeDirection.Up;
-
                 ReadOnlyPassthroughNode newNode = Graph.CreatePassthroughNode(item, nodeLocation);
                 PassthroughNodeController controller = (PassthroughNodeController)Graph.RequestNodeController(newNode);
-                controller.SetDirection(newNodeDirection);
+                controller?.SetDirection(newNodeDirection);
 
                 if (linkType == LinkType.Input)
                     Graph.CreateLink(newNode, originElement.DisplayedNode, item);
                 else
                     Graph.CreateLink(originElement.DisplayedNode, newNode, item);
 
-                newPassthroughNodes.Add(nodeElementDictionary[newNode]);
+                BaseNodeElement newElement = GetElement(newNode);
+                if (newElement != null)
+                    newPassthroughNodes.Add(newElement);
                 index++;
             }
 
@@ -846,6 +962,12 @@ namespace Foreman
         // rather than connecting them directly.
         public void AddPassthroughNodeBetween(BaseNodeElement supplierElement, BaseNodeElement consumerElement, ItemQualityPair item)
         {
+            if (supplierElement == null || consumerElement == null || !item)
+            {
+                DisposeLinkDrag();
+                return;
+            }
+
             PushUndoState(); // undo: insert passthrough between nodes
             Point midpoint = new Point(
                 (supplierElement.Location.X + consumerElement.Location.X) / 2,
@@ -853,18 +975,18 @@ namespace Foreman
             if (Grid.ShowGrid)
                 midpoint = Grid.AlignToGrid(midpoint);
 
-            NodeDirection newNodeDirection = !SmartNodeDirection ? Graph.DefaultNodeDirection :
-                draggedLinkElement.Type != BaseLinkElement.LineType.UShape ? supplierElement.DisplayedNode.NodeDirection :
-                supplierElement.DisplayedNode.NodeDirection == NodeDirection.Up ? NodeDirection.Down : NodeDirection.Up;
+            NodeDirection newNodeDirection = GetNewNodeDirection(supplierElement);
 
             ReadOnlyPassthroughNode newNode = Graph.CreatePassthroughNode(item, midpoint);
             PassthroughNodeController controller = (PassthroughNodeController)Graph.RequestNodeController(newNode);
-            controller.SetDirection(newNodeDirection);
+            controller?.SetDirection(newNodeDirection);
 
             Graph.CreateLink(supplierElement.DisplayedNode, newNode, item);
             Graph.CreateLink(newNode, consumerElement.DisplayedNode, item);
 
-            SetSelection(new List<BaseNodeElement> { nodeElementDictionary[newNode] });
+            BaseNodeElement newElement = GetElement(newNode);
+            if (newElement != null)
+                SetSelection(new List<BaseNodeElement> { newElement });
             DisposeLinkDrag();
             Graph.UpdateNodeValues();
             Graph.UpdateNodeStates(false);
@@ -942,6 +1064,9 @@ namespace Foreman
 
         public void ConvertNodeToPassthrough(ReadOnlyBaseNode node, ItemQualityPair item)
         {
+            if (node == null || !item || !nodeElementDictionary.ContainsKey(node))
+                return;
+
             PushUndoState(); // undo: convert node to passthrough
             // Capture snapshot before anything is deleted
             RecipeNodeSnapshot snapshot = null;
@@ -949,19 +1074,20 @@ namespace Foreman
                 snapshot = new RecipeNodeSnapshot(recipeNode);
 
             // Snapshot existing connections for this item before we delete anything
+            // (self-links are dropped: the node they point at is the one being replaced)
             List<ReadOnlyBaseNode> suppliers = node.InputLinks
-                .Where(l => l.Item == item)
+                .Where(l => l.Item == item && l.Supplier != node)
                 .Select(l => l.Supplier)
                 .ToList();
             List<ReadOnlyBaseNode> consumers = node.OutputLinks
-                .Where(l => l.Item == item)
+                .Where(l => l.Item == item && l.Consumer != node)
                 .Select(l => l.Consumer)
                 .ToList();
 
             // Create the passthrough at the same spot, same direction
             ReadOnlyPassthroughNode passthrough = Graph.CreatePassthroughNode(item, node.Location);
             ((PassthroughNodeController)Graph.RequestNodeController(passthrough))
-                .SetDirection(node.NodeDirection);
+                ?.SetDirection(node.NodeDirection);
 
             // Delete the original node first (clears all its links cleanly)
             CleanupNodeFromGroups(node);
@@ -1034,9 +1160,9 @@ namespace Foreman
 			Invalidate();
 		}
 
-		public void MergeSelectedPassthroughNodes(ReadOnlyPassthroughNode survivor)
+		//merge body without the undo push, so the gutter operations below can bundle it into a single undo step
+		private void MergePassthroughNodesInto(ReadOnlyPassthroughNode survivor)
 		{
-			PushUndoState(); // undo: merge passthrough nodes
 			var nodesToMerge = selectedNodes
 				.OfType<PassthroughNodeElement>()
 				.Where(n => n.DisplayedNode != survivor && ((ReadOnlyPassthroughNode)n.DisplayedNode).PassthroughItem == survivor.PassthroughItem)
@@ -1053,8 +1179,183 @@ namespace Foreman
 						Graph.CreateLink(survivor, link.Consumer, link.Item);
 				Graph.DeleteNode(node);
 			}
+		}
+
+		public void MergeSelectedPassthroughNodes(ReadOnlyPassthroughNode survivor)
+		{
+			PushUndoState(); // undo: merge passthrough nodes
+			MergePassthroughNodesInto(survivor);
+			Graph.UpdateNodeValues();
+			Invalidate();
+		}
+
+		public const int MinimumGutterLength = 96;    //shorter than a standard node body would read as a mistake, not a gutter
+		public const int DefaultGutterLength = 384;   //four node bodies - visible as a gutter without ploughing across the graph
+		public const int MaximumGutterLength = 20000; //backstop: no legitimate gutter is this long, so a runaway resize stops being silent
+
+		//turns a passthrough node into a gutter. with two or more same-item passthroughs selected it swallows them and
+		//spans where they sat; on its own it just stretches in place to a default length, ready to be dragged to size.
+		//either way the right clicked node sets the cross axis, so the gutter lines up with it
+		public void CreateGutter(ReadOnlyPassthroughNode survivor)
+		{
+			List<PassthroughNodeElement> members = selectedNodes
+				.OfType<PassthroughNodeElement>()
+				.Where(n => ((ReadOnlyPassthroughNode)n.DisplayedNode).PassthroughItem == survivor.PassthroughItem)
+				.ToList();
+
+			PushUndoState(); // undo: create gutter
+			PassthroughNodeController controller = (PassthroughNodeController)Graph.RequestNodeController(survivor);
+
+			if (members.Count < 2)
+			{
+				//a lone node gives nothing to infer a span or an axis from, so it gets the default of both
+				controller.SetGutter(DefaultGutterLength, GutterOrientation.Vertical);
+			}
+			else
+			{
+				//orientation comes from the node centres - measuring their full extents instead would let a node's own
+				//size swamp a narrow spread and pick the wrong axis
+				int spreadX = members.Max(n => n.X) - members.Min(n => n.X);
+				int spreadY = members.Max(n => n.Y) - members.Min(n => n.Y);
+				GutterOrientation orientation = spreadX > spreadY ? GutterOrientation.Horizontal : GutterOrientation.Vertical;
+
+				//the span itself does cover each node fully, so the gutter reaches the far edge of where they actually sat
+				bool vertical = orientation == GutterOrientation.Vertical;
+				int min = vertical ? members.Min(n => n.Y - (n.Height / 2)) : members.Min(n => n.X - (n.Width / 2));
+				int max = vertical ? members.Max(n => n.Y + (n.Height / 2)) : members.Max(n => n.X + (n.Width / 2));
+
+				MergePassthroughNodesInto(survivor);
+
+				controller.SetLocation(vertical
+					? new Point(survivor.Location.X, (min + max) / 2)
+					: new Point((min + max) / 2, survivor.Location.Y));
+				controller.SetGutter(Math.Max(MinimumGutterLength, max - min), orientation);
+			}
+
+			SetSelection(new List<BaseNodeElement>() { GetElement(survivor) });
+			Graph.UpdateNodeValues();
+			Graph.UpdateNodeStates(false);
+			Invalidate();
+		}
+
+		//merges further passthrough nodes into an existing gutter, growing it if any of them sat outside its current span
+		public void AddSelectionToGutter(ReadOnlyPassthroughNode gutter)
+		{
+			if (!gutter.IsGutter)
+				return;
+			List<PassthroughNodeElement> additions = selectedNodes
+				.OfType<PassthroughNodeElement>()
+				.Where(n => n.DisplayedNode != gutter && ((ReadOnlyPassthroughNode)n.DisplayedNode).PassthroughItem == gutter.PassthroughItem)
+				.ToList();
+			if (additions.Count == 0)
+				return;
+
+			PushUndoState(); // undo: add nodes to gutter
+
+			bool vertical = gutter.GutterOrientation == GutterOrientation.Vertical;
+			int half = gutter.GutterLength / 2;
+			int axisCenter = vertical ? gutter.Location.Y : gutter.Location.X;
+			//grow to swallow each added node's full extent whenever it sat outside the gutter's current span
+			int min = Math.Min(axisCenter - half, additions.Min(n => vertical ? n.Y - (n.Height / 2) : n.X - (n.Width / 2)));
+			int max = Math.Max(axisCenter + half, additions.Max(n => vertical ? n.Y + (n.Height / 2) : n.X + (n.Width / 2)));
+
+			MergePassthroughNodesInto(gutter);
+
+			PassthroughNodeController controller = (PassthroughNodeController)Graph.RequestNodeController(gutter);
+			controller.SetLocation(vertical
+				? new Point(gutter.Location.X, (min + max) / 2)
+				: new Point((min + max) / 2, gutter.Location.Y));
+			controller.SetGutterLength(Math.Max(MinimumGutterLength, max - min));
+
+			SetSelection(new List<BaseNodeElement>() { GetElement(gutter) });
+			Graph.UpdateNodeValues();
+			Graph.UpdateNodeStates(false);
+			Invalidate();
+		}
+
+		//set only for the duration of an image export, so a picture can include links the screen is currently hiding
+		public bool IgnoreUtilityHiding;
+
+		//toggling a utility item is a view preference, not graph data - no undo entry, since the roster in settings is
+		//how you reverse it and filling the undo history with view toggles would make undo worse
+		public void SetUtilityItemHidden(ItemQualityPair item, bool hidden)
+		{
+			if (!item)
+				return;
+			Graph.UtilityItems[item] = hidden;
+			Invalidate();
+		}
+
+		//removes an item from the roster entirely, so it stops being tracked as a utility item at all
+		public void RemoveUtilityItem(ItemQualityPair item)
+		{
+			if (Graph.UtilityItems.Remove(item))
+				Invalidate();
+		}
+
+		private static bool IsGutterFor(ReadOnlyBaseNode node, ItemQualityPair item)
+		{
+			return node is ReadOnlyPassthroughNode passthrough && passthrough.IsGutter && passthrough.PassthroughItem == item;
+		}
+
+		//attaches only loose ends: a selected node that handles this gutter's item but has nothing connected on that
+		//side gets wired to it. no existing link is ever deleted or moved, so deliberate local structure - a passthrough
+		//gathering a few sources inside one module - is left exactly as it was rather than being dragged onto the gutter
+		public void AttachUnconnectedToGutter(ReadOnlyPassthroughNode gutter)
+		{
+			if (!gutter.IsGutter)
+				return;
+			ItemQualityPair item = gutter.PassthroughItem;
+
+			List<ReadOnlyBaseNode> loosePoducers = new List<ReadOnlyBaseNode>();
+			List<ReadOnlyBaseNode> looseConsumers = new List<ReadOnlyBaseNode>();
+			foreach (BaseNodeElement element in selectedNodes)
+			{
+				ReadOnlyBaseNode node = element.DisplayedNode;
+				//other gutters for this item are skipped so a careless selection cannot chain two of them together
+				if (node == gutter || IsGutterFor(node, item))
+					continue;
+				if (node.Outputs.Contains(item) && !node.OutputLinks.Any(l => l.Item == item))
+					loosePoducers.Add(node);
+				if (node.Inputs.Contains(item) && !node.InputLinks.Any(l => l.Item == item))
+					looseConsumers.Add(node);
+			}
+
+			//nothing loose means nothing to do - and no empty undo entry for a command that did not fire
+			if (loosePoducers.Count == 0 && looseConsumers.Count == 0)
+				return;
+
+			PushUndoState(); // undo: attach unconnected links to gutter
+
+			foreach (ReadOnlyBaseNode producer in loosePoducers)
+				Graph.CreateLink(producer, gutter, item);
+			foreach (ReadOnlyBaseNode consumer in looseConsumers)
+				Graph.CreateLink(gutter, consumer, item);
 
 			Graph.UpdateNodeValues();
+			Graph.UpdateNodeStates(false);
+			Invalidate();
+		}
+
+		//drops every dragged connection back to placing itself by projection - the way out of a layout you have
+		//fiddled into a mess, without having to drag each marker back by hand
+		public void ResetGutterLinkPositions(ReadOnlyPassthroughNode gutter)
+		{
+			PushUndoState(); // undo: reset gutter connection positions
+			PassthroughNodeController controller = (PassthroughNodeController)Graph.RequestNodeController(gutter);
+			foreach (ReadOnlyNodeLink link in gutter.InputLinks.ToList())
+				controller.ClearGutterLinkOffset(link.Supplier.NodeID);
+			foreach (ReadOnlyNodeLink link in gutter.OutputLinks.ToList())
+				controller.ClearGutterLinkOffset(link.Consumer.NodeID);
+			Invalidate();
+		}
+
+		//turns a gutter back into an ordinary passthrough node. every link it carries stays attached
+		public void RemoveGutter(ReadOnlyPassthroughNode gutter)
+		{
+			PushUndoState(); // undo: remove gutter
+			((PassthroughNodeController)Graph.RequestNodeController(gutter)).ClearGutter();
+			Graph.UpdateNodeStates(false);
 			Invalidate();
 		}
 
@@ -1286,6 +1587,19 @@ namespace Foreman
 			foreach (GraphElement element in GetPaintingOrder())
 				element.Paint(graphics, FullGraph? NodeDrawingStyle.PrintStyle : IconsOnly? NodeDrawingStyle.IconsOnly : (visibleElements > NodeCountForSimpleView || ViewScale < 0.2)? NodeDrawingStyle.Simple : NodeDrawingStyle.Regular); //if viewscale is 0.2, then the text, images, etc being drawn are ~1/5th the size: aka: ~6x6 pixel images, etc. Use simple draw. Also simple draw if too many objects
 
+			//trace pass: every link touching a selected node is redrawn on top of the finished graph. done here rather
+			//than in the normal painting order so a traced link cannot be buried under the nodes and links drawn after it
+			if (!FullGraph && !IconsOnly && selectedNodes.Count > 0 && Properties.Settings.Default.ShowLinkTracing)
+				foreach (LinkElement element in linkElements)
+					if (element.Visible && element.IsTraced)
+						element.DrawTrace(graphics);
+
+			//find pass: matched links are redrawn last so a search hit sits on top of both the graph and any traces
+			if (!FullGraph && !IconsOnly)
+				foreach (LinkElement element in linkElements)
+					if (element.Visible && element.FindHighlighted)
+						element.DrawFindHighlight(graphics);
+
 			//draw-shape preview
 			if (currentDragOperation == DragOperation.DrawShape && !FullGraph && SelectionZone.Width > 0 && SelectionZone.Height > 0)
 			{
@@ -1427,7 +1741,16 @@ namespace Foreman
                 return;
             }
 
+            //a click that finishes (or cancels) a link drag must not also be handed to whatever is under the
+            //cursor on mouse-up - that would, for instance, shift-click the passthrough node just created
+            bool endedLinkDrag = clickedElement != null && ReferenceEquals(clickedElement, draggedLinkElement)
+                                && (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right);
+
             clickedElement?.MouseDown(graph_location, e.Button);
+
+            if (endedLinkDrag)
+                linkDragEndedOnClick = true;
+
             if (e.Button == MouseButtons.Middle || (e.Button == MouseButtons.Right))
 			{
 				ViewDragOriginPoint = graph_location;
@@ -1482,6 +1805,16 @@ namespace Foreman
                 return; // do not process any other mouse-up logic while in placement mode
             }
             // ---- End text placement mode ----
+
+            //this release belongs to the click that ended a link drag - consume it
+            if (linkDragEndedOnClick)
+            {
+                linkDragEndedOnClick     = false;
+                currentDragOperation     = DragOperation.None;
+                MouseDownElement         = null;
+                _pendingDragUndoSnapshot = null;
+                return;
+            }
 
             GraphElement element = (GraphElement)draggedLinkElement
                             ?? (GraphElement)GetNodeAtPoint(graph_location)
@@ -1731,7 +2064,10 @@ namespace Foreman
                         if (element == MouseDownElement) //check to ensure that the dragged operation hasnt changed the mousedown element -> as is the case with item tab to dragged link
                         {
                             Point endPoint = MouseDownElement.Location;
-                            if (startPoint != endPoint)
+                            //a gutter resize moves its own centre as one end stays anchored. that is not the node being
+                            //dragged, so the rest of the selection must not be translated along with it
+                            bool resizingInPlace = MouseDownElement is PassthroughNodeElement resizingGutter && resizingGutter.IsResizing;
+                            if (startPoint != endPoint && !resizingInPlace)
                             {
                                 foreach (BaseNodeElement node in selectedNodes.Where(node => node != MouseDownElement))
                                     node.SetLocation(new Point(node.X + endPoint.X - startPoint.X, node.Y + endPoint.Y - startPoint.Y));
@@ -1920,11 +2256,17 @@ namespace Foreman
             else if (currentDragOperation == DragOperation.None && !viewBeingDragged)
             {
                 Cursor newCursor = Cursors.Default;
-                for (int i = annotationElements.Count - 1; i >= 0; i--)
-                {
-                    Cursor annCursor = annotationElements[i].GetCursorForPoint(graph_location);
-                    if (annCursor != null) { newCursor = annCursor; break; }
-                }
+                //a node under the pointer settles the cursor on its own. falling through to the annotation beneath it
+                //would show that annotation's move cursor over a node whose click moves the node, not the annotation
+                BaseNodeElement hoveredNode = GetNodeAtPoint(graph_location);
+                if (hoveredNode != null)
+                    newCursor = hoveredNode.GetCursorForPoint(graph_location) ?? Cursors.Default;
+                else
+                    for (int i = annotationElements.Count - 1; i >= 0; i--)
+                    {
+                        Cursor annCursor = annotationElements[i].GetCursorForPoint(graph_location);
+                        if (annCursor != null) { newCursor = annCursor; break; }
+                    }
                 this.Cursor = newCursor;
             }
             else if (currentDragOperation == DragOperation.None)
@@ -2206,57 +2548,101 @@ namespace Foreman
 			findPanel.Visible = false;
 			findPanel.TabStop = false;
 
+            //laid out by flow rather than fixed coordinates: every control is measured against the font as actually
+            //rendered, so the row stays correct under display scaling. hard-coded positions were 100%-DPI values and
+            //ran into each other once the system scaled the text up.
+            var findLayout = new FlowLayoutPanel();
+            findLayout.Dock = DockStyle.Fill;
+            findLayout.FlowDirection = FlowDirection.LeftToRight;
+            findLayout.WrapContents = false;
+            findLayout.AutoScroll = false;
+            findLayout.Padding = new Padding(6, 0, 0, 0);
+
 			var findLabel = new Label();
 			findLabel.Text = "Find:";
 			findLabel.AutoSize = true;
-			findLabel.Location = new Point(6, 7);
+			findLabel.Margin = new Padding(0, 7, 3, 0);
 
 			findTextBox = new TextBox();
             findTextBox.TabStop = false;
-            findTextBox.Location = new Point(45, 4);
 			findTextBox.Width = 200;
+			findTextBox.Margin = new Padding(0, 4, 6, 0);
 			findTextBox.KeyDown += FindTextBox_KeyDown;
+            findTextBox.TextChanged += FindTextBox_TextChanged;
             findTextBox.Enter += (s, e) => findTextBox.SelectAll();
             findTextBox.MouseWheel += ProductionGraphViewer_MouseWheel;
 
 
             var btnNext = new Button();
             btnNext.Text = "Go to Next";  // renamed
-            btnNext.Location = new Point(252, 3);
-            btnNext.Width = 80;           // slightly wider for new text
+            btnNext.AutoSize = true;      // grows with the text at any scaling
             btnNext.Height = 23;
+            btnNext.Margin = new Padding(0, 3, 6, 0);
             btnNext.TabStop = false;
             btnNext.Click += (s, e) => FindNext();
 
             var btnClose = new Button();
             btnClose.Text = "✕";
-            btnClose.Location = new Point(339, 3);  // shifted right slightly
             btnClose.Width = 26;
             btnClose.Height = 23;
+            btnClose.Margin = new Padding(0, 3, 6, 0);
             btnClose.TabStop = false;
             btnClose.Click += (s, e) => CloseFindPanel();
 
+            //fixed width so the controls after it do not shuffle sideways as the count text changes
             findStatusLabel = new Label();
-            findStatusLabel.AutoSize = true;
-            findStatusLabel.Location = new Point(372, 7);
+            findStatusLabel.AutoSize = false;
+            findStatusLabel.Width = MeasureFindText("No results") + 8;
+            findStatusLabel.Height = 23;
+            findStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
+            findStatusLabel.Margin = new Padding(0, 3, 12, 0);
             findStatusLabel.ForeColor = Color.DimGray;
 
             autoZoomCheckBox = new CheckBox();
             autoZoomCheckBox.Text = "Fit all results";
             autoZoomCheckBox.AutoSize = true;
-            autoZoomCheckBox.Location = new Point(490, 6);
-            autoZoomCheckBox.Checked = true;  // default on
+            autoZoomCheckBox.Margin = new Padding(0, 6, 12, 0);
+            autoZoomCheckBox.Checked = false;  // default off - find zooms in on the hit instead
             autoZoomCheckBox.TabStop = false;
 
-            findPanel.Controls.Add(findLabel);
-            findPanel.Controls.Add(findTextBox);
-            findPanel.Controls.Add(btnNext);
-            findPanel.Controls.Add(btnClose);
-            findPanel.Controls.Add(findStatusLabel);
-            findPanel.Controls.Add(autoZoomCheckBox);  // add checkbox
+            var scopeLabel = new Label();
+            scopeLabel.Text = "Search:";
+            scopeLabel.AutoSize = true;
+            scopeLabel.Margin = new Padding(0, 7, 3, 0);
+
+            findScopeComboBox = new ComboBox();
+            findScopeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;  // no free text - the 3 states are the whole set
+            findScopeComboBox.Margin = new Padding(0, 3, 6, 0);
+            findScopeComboBox.TabStop = false;
+            findScopeComboBox.Items.AddRange(new object[] { "All", "Nodes", "Links" });
+            //a ComboBox will not size itself, so measure the widest entry and leave room for the drop arrow
+            findScopeComboBox.Width = MeasureFindText("Nodes") + SystemInformation.VerticalScrollBarWidth + 12;
+            findScopeComboBox.SelectedIndex = 0;
+            findScopeComboBox.SelectedIndexChanged += FindScope_Changed;
+
+            findLayout.Controls.Add(findLabel);
+            findLayout.Controls.Add(findTextBox);
+            findLayout.Controls.Add(btnNext);
+            findLayout.Controls.Add(btnClose);
+            findLayout.Controls.Add(findStatusLabel);
+            findLayout.Controls.Add(autoZoomCheckBox);  // add checkbox
+            findLayout.Controls.Add(scopeLabel);
+            findLayout.Controls.Add(findScopeComboBox);
+
+            findPanel.Controls.Add(findLayout);
+
+            //the combo's height is font-driven, so it tracks display scaling - use it to keep the row from being
+            //clipped vertically the same way the fixed 30 was clipping it horizontally
+            findPanel.Height = Math.Max(findPanel.Height, findScopeComboBox.PreferredHeight + 10);
 
             this.Controls.Add(findPanel);
 		}
+
+        //width of text in the panel's own font - the panel inherits the viewer font, which is what the controls draw with
+        private int MeasureFindText(string text)
+        {
+            return TextRenderer.MeasureText(text, this.Font).Width;
+        }
 
 		public void UpdateGraphBounds(bool limitView = true)
 		{
@@ -2496,7 +2882,27 @@ namespace Foreman
 			Invalidate();
 		}
 
+		/// <summary>
+		/// True while LoadFromJson is rebuilding the graph. Loading clears the graph before the new nodes go in,
+		/// so anything that persists the graph (session snapshots, backups) must sit this window out - otherwise
+		/// it can capture the momentarily empty graph and overwrite a good copy with nothing.
+		/// </summary>
+		public bool IsLoading { get; private set; }
+
 		public async Task LoadFromJson(JObject json, bool useFirstPreset, bool setEnablesFromJson)
+		{
+			IsLoading = true;
+			try
+			{
+				await LoadFromJsonInternal(json, useFirstPreset, setEnablesFromJson);
+			}
+			finally
+			{
+				IsLoading = false;
+			}
+		}
+
+		private async Task LoadFromJsonInternal(JObject json, bool useFirstPreset, bool setEnablesFromJson)
 		{
 			if (json["Version"] == null || (int)json["Version"] != Properties.Settings.Default.ForemanVersion || json["Object"] == null || (string)json["Object"] != "ProductionGraphViewer")
 			{
@@ -2528,6 +2934,11 @@ namespace Foreman
 			// the preset list will then be checked for compatibility based on recipes, and the one with least errors will be used.
 			// any errors will prompt a message box saying that 'incompatibility was found, but proceeding anyways'.
 			List<Preset> allPresets = MainForm.GetValidPresetsList();
+			if (allPresets == null || allPresets.Count == 0) //preset folder unreadable / empty - nothing can be loaded
+			{
+				ErrorLogging.LogLine("Cannot load graph: no presets are available.");
+				return;
+			}
 			List<PresetErrorPackage> presetErrors = new List<PresetErrorPackage>();
 			Preset chosenPreset = null;
 			if (useFirstPreset)
@@ -2591,7 +3002,7 @@ namespace Foreman
                             return;
                         chosenPreset = form.ChosenPreset;
                         Properties.Settings.Default.CurrentPresetName = chosenPreset.Name;
-                        Properties.Settings.Default.Save();
+                        SafeSettings.Save();
                     }
                 }
                 else if (chosenPreset.Name != Properties.Settings.Default.CurrentPresetName)
@@ -2599,7 +3010,7 @@ namespace Foreman
                     MessageBox.Show(string.Format("Loaded graph uses a different Preset.\nPreset switched from \"{0}\" to \"{1}\"",
                         Properties.Settings.Default.CurrentPresetName, chosenPreset.Name));
                     Properties.Settings.Default.CurrentPresetName = chosenPreset.Name;
-                    Properties.Settings.Default.Save();
+                    SafeSettings.Save();
                 }
             }
 
@@ -2730,26 +3141,54 @@ namespace Foreman
 
         private void CloseFindPanel()
         {
-            foreach (BaseNodeElement ne in nodeElements)
-                ne.FindHighlighted = false;
+            ClearFindResults();
 
             findPanel.Visible = false;
-            findResults.Clear();
-            findResultIndex = -1;
-            findStatusLabel.Text = "";
-            lastSearchQuery = "";
             this.Focus();
             Invalidate();
+        }
+
+        // Drops every trace of the previous search: find highlights on both nodes and links, the result list
+        // (which "Go to Next" walks), the current-result selection, and the cached query.
+        private void ClearFindResults()
+        {
+            // If the graph selection is just the node the last find centered on, drop it too -
+            // it only got selected as a side effect of the search that is now being discarded.
+            if (findResultIndex >= 0 && findResultIndex < findResults.Count && selectedNodes.Count == 1 && findResults[findResultIndex] is BaseNodeElement lastNode && selectedNodes.Contains(lastNode))
+            {
+                lastNode.Highlighted = false;
+                selectedNodes.Clear();
+            }
+
+            foreach (BaseNodeElement ne in nodeElements)
+                ne.FindHighlighted = false;
+            foreach (LinkElement le in linkElements)
+                le.FindHighlighted = false;
+
+            findResults.Clear();
+            findResultIndex = -1;
+            findStatusLabel.ForeColor = Color.DimGray;
+            findStatusLabel.Text = "";
+            lastSearchQuery = "";
+        }
+
+        // A link's own X/Y are pinned at 0,0 (its geometry lives in graph space), so bounds have to come from
+        // CalculatedBounds for links and from the centered box for nodes.
+        private static Rectangle GetFindBounds(GraphElement element)
+        {
+            if (element is BaseLinkElement link)
+                return link.CalculatedBounds;
+            return new Rectangle(element.X - (element.Width / 2), element.Y - (element.Height / 2), element.Width, element.Height);
         }
 
         private void ZoomToFitResults()
         {
             if (findResults.Count == 0) return;
 
-            int minX = findResults.Min(n => n.X - n.Width / 2);
-            int maxX = findResults.Max(n => n.X + n.Width / 2);
-            int minY = findResults.Min(n => n.Y - n.Height / 2);
-            int maxY = findResults.Max(n => n.Y + n.Height / 2);
+            int minX = findResults.Min(n => GetFindBounds(n).Left);
+            int maxX = findResults.Max(n => GetFindBounds(n).Right);
+            int minY = findResults.Min(n => GetFindBounds(n).Top);
+            int maxY = findResults.Max(n => GetFindBounds(n).Bottom);
 
             int centerX = (minX + maxX) / 2;
             int centerY = (minY + maxY) / 2;
@@ -2770,6 +3209,11 @@ namespace Foreman
         }
 
         private string lastSearchQuery = "";
+
+        // Zoom level jumped to when a find lands on a node. CenterOnNode only ever zooms in
+        // toward this, so a user already zoomed in past it keeps their closer view.
+        // 2.0 is the hard zoom ceiling everywhere else in the viewer.
+        private const float FindZoomLevel = 1.75f;
 
 		private void FindTextBox_KeyDown(object sender, KeyEventArgs e)
 		{
@@ -2799,30 +3243,70 @@ namespace Foreman
                 BeginInvoke(new Action(() => ActiveControl = null));
             }
         }
+        // Text was edited - the old results no longer match what is in the box, so retire them
+        // rather than let them stay highlighted / reachable via "Go to Next".
+        private void FindTextBox_TextChanged(object sender, EventArgs e)
+        {
+            if (findTextBox.Text.Trim().ToLowerInvariant() == lastSearchQuery)
+                return;
+
+            ClearFindResults();
+            Invalidate();
+        }
+
+        // Scope is part of the query, so switching it retires the current results the same way editing the text does.
+        private void FindScope_Changed(object sender, EventArgs e)
+        {
+            ClearFindResults();
+            Invalidate();
+        }
+
+        private FindScope CurrentFindScope
+        {
+            get
+            {
+                switch (findScopeComboBox.SelectedIndex)
+                {
+                    case 1: return FindScope.Nodes;
+                    case 2: return FindScope.Links;
+                    default: return FindScope.NodesAndLinks;
+                }
+            }
+        }
+
         private void ExecuteFind(string query)
         {
-            // Clear previous find highlights
-            foreach (BaseNodeElement ne in nodeElements)
-                ne.FindHighlighted = false;
+            // Drop everything from the previous search before building the new result set
+            ClearFindResults();
 
-            findResults.Clear();
-            findResultIndex = -1;
             lastSearchQuery = query.Trim().ToLowerInvariant();
-            findStatusLabel.ForeColor = Color.DimGray;
 
             if (string.IsNullOrWhiteSpace(query))
             {
-                findStatusLabel.Text = "";
                 Invalidate();
                 return;
             }
 
-            string q = query.Trim().ToLowerInvariant();
+            string q = lastSearchQuery;
+            FindScope scope = CurrentFindScope;
 
-            foreach (BaseNodeElement ne in nodeElements)
+            // Nodes first, then links, so "Go to Next" walks a stable order rather than interleaving the two
+            if (scope != FindScope.Links)
             {
-                if (NodeMatchesSearch(ne, q))
-                    findResults.Add(ne);
+                foreach (BaseNodeElement ne in nodeElements)
+                {
+                    if (NodeMatchesSearch(ne, q))
+                        findResults.Add(ne);
+                }
+            }
+
+            if (scope != FindScope.Nodes)
+            {
+                foreach (LinkElement le in linkElements)
+                {
+                    if (LinkMatchesSearch(le, q))
+                        findResults.Add(le);
+                }
             }
 
             if (findResults.Count == 0)
@@ -2833,15 +3317,20 @@ namespace Foreman
                 return;
             }
 
-            // Yellow highlight all results
-            foreach (BaseNodeElement ne in findResults)
-                ne.FindHighlighted = true;
+            // Highlight every result - nodes get their background overlay, links get a coloured halo
+            foreach (GraphElement element in findResults)
+            {
+                if (element is BaseNodeElement ne)
+                    ne.FindHighlighted = true;
+                else if (element is BaseLinkElement le)
+                    le.FindHighlighted = true;
+            }
 
             findResultIndex = 0;
-            CenterOnNode(findResults[0]);  // blue highlight + center on first
+            CenterOnFindResult(findResults[0], FindZoomLevel);  // blue highlight + zoom in on first
 
             if (autoZoomCheckBox.Checked)
-                ZoomToFitResults();  // override view to show all results
+                ZoomToFitResults();  // opt-in override: pull back to show all results instead
 
             UpdateFindStatus();
         }
@@ -2850,11 +3339,23 @@ namespace Foreman
         {
             ReadOnlyBaseNode node = ne.DisplayedNode;
 
+            // A key node's title is user-entered text drawn on the node itself, so it is searchable on every node type
+            if (node.KeyNode && !string.IsNullOrEmpty(node.KeyNodeTitle) && node.KeyNodeTitle.ToLowerInvariant().Contains(q))
+                return true;
+
             if (node is ReadOnlyRecipeNode rNode)
             {
                 if (rNode.BaseRecipe.FriendlyName.ToLowerInvariant().Contains(q)) return true;
                 if (rNode.BaseRecipe.Recipe.IngredientSet.Keys.Any(i => i.FriendlyName.ToLowerInvariant().Contains(q))) return true;
                 if (rNode.BaseRecipe.Recipe.ProductSet.Keys.Any(i => i.FriendlyName.ToLowerInvariant().Contains(q))) return true;
+
+                // The building and its equipment are part of what the node shows, so they are part of what it matches on.
+                // The quality pairs carry an implicit bool that is false when unset - FriendlyName would throw on those.
+                if (rNode.SelectedAssembler && rNode.SelectedAssembler.FriendlyName.ToLowerInvariant().Contains(q)) return true;
+                if (rNode.SelectedBeacon && rNode.SelectedBeacon.FriendlyName.ToLowerInvariant().Contains(q)) return true;
+                if (rNode.AssemblerModules.Any(m => m.FriendlyName.ToLowerInvariant().Contains(q))) return true;
+                if (rNode.BeaconModules.Any(m => m.FriendlyName.ToLowerInvariant().Contains(q))) return true;
+                if (rNode.Fuel != null && rNode.Fuel.FriendlyName.ToLowerInvariant().Contains(q)) return true;
                 return false;
             }
             if (node is ReadOnlySupplierNode sNode)
@@ -2869,16 +3370,49 @@ namespace Foreman
                 return plNode.Seed.FriendlyName.ToLowerInvariant().Contains(q);
             return false;
         }
+
+        // A link carries exactly one item, so that item's name is the whole of what a link can match on.
+        private static bool LinkMatchesSearch(LinkElement le, string q)
+        {
+            return le.Item.Item.FriendlyName.ToLowerInvariant().Contains(q);
+        }
+
+        // Centers on a result, zooming in to targetScale. Nodes also get selected (the blue highlight);
+        // links have no selection concept, so the view just moves to the middle of the link's span.
+        private void CenterOnFindResult(GraphElement element, float? targetScale = null)
+        {
+            if (element is BaseNodeElement node)
+            {
+                CenterOnNode(node, targetScale);
+                return;
+            }
+
+            if (targetScale.HasValue)
+            {
+                float newScale = Math.Max(ViewScale, targetScale.Value);
+                newScale = Math.Max(newScale, 0.01f);
+                ViewScale = Math.Min(newScale, 2f);
+            }
+
+            Rectangle bounds = GetFindBounds(element);
+            ViewOffset = new Point(-(bounds.Left + (bounds.Width / 2)), -(bounds.Top + (bounds.Height / 2)));
+
+            UpdateGraphBounds(false);
+            Invalidate();
+        }
+
         private void FindNext()
 		{
-			if (findResults.Count == 0)
+			// If the box no longer holds the query these results came from, search again instead
+			// of stepping through nodes that match the old text.
+			if (findResults.Count == 0 || findTextBox.Text.Trim().ToLowerInvariant() != lastSearchQuery)
 			{
 				ExecuteFind(findTextBox.Text);
 				return;
 			}
 
-		    // Remove any stale results (nodes that have since been deleted)
-		    findResults.RemoveAll(n => !nodeElements.Contains(n));
+		    // Remove any stale results (nodes or links that have since been deleted)
+		    findResults.RemoveAll(n => n is BaseLinkElement ? !linkElements.Contains(n) : !nodeElements.Contains(n));
 
 			if (findResults.Count == 0)
 			{
@@ -2896,7 +3430,7 @@ namespace Foreman
                 element.Highlighted = false;
             selectedNodes.Clear();
 
-            CenterOnNode(findResults[findResultIndex]);
+            CenterOnFindResult(findResults[findResultIndex], FindZoomLevel);
             UpdateFindStatus();
         }
 

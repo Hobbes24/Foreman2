@@ -183,6 +183,17 @@ namespace Foreman
 					})));
                 // *** END ADD ***
 
+				RightClickMenu.Items.Add(new ToolStripSeparator());
+				//adds the item to this graph's utility roster and hides it, or unhides it while leaving it tracked -
+				//so flipping something back on for a moment does not lose it from the list
+				bool utilityHidden = graphViewer.Graph.IsUtilityItemHidden(Item);
+				RightClickMenu.Items.Add(new ToolStripMenuItem(utilityHidden ? "Show links for this item" : "Hide links for this item", null,
+					new EventHandler((o, e) =>
+					{
+						RightClickMenu.Close();
+						graphViewer.SetUtilityItemHidden(Item, !utilityHidden);
+					})));
+
                 RightClickMenu.Items.Add(new ToolStripSeparator());
                 RightClickMenu.Items.Add(new ToolStripMenuItem("Copy item name", null,
                     new EventHandler((o, e) =>

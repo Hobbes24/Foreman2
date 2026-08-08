@@ -121,7 +121,15 @@ namespace Foreman
 				tab.UpdateValues(DisplayedNode.GetSupplyRate(tab.Item), DisplayedNode.GetSupplyUsedRate(tab.Item), DisplayedNode.IsOverproducing(tab.Item)); //for outputs we want the amount produced by the node, the amount supplied to other nodes, and true if we are supplying less than producing.
 		}
 
-		private void UpdateTabOrder()
+		//null means "nothing special here" and the viewer falls through to annotations and then the default cursor
+		public virtual Cursor GetCursorForPoint(Point graph_point) { return null; }
+
+		//corner rounding, pulled out so a stretched node (a gutter) can read as a pill rather than a long box
+		protected virtual int BorderCornerRadius { get { return 10; } }
+		protected virtual int BackgroundCornerRadius { get { return 7; } }
+		protected virtual int OverlayCornerRadius { get { return 8; } }
+
+		protected void UpdateTabOrder()
 		{
 			InputTabs = InputTabs.OrderBy(it => GetItemTabXHeuristic(it)).ThenBy(it => it.Item.Item.Name).ThenBy(it => it.Item.Quality.Level).ThenBy(it => it.Item.Quality.Name).ToList(); //then by ensures same result no matter who came first
 			OutputTabs = OutputTabs.OrderBy(it => GetItemTabXHeuristic(it)).ThenBy(it => it.Item.Item.Name).ThenBy(it => it.Item.Quality.Level).ThenBy(it => it.Item.Quality.Name).ToList();
@@ -181,6 +189,11 @@ namespace Foreman
 			return InputTabs.First(it => it.Item == item);
 		}
 
+		//lets a node place a link's endpoint somewhere other than its item tab. gutters use this to give every link its own
+		//attachment point along their length. 'reference' is the far end's node location - it never depends on this call,
+		//so a link running between two gutters cannot recurse.
+		public virtual Point GetLinkAttachPoint(ReadOnlyNodeLink link, LinkType side, Point defaultPoint, Point reference) { return defaultPoint; }
+
 		public override void UpdateVisibility(Rectangle graph_zone, int xborder = 0, int yborder = 0)
 		{
 			base.UpdateVisibility(graph_zone, xborder, yborder + 30); //account for the vertical item boxes
@@ -226,13 +239,13 @@ namespace Foreman
 				Brush bgBrush = DisplayedNode.State == NodeState.Error ? errorBgBrush : CleanBgBrush;
 				Brush borderBrush = DisplayedNode.ManualRateNotMet() && !(this is SupplierNodeElement) ? undersuppliedFlowBorderBrush : DisplayedNode.IsOverproducing() ? overproducingFlowBorderBrush : equalFlowBorderBrush;
 
-				GraphicsStuff.FillRoundRect(trans.X - (Width / 2) + BorderSpacing, trans.Y - (Height / 2) + BorderSpacing, Width - (2 * BorderSpacing), Height - (2 * BorderSpacing), 10, graphics, borderBrush); //flow status border
+				GraphicsStuff.FillRoundRect(trans.X - (Width / 2) + BorderSpacing, trans.Y - (Height / 2) + BorderSpacing, Width - (2 * BorderSpacing), Height - (2 * BorderSpacing), BorderCornerRadius, graphics, borderBrush); //flow status border
 
 				int yoffset = (DisplayedNode.KeyNode && !(this is ConsumerNodeElement)) ? 15 : 0;
 				int heightOffset = DisplayedNode.KeyNode ? (this is ConsumerNodeElement || this is SupplierNodeElement) ? 15 : 30 : 0;
-				GraphicsStuff.FillRoundRect(trans.X - (Width / 2) + BorderSpacing + 3, trans.Y - (Height / 2) + BorderSpacing + 3 + yoffset, Width - (2 * BorderSpacing) - 6, Height - (2 * BorderSpacing) - 6 - heightOffset, 7, graphics, bgBrush); //basic background (with given background brush)
+				GraphicsStuff.FillRoundRect(trans.X - (Width / 2) + BorderSpacing + 3, trans.Y - (Height / 2) + BorderSpacing + 3 + yoffset, Width - (2 * BorderSpacing) - 6, Height - (2 * BorderSpacing) - 6 - heightOffset, BackgroundCornerRadius, graphics, bgBrush); //basic background (with given background brush)
 				if (DisplayedNode.RateType == RateType.Manual)
-					GraphicsStuff.FillRoundRect(trans.X - (Width / 2) + 3, trans.Y - (Height / 2) + 3, Width - 6, Height - 6, 7, graphics, ManualRateBGFilterBrush); //darken background if its a manual rate set
+					GraphicsStuff.FillRoundRect(trans.X - (Width / 2) + 3, trans.Y - (Height / 2) + 3, Width - 6, Height - 6, BackgroundCornerRadius, graphics, ManualRateBGFilterBrush); //darken background if its a manual rate set
 
 				if (graphViewer.FlagOUSuppliedNodes && borderBrush != equalFlowBorderBrush)
 					GraphicsStuff.FillRoundRectTLFlag(trans.X - (Width / 2) + 3, trans.Y - (Height / 2) + 3, Width / 2 - 6, Height / 2 - 6, 7, graphics, borderBrush); //supply flag
@@ -245,11 +258,11 @@ namespace Foreman
 
                 //find highlight (drawn before selection so blue appears on top)
                 if (FindHighlighted)
-                    GraphicsStuff.FillRoundRect(trans.X - (Width / 2), trans.Y - (Height / 2), Width, Height, 8, graphics, findOverlayBrush);
+                    GraphicsStuff.FillRoundRect(trans.X - (Width / 2), trans.Y - (Height / 2), Width, Height, OverlayCornerRadius, graphics,findOverlayBrush);
 
                 //highlight
                 if (Highlighted)
-                    GraphicsStuff.FillRoundRect(trans.X - (Width / 2), trans.Y - (Height / 2), Width, Height, 8, graphics, selectionOverlayBrush);              //highlight
+                    GraphicsStuff.FillRoundRect(trans.X - (Width / 2), trans.Y - (Height / 2), Width, Height, OverlayCornerRadius, graphics,selectionOverlayBrush);              //highlight
 			}
 		}
 
@@ -304,22 +317,30 @@ namespace Foreman
 			}
 			else if (button == MouseButtons.Right)
 			{
-				RightClickMenu.Items.Add(new ToolStripMenuItem("Delete node", null,
-						new EventHandler((o, e) =>
-						{
-							RightClickMenu.Close();
-							graphViewer.CleanupNodeFromGroups(DisplayedNode);
-							graphViewer.Graph.DeleteNode(DisplayedNode);
-							graphViewer.Graph.UpdateNodeValues();
-						})));
-				if (graphViewer.SelectedNodes.Count > 1 && graphViewer.SelectedNodes.Contains(this))
+				//right clicking a node that is part of a multi-item selection offers the bulk delete only;
+				//in every other case the single-node delete is the only option shown.
+				bool inMultiSelection = graphViewer.SelectedNodes.Contains(this)
+					&& (graphViewer.SelectedNodes.Count + graphViewer.SelectedAnnotations.Count) > 1;
+
+				if (inMultiSelection)
 				{
-					bool hasAnnotations = graphViewer.SelectedAnnotations.Count > 0;
 					RightClickMenu.Items.Add(new ToolStripMenuItem("Delete selected", null,
 						new EventHandler((o, e) =>
 						{
 							RightClickMenu.Close();
 							graphViewer.TryDeleteSelected();
+						})));
+				}
+				else
+				{
+					RightClickMenu.Items.Add(new ToolStripMenuItem("Delete node", null,
+						new EventHandler((o, e) =>
+						{
+							RightClickMenu.Close();
+							graphViewer.PushUndoState(); // undo: delete node (also marks the graph dirty)
+							graphViewer.CleanupNodeFromGroups(DisplayedNode);
+							graphViewer.Graph.DeleteNode(DisplayedNode);
+							graphViewer.Graph.UpdateNodeValues();
 						})));
 				}
 
@@ -388,6 +409,14 @@ namespace Foreman
 					alignMenu.DropDownItems.Add("Center horizontally", null, (o, e) => { RightClickMenu.Close(); graphViewer.AlignSelectedNodes(ProductionGraphViewer.NodeAlignment.CenterH); });
 					alignMenu.DropDownItems.Add("Center vertically", null, (o, e) => { RightClickMenu.Close(); graphViewer.AlignSelectedNodes(ProductionGraphViewer.NodeAlignment.CenterV); });
 					RightClickMenu.Items.Add(alignMenu);
+
+					if (graphViewer.SelectedNodes.Count > 2)
+					{
+						ToolStripMenuItem distributeMenu = new ToolStripMenuItem("Distribute selected nodes");
+						distributeMenu.DropDownItems.Add("Horizontally", null, (o, e) => { RightClickMenu.Close(); graphViewer.DistributeSelectedNodes(ProductionGraphViewer.NodeDistribution.Horizontal); });
+						distributeMenu.DropDownItems.Add("Vertically", null, (o, e) => { RightClickMenu.Close(); graphViewer.DistributeSelectedNodes(ProductionGraphViewer.NodeDistribution.Vertical); });
+						RightClickMenu.Items.Add(distributeMenu);
+					}
 				}
 
 				if (graphViewer.SelectedNodes.Count > 0)
