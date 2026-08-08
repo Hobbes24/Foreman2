@@ -377,7 +377,7 @@ namespace Foreman
 			Properties.Settings.Default.ShowHidden = ShowHiddenCheckBox.Checked;
 			Properties.Settings.Default.IgnoreAssemblerStatus = IgnoreAssemblerCheckBox.Checked;
 			Properties.Settings.Default.RecipeNameOnlyFilter = RecipeNameOnlyFilterCheckBox.Checked;
-			Properties.Settings.Default.Save();
+			SafeSettings.Save();
 			PanelClosed?.Invoke(this, new PanelChooserCloseArgs(panelCloseReason));
 		}
 
@@ -728,7 +728,7 @@ namespace Foreman
                 enabledSciencePacks = result.Count == 0 ? null : result;
             }
             Properties.Settings.Default.EnabledTechTiers = csvPackNames ?? "";
-            Properties.Settings.Default.Save();
+            SafeSettings.Save();
         }
 
 
@@ -794,7 +794,7 @@ namespace Foreman
                     : string.Join(",", sciencePackValues
                         .Where(p => enabledSciencePacks.Contains(p.Name))
                         .Select(p => p.Name));
-                Properties.Settings.Default.Save();
+                SafeSettings.Save();
 
                 UpdateTechTierButtonText();
                 UpdateIRButtons();

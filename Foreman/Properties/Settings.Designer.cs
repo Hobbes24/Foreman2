@@ -73,6 +73,30 @@ namespace Foreman.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool ShowLinkTracing {
+            get {
+                return ((bool)(this["ShowLinkTracing"]));
+            }
+            set {
+                this["ShowLinkTracing"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("14")]
+        public int LinkTraceWidth {
+            get {
+                return ((int)(this["LinkTraceWidth"]));
+            }
+            set {
+                this["LinkTraceWidth"] = value;
+            }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
         [global::System.Configuration.DefaultSettingValueAttribute("False")]
         public bool AltGridlines {
             get {

@@ -26,13 +26,28 @@ namespace Foreman
             public int  MinorGridlinesIndex  = 0;
             public int  MajorGridlinesIndex  = 0;
             public bool ShowGridlines        = false;
+            public string Title              = null;   // header text for tabs that have no save file yet
+            public string SnapshotFile       = null;   // this tab's snapshot inside the session directory
+            public int?   LastSnapshotHash   = null;   // avoids rewriting an unchanged snapshot every autosave tick
         }
+        /// <summary>
+        /// Session entries that could not be loaded this run. They are carried through every session write
+        /// untouched, so the only copy of that work is never overwritten and gets another chance next launch.
+        /// </summary>
+        private readonly List<SessionTabInfo> unrestoredTabs = new List<SessionTabInfo>();
         private readonly List<GraphTabState> tabStates = new List<GraphTabState>();
         private int _newTabCounter = 0;
         private bool _suppressToolbarEvents = false;
 
+        // ── Session (crash/exit recovery) ──────────────────────────────────────
+        private const int SessionAutosaveIntervalMs = 60000;
+        private Timer sessionAutosaveTimer = null;
+        private bool sessionRestoreInProgress = false;
+        /// <summary>The running form - used by the global error handler to autosave before reporting a crash.</summary>
+        public static MainForm Instance { get; private set; }
+
         // Convenience accessors
-        private ProductionGraphViewer ActiveViewer => GraphTabControl.ActiveViewer;
+        internal ProductionGraphViewer ActiveViewer => GraphTabControl.ActiveViewer;
         private GraphTabState ActiveTabState =>
             GraphTabControl.SelectedIndex >= 0 && GraphTabControl.SelectedIndex < tabStates.Count
                 ? tabStates[GraphTabControl.SelectedIndex] : null;
@@ -40,12 +55,14 @@ namespace Foreman
         public MainForm()
 		{
 			InitializeComponent();
+			BuildLinkTracingControls();
 			this.DoubleBuffered = true;
 			DefaultAppName = this.Text;
 			SetStyle(ControlStyles.SupportsTransparentBackColor, true);
 			if (Properties.Settings.Default.FlagDarkMode) {
 				SetDarkMode();
 			}
+			Instance = this;
 		}
 
 		public void SetDarkMode() {
@@ -111,6 +128,7 @@ namespace Foreman
             _newTabCounter = 1;
             var firstViewer = new ProductionGraphViewer();
             firstViewer.KeyDown += GraphViewer_KeyDown;
+            firstViewer.DirtyStateChanged += Viewer_DirtyStateChanged;
 
             List<Preset> validPresets = GetValidPresetsList();
             if (validPresets != null && validPresets.Count > 0)
@@ -125,13 +143,14 @@ namespace Foreman
                 MinorGridlinesIndex = Properties.Settings.Default.MinorGridlines,
                 MajorGridlinesIndex = Properties.Settings.Default.MajorGridlines,
                 ShowGridlines       = Properties.Settings.Default.AltGridlines,
+                Title               = "New Graph 1",
             };
             tabStates.Add(firstState);
             GraphTabControl.AddGraphTab(firstViewer, "New Graph 1");
 
-            Properties.Settings.Default.Save();
+            SafeSettings.Save();
 
-            RestoreSavedTabs();
+            RestoreSession();
 
             ActiveViewer?.Invalidate();
             ActiveViewer?.Focus();
@@ -139,7 +158,106 @@ namespace Foreman
 
         //---------------------------------------------------------Tab session restore
 
-        private async void RestoreSavedTabs()
+        /// <summary>
+        /// Restores every tab that was open when the program last shut down (or crashed), preferring the
+        /// locally stored snapshot for tabs with unsaved changes so nothing is lost even when the original
+        /// save location is unreachable.
+        /// </summary>
+        private async void RestoreSession()
+        {
+            sessionRestoreInProgress = true;
+            try
+            {
+                SessionState session = SessionManager.Load();
+                if (session != null && session.Tabs.Count > 0)
+                    await RestoreFromSession(session);
+                else
+                    await RestoreLegacyTabs();
+            }
+            catch (Exception ex)
+            {
+                ErrorLogging.LogLine("Error restoring the previous session: " + ex);
+            }
+            finally
+            {
+                sessionRestoreInProgress = false;
+            }
+
+            SyncToolbarToActiveTab();
+            ActiveViewer?.Invalidate();
+            ActiveViewer?.Focus();
+
+            StartSessionAutosave();
+            SaveSession();
+        }
+
+        private async Task RestoreFromSession(SessionState session)
+        {
+            bool firstSlotUsed = false;
+            List<string> unrestored = new List<string>();
+            foreach (SessionTabInfo tab in session.Tabs)
+            {
+                int tabIndex;
+                if (!firstSlotUsed)
+                {
+                    tabIndex = 0;              // reuse the tab created during startup
+                    firstSlotUsed = true;
+                }
+                else
+                {
+                    CreateNewTab(tab.Title);
+                    tabIndex = GraphTabControl.SelectedIndex;
+                }
+                if (tabIndex < 0 || tabIndex >= tabStates.Count) continue;
+
+                GraphTabState state = tabStates[tabIndex];
+                state.SaveFilePath        = string.IsNullOrEmpty(tab.SaveFilePath) ? null : tab.SaveFilePath;
+                state.SnapshotFile        = tab.SnapshotFile;
+                state.Title               = tab.Title;
+                state.MinorGridlinesIndex = tab.MinorGridlinesIndex;
+                state.MajorGridlinesIndex = tab.MajorGridlinesIndex;
+                state.ShowGridlines       = tab.ShowGridlines;
+
+                string snapshotJson = SessionManager.ReadSnapshot(tab.SnapshotFile);
+                bool saveFileReachable = state.SaveFilePath != null && SafeIO.FileExists(state.SaveFilePath);
+                bool loaded = false;
+
+                // Unsaved work (or an unreachable save file) -> restore from the local snapshot
+                if (tab.IsDirty || state.SaveFilePath == null || !saveFileReachable)
+                    loaded = await LoadGraphFromJsonText(tabIndex, snapshotJson, tab.IsDirty || state.SaveFilePath == null);
+
+                if (!loaded && saveFileReachable)
+                    loaded = await LoadGraphAsync(tabIndex, state.SaveFilePath);
+
+                if (!loaded && snapshotJson != null)   // save file failed to load - fall back to the snapshot
+                    loaded = await LoadGraphFromJsonText(tabIndex, snapshotJson, true);
+
+                if (!loaded)
+                {
+                    // Nothing could be loaded (unreadable file, missing preset, ...). Keep the original entry
+                    // aside so its snapshot is neither overwritten nor pruned, and give this tab a fresh one.
+                    unrestoredTabs.Add(tab);
+                    unrestored.Add(tab.Title ?? $"Tab {tabIndex + 1}");
+                    state.SnapshotFile     = null;
+                    state.LastSnapshotHash = null;
+                }
+
+                UpdateTabTitle(tabIndex);
+            }
+
+            if (session.ActiveTabIndex >= 0 && session.ActiveTabIndex < GraphTabControl.RealTabCount)
+                GraphTabControl.SelectedIndex = session.ActiveTabIndex;
+
+            if (unrestored.Count > 0)
+                MessageBox.Show(
+                    "These tabs could not be restored:\n  " + string.Join("\n  ", unrestored) +
+                    "\n\nTheir saved state is kept in:\n" + (SessionManager.SessionDirectory ?? "(session storage unavailable)") +
+                    "\n\nSee errorlog.txt for details.",
+                    "Session restore incomplete", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        /// <summary>Pre-session-file behaviour: reopen the paths stored in the settings file.</summary>
+        private async Task RestoreLegacyTabs()
         {
             List<string> paths = null;
             string json = Properties.Settings.Default.LastOpenTabs;
@@ -149,11 +267,10 @@ namespace Foreman
                 catch { }
             }
 
-            // Fall back to the legacy single-file setting if no tab list is stored yet
             if (paths == null || paths.Count == 0)
             {
                 string lastFile = Properties.Settings.Default.LastOpenFile;
-                if (!string.IsNullOrEmpty(lastFile) && File.Exists(lastFile))
+                if (SafeIO.FileExists(lastFile))
                     await LoadGraphAsync(0, lastFile);
                 return;
             }
@@ -162,7 +279,7 @@ namespace Foreman
             for (int i = 0; i < paths.Count; i++)
             {
                 string path = paths[i];
-                if (string.IsNullOrEmpty(path) || !File.Exists(path)) continue;
+                if (!SafeIO.FileExists(path)) continue;
 
                 if (!firstSlotUsed)
                 {
@@ -177,27 +294,229 @@ namespace Foreman
                     await LoadGraphAsync(GraphTabControl.SelectedIndex, path);
                 }
             }
-
-            SyncToolbarToActiveTab();
-            ActiveViewer?.Invalidate();
-            ActiveViewer?.Focus();
         }
 
-        private async Task LoadGraphAsync(int tabIndex, string path)
+        /// <summary>
+        /// Content to load for a save file. If a backup sits next to it holding newer (unsaved) work, the
+        /// user is offered that instead - the backup is left on disk either way until the graph is saved.
+        /// </summary>
+        /// <summary>"664 nodes, 1016 links" for a graph json - used to describe recovery options to the user.</summary>
+        private string DescribeGraphSize(string graphJson)
         {
-            var state  = tabStates[tabIndex];
-            var viewer = GraphTabControl.GetViewer(tabIndex);
-            if (viewer == null) return;
+            if (string.IsNullOrEmpty(graphJson)) return "unreadable";
             try
             {
-                await viewer.LoadFromJson(JObject.Parse(File.ReadAllText(path)), false, true);
+                JObject graph = (JObject)JObject.Parse(graphJson)["ProductionGraph"];
+                int nodes = (graph?["Nodes"] as JArray)?.Count ?? 0;
+                int links = (graph?["NodeLinks"] as JArray)?.Count ?? 0;
+                return $"{nodes} nodes, {links} links";
+            }
+            catch (Exception ex)
+            {
+                ErrorLogging.LogLine("Could not measure a graph for the recovery prompt: " + ex.Message);
+                return "unreadable";
+            }
+        }
+
+        private string GetJsonToLoad(string path, out bool fromBackup)
+        {
+            fromBackup = false;
+            DateTime? backupTime = GraphBackup.GetTimestamp(path);
+            DateTime? fileTime   = SafeIO.GetLastWriteTime(path);
+
+            if (backupTime != null && (fileTime == null || backupTime > fileTime))
+            {
+                string backupJson = GraphBackup.Read(path);
+                if (backupJson != null)
+                {
+                    //node counts turn this into an informed choice - a backup holding far less than the saved
+                    //file is a warning sign, not something to accept blind
+                    string backupSize = DescribeGraphSize(backupJson);
+                    string fileSize   = DescribeGraphSize(SafeIO.ReadAllText(path));
+
+                    DialogResult r = MessageBox.Show(
+                        $"\"{Path.GetFileName(path)}\" has unsaved changes from an earlier session.\n\n" +
+                        $"Backup:     {backupTime:g}   ({backupSize})\n" +
+                        $"Saved file: {(fileTime != null ? fileTime.Value.ToString("g") : "missing")}   ({fileSize})\n\n" +
+                        "Load the backup with those changes?\n" +
+                        "(Choosing No opens the saved file; the backup stays on disk until you save.)",
+                        "Unsaved changes found", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (r == DialogResult.Yes)
+                    {
+                        fromBackup = true;
+                        return backupJson;
+                    }
+                }
+            }
+            return SafeIO.ReadAllText(path);
+        }
+
+        private async Task<bool> LoadGraphAsync(int tabIndex, string path)
+        {
+            if (tabIndex < 0 || tabIndex >= tabStates.Count) return false;
+            var state  = tabStates[tabIndex];
+            var viewer = GraphTabControl.GetViewer(tabIndex);
+            if (viewer == null) return false;
+
+            string json = GetJsonToLoad(path, out bool fromBackup);
+            if (json == null) return false;
+            try
+            {
+                await viewer.LoadFromJson(JObject.Parse(json), false, true);
+                if (fromBackup) viewer.MarkDirty();   // recovered work is not in the save file yet
+                else viewer.MarkClean();
                 state.SaveFilePath = path;
                 UpdateTabTitle(tabIndex);
-                Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
+                try { Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path); }
+                catch (Exception ex) { ErrorLogging.LogLine($"Could not resolve directory of '{path}': {ex.Message}"); }
+                return true;
             }
             catch (Exception ex)
             {
                 ErrorLogging.LogLine($"Error restoring tab from '{path}': {ex.Message}");
+                return false;
+            }
+        }
+
+        private async Task<bool> LoadGraphFromJsonText(int tabIndex, string graphJson, bool markDirty)
+        {
+            if (string.IsNullOrEmpty(graphJson)) return false;
+            var viewer = GraphTabControl.GetViewer(tabIndex);
+            if (viewer == null) return false;
+            try
+            {
+                await viewer.LoadFromJson(JObject.Parse(graphJson), false, true);
+                if (markDirty) viewer.MarkDirty();
+                else viewer.MarkClean();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ErrorLogging.LogLine($"Error restoring tab {tabIndex + 1} from its session snapshot: {ex.Message}");
+                return false;
+            }
+        }
+
+        //---------------------------------------------------------Session autosave
+
+        private void StartSessionAutosave()
+        {
+            if (sessionAutosaveTimer != null) return;
+            sessionAutosaveTimer = new Timer { Interval = SessionAutosaveIntervalMs };
+            sessionAutosaveTimer.Tick += SessionAutosaveTimer_Tick;
+            sessionAutosaveTimer.Start();
+        }
+
+        private void SessionAutosaveTimer_Tick(object sender, EventArgs e)
+        {
+            for (int i = 0; i < GraphTabControl.RealTabCount; i++)
+                UpdateTabTitle(i);
+            SaveSession();
+        }
+
+        /// <summary>
+        /// Writes every open tab (graph, save path, dirty state, gridline options) to the local session
+        /// directory. Never throws: if the session store is unavailable the call is a logged no-op.
+        /// </summary>
+        private void SaveSession()
+        {
+            if (sessionRestoreInProgress || !SessionManager.IsAvailable) return;
+            try
+            {
+                SessionState session = new SessionState
+                {
+                    SavedUtc       = DateTime.UtcNow,
+                    ActiveTabIndex = Math.Max(0, Math.Min(GraphTabControl.SelectedIndex, GraphTabControl.RealTabCount - 1)),
+                };
+
+                for (int i = 0; i < GraphTabControl.RealTabCount && i < tabStates.Count; i++)
+                {
+                    var viewer = GraphTabControl.GetViewer(i);
+                    var state  = tabStates[i];
+                    if (viewer == null) continue;
+
+                    // Two states where persisting would replace good data with nothing: a graph that is mid-load
+                    // (cleared, nodes not back yet) and a file-backed tab that is somehow empty. Keep what is
+                    // already stored and try again on the next pass.
+                    bool midLoad     = viewer.IsLoading;
+                    bool emptyBacked = state.SaveFilePath != null && !viewer.Graph.Nodes.Any();
+                    if (midLoad || emptyBacked)
+                    {
+                        if (emptyBacked && !midLoad)
+                            ErrorLogging.LogLine($"Tab {i + 1} ('{GetTabBaseTitle(i)}') has a save file but no nodes - keeping the previous snapshot and backup.");
+                        session.Tabs.Add(new SessionTabInfo
+                        {
+                            Title               = GetTabBaseTitle(i),
+                            SaveFilePath        = state.SaveFilePath,
+                            SnapshotFile        = state.SnapshotFile,
+                            IsDirty             = viewer.IsDirty,
+                            MinorGridlinesIndex = state.MinorGridlinesIndex,
+                            MajorGridlinesIndex = state.MajorGridlinesIndex,
+                            ShowGridlines       = state.ShowGridlines,
+                        });
+                        continue;
+                    }
+
+                    string graphJson = null;
+                    try { graphJson = GetGraphJson(viewer); }
+                    catch (Exception ex) { ErrorLogging.LogLine($"Could not serialize tab {i + 1} for the session: {ex.Message}"); }
+
+                    if (graphJson != null)
+                    {
+                        int hash = graphJson.GetHashCode();
+                        if (state.SnapshotFile == null || state.LastSnapshotHash != hash)
+                        {
+                            string snapshotFile = SessionManager.WriteSnapshot(state.SnapshotFile, graphJson);
+                            if (snapshotFile != null)
+                            {
+                                state.SnapshotFile     = snapshotFile;
+                                state.LastSnapshotHash = hash;
+                            }
+                        }
+
+                        // Second copy for tabs backed by a file: a .bak right next to the graph itself,
+                        // so unsaved work is recoverable even without this machine's session store.
+                        if (state.SaveFilePath != null && viewer.IsDirty)
+                            GraphBackup.Write(state.SaveFilePath, graphJson);
+                    }
+
+                    session.Tabs.Add(new SessionTabInfo
+                    {
+                        Title               = GetTabBaseTitle(i),
+                        SaveFilePath        = state.SaveFilePath,
+                        SnapshotFile        = state.SnapshotFile,
+                        IsDirty             = viewer.IsDirty,
+                        MinorGridlinesIndex = state.MinorGridlinesIndex,
+                        MajorGridlinesIndex = state.MajorGridlinesIndex,
+                        ShowGridlines       = state.ShowGridlines,
+                    });
+                }
+
+                //tabs that failed to restore ride along untouched so their snapshots survive to the next launch
+                session.Tabs.AddRange(unrestoredTabs);
+
+                SessionManager.Save(session);
+                SessionManager.PruneUnusedSnapshots(session.Tabs.Select(t => t.SnapshotFile));
+            }
+            catch (Exception ex)
+            {
+                ErrorLogging.LogLine("Could not save the session state: " + ex.Message);
+            }
+        }
+
+        /// <summary>Called by the global error handler - preserves open tabs before a crash is reported.</summary>
+        public void TrySaveSessionAfterError()
+        {
+            try
+            {
+                if (InvokeRequired)
+                    Invoke((MethodInvoker)(() => SaveSession()));
+                else
+                    SaveSession();
+            }
+            catch (Exception ex)
+            {
+                ErrorLogging.LogLine("Emergency session save failed: " + ex.Message);
             }
         }
 
@@ -238,6 +557,7 @@ namespace Foreman
             string tabTitle = title ?? $"New Graph {_newTabCounter}";
             var viewer = new ProductionGraphViewer();
             viewer.KeyDown += GraphViewer_KeyDown;
+            viewer.DirtyStateChanged += Viewer_DirtyStateChanged;
 
             var srcViewer = ActiveViewer;
             if (srcViewer?.DCache != null)
@@ -255,9 +575,11 @@ namespace Foreman
                 MinorGridlinesIndex = Properties.Settings.Default.MinorGridlines,
                 MajorGridlinesIndex = Properties.Settings.Default.MajorGridlines,
                 ShowGridlines       = Properties.Settings.Default.AltGridlines,
+                Title               = tabTitle,
             };
             tabStates.Add(state);
             GraphTabControl.AddGraphTab(viewer, tabTitle);
+            SaveSession();
         }
 
         private void CloseTab(int index)
@@ -270,9 +592,11 @@ namespace Foreman
             }
             if (!TestTabSavedStatus(index)) return;
             tabStates[index].SummaryForm?.Close();
+            SessionManager.DeleteSnapshot(tabStates[index].SnapshotFile);
             tabStates.RemoveAt(index);
             GraphTabControl.RemoveGraphTab(index);
             UpdateTitleBar();
+            SaveSession();
         }
 
         private void SyncToolbarToActiveTab()
@@ -316,16 +640,45 @@ namespace Foreman
         {
             var state = ActiveTabState;
             string path = state?.SaveFilePath ?? "Untitled";
-            this.Text = $"{DefaultAppName} ({Properties.Settings.Default.CurrentPresetName}) - {path}";
+            string unsavedMarker = (ActiveViewer?.IsDirty ?? false) ? " *" : "";
+            this.Text = $"{DefaultAppName} ({Properties.Settings.Default.CurrentPresetName}) - {path}{unsavedMarker}";
+        }
+
+        /// <summary>Keeps the unsaved marker on the tab header and title bar in step with the graph.</summary>
+        private void Viewer_DirtyStateChanged(object sender, EventArgs e)
+        {
+            for (int i = 0; i < GraphTabControl.RealTabCount; i++)
+            {
+                if (!ReferenceEquals(GraphTabControl.GetViewer(i), sender)) continue;
+                UpdateTabTitle(i);
+                if (i == GraphTabControl.SelectedIndex)
+                    UpdateTitleBar();
+                return;
+            }
+        }
+
+        /// <summary>Tab header without the unsaved-changes marker.</summary>
+        private string GetTabBaseTitle(int tabIndex)
+        {
+            if (tabIndex < 0 || tabIndex >= tabStates.Count) return $"New Graph {tabIndex + 1}";
+            string path = tabStates[tabIndex].SaveFilePath;
+            if (path != null)
+            {
+                try { return Path.GetFileNameWithoutExtension(path); }
+                catch { return path; }
+            }
+            return tabStates[tabIndex].Title ?? $"New Graph {tabIndex + 1}";
         }
 
         private void UpdateTabTitle(int tabIndex)
         {
             if (tabIndex < 0 || tabIndex >= tabStates.Count) return;
-            string path = tabStates[tabIndex].SaveFilePath;
-            string label = path != null
-                ? Path.GetFileNameWithoutExtension(path)
-                : $"New Graph {tabIndex + 1}";
+            string label = GetTabBaseTitle(tabIndex);
+            var viewer = GraphTabControl.GetViewer(tabIndex);
+            //marker goes in front: tabs are a fixed width and long names are drawn with an ellipsis,
+            //which would swallow a trailing marker exactly on the graphs most likely to be unsaved
+            if (viewer != null && viewer.IsDirty)
+                label = "* " + label;
             GraphTabControl.SetTabTitle(tabIndex, label);
         }
 
@@ -371,21 +724,22 @@ namespace Foreman
 
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            for (int i = 0; i < GraphTabControl.RealTabCount; i++)
+            // No save prompts on exit: every tab - saved, modified or brand new - is written to the local
+            // session store below and comes back exactly as it was on the next launch.
+            sessionAutosaveTimer?.Stop();
+            SaveSession();
+
+            // Persist the file path of every saved tab as well (used if the session store is unavailable)
+            try
             {
-                if (!TestTabSavedStatus(i))
-                {
-                    e.Cancel = true;
-                    return;
-                }
+                var openPaths = tabStates
+                    .Select(s => s.SaveFilePath ?? "")
+                    .ToList();
+                Properties.Settings.Default.LastOpenTabs = JsonConvert.SerializeObject(openPaths);
+                Properties.Settings.Default.LastOpenFile = ActiveTabState?.SaveFilePath ?? "";
             }
-            // Persist the file path of every saved tab so they reopen on next launch
-            var openPaths = tabStates
-                .Select(s => s.SaveFilePath ?? "")
-                .ToList();
-            Properties.Settings.Default.LastOpenTabs = JsonConvert.SerializeObject(openPaths);
-            Properties.Settings.Default.LastOpenFile = ActiveTabState?.SaveFilePath ?? "";
-            Properties.Settings.Default.Save();
+            catch (Exception ex) { ErrorLogging.LogLine("Could not record the open tab list: " + ex.Message); }
+            SafeSettings.Save();
         }
 
         private void SaveGraphAs() => SaveGraphAs(GraphTabControl.SelectedIndex);
@@ -396,19 +750,17 @@ namespace Foreman
                 dialog.DefaultExt    = ".fjson";
                 dialog.Filter        = "Foreman files (*.fjson)|*.fjson|All files|*.*";
                 string lastSaveDir   = Properties.Settings.Default.LastSaveFileLocation;
-                dialog.InitialDirectory = (!string.IsNullOrEmpty(lastSaveDir) && Directory.Exists(lastSaveDir))
-                    ? lastSaveDir
-                    : Path.Combine(Application.StartupPath, "Saved Graphs");
-                if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
-                    Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
+                string defaultDir    = GetSavedGraphsDirectory();
+                dialog.InitialDirectory = SafeIO.DirectoryExists(lastSaveDir) ? lastSaveDir : defaultDir;
                 dialog.AddExtension    = true;
                 dialog.OverwritePrompt = true;
                 dialog.FileName        = "Flowchart.fjson";
                 if (dialog.ShowDialog() != DialogResult.OK) return;
                 if (SaveGraph(tabIndex, dialog.FileName))
                 {
-                    Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(dialog.FileName);
-                    Properties.Settings.Default.Save();
+                    try { Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(dialog.FileName); }
+                    catch (Exception ex) { ErrorLogging.LogLine($"Could not resolve directory of '{dialog.FileName}': {ex.Message}"); }
+                    SafeSettings.Save();
                 }
             }
         }
@@ -424,20 +776,44 @@ namespace Foreman
             writer.Close();
             return sb.ToString();
         }
+        /// <summary>The default "Saved Graphs" folder - returns the startup path itself if it cannot be created.</summary>
+        private string GetSavedGraphsDirectory()
+        {
+            try
+            {
+                string dir = Path.Combine(Application.StartupPath, "Saved Graphs");
+                return SafeIO.EnsureDirectory(dir) ? dir : Application.StartupPath;
+            }
+            catch (Exception ex)
+            {
+                ErrorLogging.LogLine("Could not resolve the Saved Graphs folder: " + ex.Message);
+                return "";
+            }
+        }
+
         private bool SaveGraph(int tabIndex, string path)
         {
+            if (tabIndex < 0 || tabIndex >= tabStates.Count) return false;
             var state  = tabStates[tabIndex];
             var viewer = GraphTabControl.GetViewer(tabIndex);
             if (viewer == null) return false;
+            string previousPath = state.SaveFilePath;
             try
             {
                 string json = GetGraphJson(viewer);
                 File.WriteAllText(path, json);
                 state.SaveFilePath = path;
                 viewer.MarkClean();
+
+                // the saved file now holds this content - drop the backups that were standing in for it
+                GraphBackup.Delete(path);
+                if (previousPath != null && previousPath != path)
+                    GraphBackup.Delete(previousPath);
+
                 UpdateTabTitle(tabIndex);
                 if (tabIndex == GraphTabControl.SelectedIndex)
                     UpdateTitleBar();
+                SaveSession();
                 return true;
             }
             catch (Exception ex)
@@ -455,12 +831,8 @@ namespace Foreman
             using (var dialog = new OpenFileDialog())
             {
                 dialog.Filter = "Foreman files (*.fjson)|*.fjson|Old Foreman files (*.json)|*.json";
-                if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
-                    Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
                 string lastLoadDir = Properties.Settings.Default.LastSaveFileLocation;
-                dialog.InitialDirectory = (!string.IsNullOrEmpty(lastLoadDir) && Directory.Exists(lastLoadDir))
-                    ? lastLoadDir
-                    : Path.Combine(Application.StartupPath, "Saved Graphs");
+                dialog.InitialDirectory = SafeIO.DirectoryExists(lastLoadDir) ? lastLoadDir : GetSavedGraphsDirectory();
                 dialog.CheckFileExists = true;
                 if (dialog.ShowDialog() != DialogResult.OK) return;
                 LoadGraph(dialog.FileName);
@@ -471,12 +843,23 @@ namespace Foreman
         {
             int tabIndex = GraphTabControl.SelectedIndex;
             var state    = ActiveTabState;
+            if (state == null || ActiveViewer == null) return;
+
+            string json = GetJsonToLoad(path, out bool fromBackup);
+            if (json == null)
+            {
+                MessageBox.Show("Could not read this file. See log for more details");
+                return;
+            }
             try
             {
-                await ActiveViewer.LoadFromJson(JObject.Parse(File.ReadAllText(path)), false, true);
+                await ActiveViewer.LoadFromJson(JObject.Parse(json), false, true);
+                if (fromBackup) ActiveViewer.MarkDirty();   // recovered work is not in the save file yet
+                else ActiveViewer.MarkClean();
                 state.SaveFilePath = path;
                 UpdateTabTitle(tabIndex);
-                Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
+                try { Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path); }
+                catch (Exception ex) { ErrorLogging.LogLine($"Could not resolve directory of '{path}': {ex.Message}"); }
             }
             catch (Exception ex)
             {
@@ -486,15 +869,17 @@ namespace Foreman
             }
 
             var v = ActiveViewer;
+            if (v == null) return;
             Properties.Settings.Default.EnableExtraProductivityForNonMiners = v.Graph.EnableExtraProductivityForNonMiners;
             Properties.Settings.Default.DefaultRateUnit        = (int)v.Graph.SelectedRateUnit;
             Properties.Settings.Default.DefaultAssemblerOption = (int)v.Graph.AssemblerSelector.DefaultSelectionStyle;
             Properties.Settings.Default.DefaultModuleOption    = (int)v.Graph.ModuleSelector.DefaultSelectionStyle;
             Properties.Settings.Default.DefaultNodeDirection   = (int)v.Graph.DefaultNodeDirection;
-            Properties.Settings.Default.Save();
+            SafeSettings.Save();
             SyncToolbarToActiveTab();
             v.Invalidate();
             UpdateTitleBar();
+            SaveSession();
         }
 
         private void NewGraph()
@@ -519,21 +904,19 @@ namespace Foreman
             }
             ApplyViewerSettings(v);
             state.SaveFilePath = null;
+            state.Title = $"New Graph {GraphTabControl.SelectedIndex + 1}";
             UpdateTabTitle(GraphTabControl.SelectedIndex);
-            Properties.Settings.Default.Save();
+            SafeSettings.Save();
             UpdateTitleBar();
+            SaveSession();
         }
 
 		private void ImportGraph()
 		{
 			OpenFileDialog dialog = new OpenFileDialog();
 			dialog.Filter = "Foreman files (*.fjson)|*.fjson|Old Foreman files (*.json)|*.json";
-			if (!Directory.Exists(Path.Combine(Application.StartupPath, "Saved Graphs")))
-				Directory.CreateDirectory(Path.Combine(Application.StartupPath, "Saved Graphs"));
             string lastLoadDir = Properties.Settings.Default.LastSaveFileLocation;
-            dialog.InitialDirectory = (!string.IsNullOrEmpty(lastLoadDir) && Directory.Exists(lastLoadDir))
-                ? lastLoadDir
-                : Path.Combine(Application.StartupPath, "Saved Graphs");
+            dialog.InitialDirectory = SafeIO.DirectoryExists(lastLoadDir) ? lastLoadDir : GetSavedGraphsDirectory();
             dialog.CheckFileExists = true;
 			if (dialog.ShowDialog() != DialogResult.OK)
 				return;
@@ -545,13 +928,19 @@ namespace Foreman
         {
             var v = ActiveViewer;
             if (v == null) return;
+            string json = SafeIO.ReadAllText(path);
+            if (json == null)
+            {
+                MessageBox.Show("Could not read this file. See log for more details");
+                return;
+            }
             try
             {
                 v.ImportNodesFromJson(
-                    (JObject)JObject.Parse(File.ReadAllText(path))["ProductionGraph"],
+                    (JObject)JObject.Parse(json)["ProductionGraph"],
                     v.ScreenToGraph(new Point(v.Width / 2, v.Height / 2)), true);
                 Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(path);
-                Properties.Settings.Default.Save();
+                SafeSettings.Save();
             }
             catch (Exception ex)
             {
@@ -563,6 +952,7 @@ namespace Foreman
 
         private bool TestTabSavedStatus(int tabIndex)
         {
+            if (tabIndex < 0 || tabIndex >= tabStates.Count) return true;
             var state  = tabStates[tabIndex];
             var viewer = GraphTabControl.GetViewer(tabIndex);
             if (viewer == null) return true;
@@ -577,7 +967,7 @@ namespace Foreman
                 return true;
             }
 
-            if (!File.Exists(state.SaveFilePath))
+            if (!SafeIO.FileExists(state.SaveFilePath))
                 return MessageBox.Show(
                     $"Tab \"{tabLabel}\" save file has been deleted!\nIf you continue you will lose it forever!",
                     "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
@@ -608,8 +998,16 @@ namespace Foreman
 		{
 			List<Preset> presets = new List<Preset>();
 			List<string> existingPresetFiles = new List<string>();
-			foreach (string presetFile in Directory.GetFiles(Path.Combine(Application.StartupPath, "Presets"), "*.pjson"))
-				if (File.Exists(Path.ChangeExtension(presetFile, "dat")))
+			string[] presetFiles;
+			try { presetFiles = Directory.GetFiles(Path.Combine(Application.StartupPath, "Presets"), "*.pjson"); }
+			catch (Exception ex) //the install location can be a network share that just went away
+			{
+				ErrorLogging.LogLine("Could not read the Presets folder: " + ex.Message);
+				MessageBox.Show("The Presets folder could not be read (" + ex.Message + ").\nCheck that Foreman's install location is still accessible.");
+				return null;
+			}
+			foreach (string presetFile in presetFiles)
+				if (SafeIO.FileExists(Path.ChangeExtension(presetFile, "dat")))
 					existingPresetFiles.Add(Path.GetFileNameWithoutExtension(presetFile));
 			existingPresetFiles.Sort();
 
@@ -633,7 +1031,7 @@ namespace Foreman
 			foreach (string presetName in existingPresetFiles)
 				presets.Add(new Preset(presetName, false, false));
 
-			Properties.Settings.Default.Save();
+			SafeSettings.Save();
 			return presets;
 		}
 
@@ -645,6 +1043,11 @@ namespace Foreman
             SettingsForm.SettingsFormOptions options = new SettingsForm.SettingsFormOptions(activeViewer.DCache);
 
             options.Presets        = GetValidPresetsList();
+            if (options.Presets == null || options.Presets.Count == 0)
+            {
+                MessageBox.Show("No presets are available - settings cannot be opened.");
+                return;
+            }
             options.SelectedPreset = options.Presets[0];
 
             options.QualitySteps           = activeViewer.Graph.MaxQualitySteps;
@@ -766,7 +1169,7 @@ namespace Foreman
                     Properties.Settings.Default.AbbreviateSciPacks         = options.AbbreviateSciPacks;
                     Properties.Settings.Default.EnableExtraProductivityForNonMiners = options.EnableExtraProductivityForNonMiners;
                     Properties.Settings.Default.ShowUnavailable            = options.DEV_ShowUnavailableItems;
-                    Properties.Settings.Default.Save();
+                    SafeSettings.Save();
 
                     for (int _ti = 0; _ti < GraphTabControl.RealTabCount; _ti++)
                     {
@@ -881,7 +1284,7 @@ namespace Foreman
             Properties.Settings.Default.DefaultRateUnit = RateOptionsDropDown.SelectedIndex;
             v.Graph.SelectedRateUnit = (ProductionGraph.RateUnit)RateOptionsDropDown.SelectedIndex;
             v.MarkDirty();
-            Properties.Settings.Default.Save();
+            SafeSettings.Save();
             v.Graph.UpdateNodeValues();
         }
 
@@ -904,7 +1307,7 @@ namespace Foreman
             if (v == null) return;
             v.IconsOnly = IconViewCheckBox.Checked;
             Properties.Settings.Default.IconsOnlyView = IconViewCheckBox.Checked;
-            Properties.Settings.Default.Save();
+            SafeSettings.Save();
             v.Invalidate();
         }
 
@@ -944,7 +1347,7 @@ namespace Foreman
                 v.Invalidate();
             }
             Properties.Settings.Default.MinorGridlines = MinorGridlinesDropDown.SelectedIndex;
-            Properties.Settings.Default.Save();
+            SafeSettings.Save();
             if (ActiveTabState != null) ActiveTabState.MinorGridlinesIndex = MinorGridlinesDropDown.SelectedIndex;
         }
 
@@ -962,7 +1365,7 @@ namespace Foreman
                 v.Invalidate();
             }
             Properties.Settings.Default.MajorGridlines = MajorGridlinesDropDown.SelectedIndex;
-            Properties.Settings.Default.Save();
+            SafeSettings.Save();
             if (ActiveTabState != null) ActiveTabState.MajorGridlinesIndex = MajorGridlinesDropDown.SelectedIndex;
         }
 
@@ -977,13 +1380,83 @@ namespace Foreman
                 v.Invalidate();
             }
             Properties.Settings.Default.AltGridlines = GridlinesCheckbox.Checked;
-            Properties.Settings.Default.Save();
+            SafeSettings.Save();
             if (ActiveTabState != null) ActiveTabState.ShowGridlines = GridlinesCheckbox.Checked;
         }
 
         private void AlignSelectionButton_Click(object sender, EventArgs e)
         {
             ActiveViewer?.AlignSelected();
+        }
+
+        //---------------------------------------------------------link tracing controls
+        //selection highlighting is a working preference rather than a property of any one graph, so it lives in
+        //application settings and applies to every open tab at once
+
+        private CheckBox linkTracingCheckbox;
+        private ComboBox linkTraceWidthDropDown;
+
+        private static readonly int[] linkTraceWidths = new int[] { 6, 10, 14, 20, 28, 40 };
+
+        private void BuildLinkTracingControls()
+        {
+            GridlinesTable.RowCount += 2;
+            GridlinesTable.RowStyles.Add(new RowStyle());
+            GridlinesTable.RowStyles.Add(new RowStyle());
+
+            linkTracingCheckbox = new CheckBox()
+            {
+                Text = "Trace selected links",
+                AutoSize = true,
+                Checked = Properties.Settings.Default.ShowLinkTracing
+            };
+            linkTracingCheckbox.CheckedChanged += LinkTracingCheckbox_CheckedChanged;
+            GridlinesTable.Controls.Add(linkTracingCheckbox, 0, 3);
+            GridlinesTable.SetColumnSpan(linkTracingCheckbox, 2);
+
+            GridlinesTable.Controls.Add(new Label() { Text = "Trace size", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 4);
+
+            linkTraceWidthDropDown = new ComboBox() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(2) };
+            foreach (int width in linkTraceWidths)
+                linkTraceWidthDropDown.Items.Add(width.ToString());
+            SelectCurrentTraceWidth();
+            linkTraceWidthDropDown.SelectedIndexChanged += LinkTraceWidthDropDown_SelectedIndexChanged;
+            GridlinesTable.Controls.Add(linkTraceWidthDropDown, 1, 4);
+        }
+
+        //an existing saved value need not be one of the presets, so fall back to the nearest rather than clearing it
+        private void SelectCurrentTraceWidth()
+        {
+            int current = Properties.Settings.Default.LinkTraceWidth;
+            int bestIndex = 0;
+            for (int i = 1; i < linkTraceWidths.Length; i++)
+                if (Math.Abs(linkTraceWidths[i] - current) < Math.Abs(linkTraceWidths[bestIndex] - current))
+                    bestIndex = i;
+            linkTraceWidthDropDown.SelectedIndex = bestIndex;
+        }
+
+        private void LinkTracingCheckbox_CheckedChanged(object sender, EventArgs e)
+        {
+            Properties.Settings.Default.ShowLinkTracing = linkTracingCheckbox.Checked;
+            SafeSettings.Save();
+            InvalidateAllViewers();
+        }
+
+        private void LinkTraceWidthDropDown_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (linkTraceWidthDropDown.SelectedIndex < 0)
+                return;
+            Properties.Settings.Default.LinkTraceWidth = linkTraceWidths[linkTraceWidthDropDown.SelectedIndex];
+            SafeSettings.Save();
+            InvalidateAllViewers();
+        }
+
+        private void InvalidateAllViewers()
+        {
+            foreach (TabPage page in GraphTabControl.TabPages)
+                foreach (Control control in page.Controls)
+                    if (control is ProductionGraphViewer viewer)
+                        viewer.Invalidate();
         }
 
         private void GraphViewer_KeyDown(object sender, KeyEventArgs e)

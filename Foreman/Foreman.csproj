@@ -273,7 +273,9 @@
     </Compile>
     <Compile Include="ProductionGraphView\GridManager.cs" />
     <Compile Include="ProductionGraphView\Elements\ItemTabElement.cs" />
-    <Compile Include="Forms\GraphTabControl.cs" />
+    <Compile Include="Forms\GraphTabControl.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="Forms\MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -288,6 +290,8 @@
     <Compile Include="ProductionGraphView\NodeCopyOptions.cs" />
     <Compile Include="ProductionGraphView\PointingArrowRenderer.cs" />
     <Compile Include="ProductionGraphView\RecipeNodeSnapshot.cs" />
+    <Compile Include="SafeIO.cs" />
+    <Compile Include="SessionManager.cs" />
     <Compile Include="Settings.cs" />
     <Compile Include="VersionUpdater.cs" />
     <Compile Include="Program.cs" />

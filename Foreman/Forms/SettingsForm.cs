@@ -92,6 +92,143 @@ namespace Foreman
         private ListBox FilePresetListBox;
         private Button RemoveFilePresetButton;
 
+        //---------------------------------------------------------utility items tab
+        //built in code rather than the designer: it is the one page whose contents belong to the active graph rather
+        //than to the application, and keeping it out of the generated file makes that separation obvious
+
+        private ProductionGraphViewer utilityViewer;
+        private CheckedListBox utilityTrackedList;
+        private TextBox utilityFilterBox;
+        private ListBox utilityCandidateList;
+
+        private class UtilityEntry
+        {
+            public readonly ItemQualityPair Item;
+            public UtilityEntry(ItemQualityPair item) { Item = item; }
+            public override string ToString() { return Item.Item.FriendlyName + "  (" + Item.Quality.Name + ")"; }
+        }
+
+        private void BuildUtilityItemsTab()
+        {
+            TabPage page = new TabPage("Utility Items");
+            MainTabControl.TabPages.Add(page);
+
+            utilityViewer = mainForm?.ActiveViewer;
+            if (utilityViewer == null)
+            {
+                page.Controls.Add(new Label() { Text = "No graph is open.", AutoSize = true, Location = new Point(14, 14) });
+                return;
+            }
+
+            page.Controls.Add(new Label()
+            {
+                Text = "Utility items belong to the current graph, not to Foreman as a whole.\nA ticked item has its links drawn as short stubs instead of full lines.",
+                AutoSize = true,
+                Location = new Point(14, 12)
+            });
+
+            GroupBox trackedBox = new GroupBox() { Text = "Tracked items  (ticked = hidden)", Location = new Point(14, 56), Size = new Size(310, 330) };
+            utilityTrackedList = new CheckedListBox() { Location = new Point(10, 24), Size = new Size(290, 258), CheckOnClick = true, IntegralHeight = false };
+            utilityTrackedList.ItemCheck += UtilityTrackedList_ItemCheck;
+            Button removeButton = new Button() { Text = "Remove", Location = new Point(10, 292), Size = new Size(96, 27) };
+            removeButton.Click += UtilityRemoveButton_Click;
+            trackedBox.Controls.Add(utilityTrackedList);
+            trackedBox.Controls.Add(removeButton);
+            page.Controls.Add(trackedBox);
+
+            GroupBox addBox = new GroupBox() { Text = "Add an item", Location = new Point(336, 56), Size = new Size(310, 330) };
+            utilityFilterBox = new TextBox() { Location = new Point(10, 24), Size = new Size(290, 22) };
+            utilityFilterBox.TextChanged += UtilityFilterBox_TextChanged;
+            utilityCandidateList = new ListBox() { Location = new Point(10, 52), Size = new Size(290, 230), IntegralHeight = false };
+            utilityCandidateList.DoubleClick += UtilityAddButton_Click;
+            Button addButton = new Button() { Text = "Add", Location = new Point(10, 292), Size = new Size(96, 27) };
+            addButton.Click += UtilityAddButton_Click;
+            addBox.Controls.Add(utilityFilterBox);
+            addBox.Controls.Add(utilityCandidateList);
+            addBox.Controls.Add(addButton);
+            page.Controls.Add(addBox);
+
+            RefreshUtilityTrackedList();
+            RefreshUtilityCandidates();
+        }
+
+        //sorted by item first so the quality tiers of one thing sit together rather than scattering alphabetically
+        private static int CompareUtilityEntries(ItemQualityPair a, ItemQualityPair b)
+        {
+            int byItem = string.Compare(a.Item.FriendlyName, b.Item.FriendlyName, StringComparison.OrdinalIgnoreCase);
+            return byItem != 0 ? byItem : a.Quality.Level.CompareTo(b.Quality.Level);
+        }
+
+        private void RefreshUtilityTrackedList()
+        {
+            utilityTrackedList.Items.Clear();
+            List<KeyValuePair<ItemQualityPair, bool>> tracked = new List<KeyValuePair<ItemQualityPair, bool>>(utilityViewer.Graph.UtilityItems);
+            tracked.Sort((a, b) => CompareUtilityEntries(a.Key, b.Key));
+            foreach (KeyValuePair<ItemQualityPair, bool> entry in tracked)
+                utilityTrackedList.Items.Add(new UtilityEntry(entry.Key), entry.Value);
+        }
+
+        private void UtilityTrackedList_ItemCheck(object sender, ItemCheckEventArgs e)
+        {
+            if (utilityTrackedList.Items[e.Index] is UtilityEntry entry)
+                utilityViewer.SetUtilityItemHidden(entry.Item, e.NewValue == CheckState.Checked);
+        }
+
+        private void UtilityRemoveButton_Click(object sender, EventArgs e)
+        {
+            if (!(utilityTrackedList.SelectedItem is UtilityEntry entry))
+                return;
+            utilityViewer.RemoveUtilityItem(entry.Item);
+            RefreshUtilityTrackedList();
+            RefreshUtilityCandidates();
+        }
+
+        private void UtilityFilterBox_TextChanged(object sender, EventArgs e) { RefreshUtilityCandidates(); }
+
+        private void RefreshUtilityCandidates()
+        {
+            utilityCandidateList.Items.Clear();
+            string filter = utilityFilterBox.Text.Trim();
+            //every item crossed with every quality is far too long a list to be useful, so it stays empty until the
+            //filter narrows it - which is also the fastest way to add something you would otherwise hunt for
+            if (filter.Length < 2)
+            {
+                utilityCandidateList.Items.Add("(type at least two letters)");
+                return;
+            }
+
+            List<ItemQualityPair> matches = new List<ItemQualityPair>();
+            foreach (var item in utilityViewer.DCache.Items.Values)
+            {
+                if (item.FriendlyName.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                foreach (var quality in utilityViewer.DCache.AvailableQualities)
+                {
+                    ItemQualityPair pair = new ItemQualityPair(item, quality);
+                    if (!utilityViewer.Graph.UtilityItems.ContainsKey(pair))
+                        matches.Add(pair);
+                }
+                if (matches.Count > 300)
+                    break;
+            }
+
+            matches.Sort(CompareUtilityEntries);
+            foreach (ItemQualityPair match in matches)
+                utilityCandidateList.Items.Add(new UtilityEntry(match));
+            if (utilityCandidateList.Items.Count == 0)
+                utilityCandidateList.Items.Add("(no matches)");
+        }
+
+        private void UtilityAddButton_Click(object sender, EventArgs e)
+        {
+            if (!(utilityCandidateList.SelectedItem is UtilityEntry entry))
+                return;
+            //added items start hidden - that is why you went looking for them
+            utilityViewer.SetUtilityItemHidden(entry.Item, true);
+            RefreshUtilityTrackedList();
+            RefreshUtilityCandidates();
+        }
+
         public SettingsForm(SettingsFormOptions options, MainForm mainForm)
 		{
 			Options = options;
@@ -104,6 +241,7 @@ namespace Foreman
 			MainForm.SetDoubleBuffered(QualityListView);
 
 			this.mainForm = mainForm;
+			BuildUtilityItemsTab();
 
 			AssemblerListView.Columns[0].Width = AssemblerListView.Width - 32;
 			MinerListView.Columns[0].Width = MinerListView.Width - 32;

@@ -232,7 +232,7 @@ namespace Foreman
 						SaveFileInfo.Recipes.Add((string)objJToken["name"], (bool)objJToken["enabled"]);
 
 					Properties.Settings.Default.LastSaveFileLocation = Path.GetDirectoryName(saveFilePath);
-					Properties.Settings.Default.Save();
+					SafeSettings.Save();
 					return DialogResult.OK;
 				}
 				catch
