@@ -104,35 +104,60 @@ function request_group_name(player)
     return "Foreman2 " .. player.name
 end
 
+-- The player's actual character entity, regardless of which controller (remote,
+-- god, etc.) they currently have active. Our own search/pin feature
+-- (search_for_entity) switches the player to the remote controller, and
+-- player.character alone was not enough to find the character through that -
+-- get_associated_characters() is the API's documented way to do it.
+function get_player_character(player)
+    local character = player.character
+    if character and character.valid then return character end
+
+    local ok, associated = pcall(function() return player.get_associated_characters() end)
+    if ok and associated then
+        for _, candidate in pairs(associated) do
+            if candidate and candidate.valid then return candidate end
+        end
+    end
+
+    return nil
+end
+
 -- The character's requester point. get_requester_point() is the 2.1 spelling,
 -- get_logistic_point() the 2.0 one; reading a member a LuaObject does not have
 -- raises, so both lookups go through pcall.
 --
 -- Queried against the character entity, not the player: LuaControl methods act
--- on whatever the player currently controls, and our own search/pin feature
--- (search_for_entity) switches the player to the remote controller, which has
--- no controlled entity. The character - and its logistic point - still exists
--- in the world the whole time, so go straight to it.
+-- on whatever the player currently controls, and remote view (see
+-- get_player_character above) leaves nothing controlled. The character - and
+-- its logistic point - still exists in the world the whole time, so go
+-- straight to it.
+-- Second return value is a diagnostic string for the failure case, surfaced by
+-- request_task_item so we can tell "no character" apart from "no point" apart
+-- from "point exists but pcall errored" without guessing.
 function get_requester_point(player)
-    local character = player.character
-    if not character or not character.valid then return nil end
+    local character = get_player_character(player)
+    if not character then return nil, "no character (player.character and get_associated_characters both empty)" end
 
     local ok, point = pcall(function() return character.get_requester_point() end)
     if ok and point and point.valid then return point end
+    local reason1 = ok and "get_requester_point() returned nil" or ("get_requester_point() errored: " .. tostring(point))
 
     ok, point = pcall(function()
         return character.get_logistic_point(defines.logistic_member_index.character_requester)
     end)
     if ok and point and point.valid then return point end
+    local reason2 = ok and "get_logistic_point() returned nil" or ("get_logistic_point() errored: " .. tostring(point))
 
-    return nil
+    return nil, reason1 .. "; " .. reason2
 end
 
 -- Our section on that point. Creates it when `create` is set, otherwise returns
--- nil if we have never made a request for this player.
+-- nil if we have never made a request for this player. Second return value is
+-- a diagnostic string, see get_requester_point above.
 function get_request_section(player, create)
-    local point = get_requester_point(player)
-    if not point then return nil end
+    local point, reason = get_requester_point(player)
+    if not point then return nil, reason end
 
     local group = request_group_name(player)
     for i = 1, point.sections_count do
@@ -142,16 +167,16 @@ function get_request_section(player, create)
         end
     end
 
-    if not create then return nil end
-    local ok, section = pcall(point.add_section, point, group)
+    if not create then return nil, "no section yet for group '" .. group .. "'" end
+    local ok, section = pcall(function() return point.add_section(group) end)
     if ok and section and section.valid then return section end
-    return nil
+    return nil, "add_section() failed: " .. tostring(section)
 end
 
 -- Finds the slot in our section already requesting item_name, or nil.
 function find_request_slot(section, item_name)
     for slot = 1, section.filters_count do
-        local ok, filter = pcall(section.get_slot, section, slot)
+        local ok, filter = pcall(function() return section.get_slot(slot) end)
         if ok and filter and filter.value and filter.value.name == item_name then
             return slot, filter
         end
@@ -168,9 +193,13 @@ function request_task_item(player, internal_name, count)
         return false
     end
 
-    local section = get_request_section(player, true)
-    if not section or not section.is_manual then
-        player.print("[Foreman2] Personal logistic requests are not available (no character, or not researched).")
+    local section, reason = get_request_section(player, true)
+    if not section then
+        player.print("[Foreman2] Personal logistic requests are not available: " .. (reason or "unknown reason"))
+        return false
+    end
+    if not section.is_manual then
+        player.print("[Foreman2] Personal logistic requests are not available: section exists but is_manual = false.")
         return false
     end
 
@@ -209,7 +238,7 @@ function clear_all_task_requests(player)
 
     local cleared = 0
     for slot = section.filters_count, 1, -1 do
-        local ok, filter = pcall(section.get_slot, section, slot)
+        local ok, filter = pcall(function() return section.get_slot(slot) end)
         if ok and filter and filter.value then
             section.clear_slot(slot)
             cleared = cleared + 1
