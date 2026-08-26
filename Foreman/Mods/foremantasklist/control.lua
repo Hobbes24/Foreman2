@@ -13,6 +13,7 @@ script.on_init(function()
     storage.last_click   = {}   -- [player_index] = { name, tick }
     storage.search_tags  = {}   -- [player_index] = { position, ... }
     storage.item_cache   = {}   -- [internal_name] = item_name  (or false if none found)
+    storage.sprite_cache = {}   -- [player_index] = sprite path for the request button
 end)
 
 script.on_configuration_changed(function()
@@ -20,6 +21,16 @@ script.on_configuration_changed(function()
     storage.last_click  = storage.last_click  or {}
     storage.search_tags = storage.search_tags or {}
     storage.item_cache  = storage.item_cache  or {}
+    storage.sprite_cache = storage.sprite_cache or {}
+
+    -- A frame built by an older version keeps that version's layout and button
+    -- states, so rebuild anything left open.
+    for _, player in pairs(game.players) do
+        if player.gui.screen[FRAME_NAME] then
+            player.gui.screen[FRAME_NAME].destroy()
+            build_gui(player)
+        end
+    end
 end)
 
 -- ============================================================
@@ -82,6 +93,162 @@ function get_inventory_count(player, internal_name)
     return inv.get_item_count(item_name)
 end
 
+-- ============================================================
+-- Personal logistic requests
+-- ============================================================
+
+-- All of our requests live in one logistic section identified by a group name.
+-- Groups are force-wide, so the player name keeps two players on the same force
+-- from stepping on each other.
+function request_group_name(player)
+    return "Foreman2 " .. player.name
+end
+
+-- The character's requester point. get_requester_point() is the 2.1 spelling,
+-- get_logistic_point() the 2.0 one; reading a member a LuaObject does not have
+-- raises, so both lookups go through pcall.
+--
+-- Queried against the character entity, not the player: LuaControl methods act
+-- on whatever the player currently controls, and our own search/pin feature
+-- (search_for_entity) switches the player to the remote controller, which has
+-- no controlled entity. The character - and its logistic point - still exists
+-- in the world the whole time, so go straight to it.
+function get_requester_point(player)
+    local character = player.character
+    if not character or not character.valid then return nil end
+
+    local ok, point = pcall(function() return character.get_requester_point() end)
+    if ok and point and point.valid then return point end
+
+    ok, point = pcall(function()
+        return character.get_logistic_point(defines.logistic_member_index.character_requester)
+    end)
+    if ok and point and point.valid then return point end
+
+    return nil
+end
+
+-- Our section on that point. Creates it when `create` is set, otherwise returns
+-- nil if we have never made a request for this player.
+function get_request_section(player, create)
+    local point = get_requester_point(player)
+    if not point then return nil end
+
+    local group = request_group_name(player)
+    for i = 1, point.sections_count do
+        local section = point.get_section(i)
+        if section and section.valid and section.group == group then
+            return section
+        end
+    end
+
+    if not create then return nil end
+    local ok, section = pcall(point.add_section, point, group)
+    if ok and section and section.valid then return section end
+    return nil
+end
+
+-- Finds the slot in our section already requesting item_name, or nil.
+function find_request_slot(section, item_name)
+    for slot = 1, section.filters_count do
+        local ok, filter = pcall(section.get_slot, section, slot)
+        if ok and filter and filter.value and filter.value.name == item_name then
+            return slot, filter
+        end
+    end
+    return nil
+end
+
+-- Adds a personal logistic request for the item behind a task. An existing
+-- request is only ever raised, never lowered.
+function request_task_item(player, internal_name, count)
+    local item_name = resolve_item_name(internal_name)
+    if not item_name then
+        player.print("[Foreman2] No item found for '" .. internal_name .. "'.")
+        return false
+    end
+
+    local section = get_request_section(player, true)
+    if not section or not section.is_manual then
+        player.print("[Foreman2] Personal logistic requests are not available (no character, or not researched).")
+        return false
+    end
+
+    local slot, filter = find_request_slot(section, item_name)
+    if slot then
+        if (filter.min or 0) < count then
+            section.set_slot(slot, { value = filter.value, min = count, max = filter.max })
+        end
+        return true
+    end
+
+    -- max stays nil so nothing gets auto-trashed once the request is filled
+    section.set_slot(section.filters_count + 1, {
+        value = { type = "item", name = item_name, quality = "normal", comparator = "=" },
+        min   = count
+    })
+    return true
+end
+
+-- Drops our request for one item. Never touches the player's own sections.
+function clear_task_request(player, internal_name)
+    local item_name = resolve_item_name(internal_name)
+    if not item_name then return end
+
+    local section = get_request_section(player, false)
+    if not section or not section.is_manual then return end
+
+    local slot = find_request_slot(section, item_name)
+    if slot then section.clear_slot(slot) end
+end
+
+-- Empties our section. Returns how many requests were removed.
+function clear_all_task_requests(player)
+    local section = get_request_section(player, false)
+    if not section or not section.is_manual then return 0 end
+
+    local cleared = 0
+    for slot = section.filters_count, 1, -1 do
+        local ok, filter = pcall(section.get_slot, section, slot)
+        if ok and filter and filter.value then
+            section.clear_slot(slot)
+            cleared = cleared + 1
+        end
+    end
+    return cleared
+end
+
+-- 2.0 moved is_valid_sprite_path onto `helpers`; before that it hung off `game`,
+-- and it has never been on LuaGui. Reading a member an object does not have raises,
+-- so both spellings go through pcall and a miss just means "no sprite".
+function sprite_path_is_valid(path)
+    local ok, valid = pcall(function() return helpers.is_valid_sprite_path(path) end)
+    if ok then return valid end
+
+    ok, valid = pcall(function() return game.is_valid_sprite_path(path) end)
+    if ok then return valid end
+
+    return false
+end
+
+-- Icon for the per-row request button. Base's logistic robot is the obvious
+-- choice but a modpack can remove it, so fall back until something resolves.
+function request_button_sprite(player)
+    if not storage.sprite_cache then storage.sprite_cache = {} end
+    local cached = storage.sprite_cache[player.index]
+    if cached ~= nil then return cached or nil end
+
+    for _, path in ipairs({ "item/logistic-robot", "item/requester-chest", "utility/slot_icon_robot" }) do
+        if sprite_path_is_valid(path) then
+            storage.sprite_cache[player.index] = path
+            return path
+        end
+    end
+
+    storage.sprite_cache[player.index] = false
+    return nil
+end
+
 -- Walks all tasks for a player; if they have >= needed and the task isn't
 -- already done, marks it done. Never un-checks a task (one-way).
 function auto_check_tasks(player)
@@ -92,8 +259,50 @@ function auto_check_tasks(player)
             local have = get_inventory_count(player, task.internal_name)
             if have >= task.count then
                 task.done = true
+                -- the request has been filled; stop the bots hauling more
+                clear_task_request(player, task.internal_name)
             end
         end
+    end
+end
+
+-- ============================================================
+-- Button state
+-- ============================================================
+
+-- Import is the only button that does anything without a task list, so the rest
+-- stay disabled until one has been imported.
+local GATED_BUTTONS = {
+    { row = "button_row",    name = "foreman_clear_btn",         tooltip = "Discard the imported list and its pins" },
+    { row = "button_row",    name = "foreman_clearpins_btn",     tooltip = "Remove the map pins this mod placed" },
+    { row = "logistics_row", name = "foreman_requestall_btn",    tooltip = "Add a personal logistic request for every unchecked task" },
+    { row = "logistics_row", name = "foreman_clearrequests_btn", tooltip = "Remove the logistic requests this mod added" }
+}
+
+local NO_TASKS_TOOLTIP = "Import a Foreman2 list first"
+
+function update_button_states(player)
+    local frame = player.gui.screen[FRAME_NAME]
+    if not frame then return end
+
+    local tasks     = storage.tasks[player.index]
+    local has_tasks = (tasks ~= nil and #tasks > 0)
+
+    for _, spec in ipairs(GATED_BUTTONS) do
+        local row    = frame[spec.row]
+        local button = row and row[spec.name]
+        if button then
+            button.enabled = has_tasks
+            button.tooltip = has_tasks and spec.tooltip or NO_TASKS_TOOLTIP
+        end
+    end
+
+    -- The caption tracks the paste box, not the task count: revealing the box again
+    -- on a list that already has tasks turns "Import More" back into "Import".
+    local paste  = frame.paste_section
+    local import = frame.button_row and frame.button_row.foreman_import_btn
+    if import then
+        import.caption = (paste and paste.visible) and "Import" or "Import More"
     end
 end
 
@@ -106,7 +315,7 @@ function build_gui(player)
         type      = "frame",
         name      = FRAME_NAME,
         direction = "vertical",
-        caption   = "Foreman2 Task List"
+        caption   = "Foreman2 Task List  (Double click item to create pin)"
     }
     frame.auto_center = true
 
@@ -172,6 +381,29 @@ function build_gui(player)
         name    = "foreman_clearpins_btn",
         caption = "Clear Pins"
     }
+
+    -- Logistics row, kept separate so the first row does not outgrow the frame
+    local logi_row = frame.add{
+        type      = "flow",
+        name      = "logistics_row",
+        direction = "horizontal"
+    }
+    logi_row.style.horizontal_spacing = 6
+
+    logi_row.add{
+        type    = "button",
+        name    = "foreman_requestall_btn",
+        caption = "Request All",
+        tooltip = "Add a personal logistic request for every unchecked task"
+    }
+    logi_row.add{
+        type    = "button",
+        name    = "foreman_clearrequests_btn",
+        caption = "Clear Requests",
+        tooltip = "Remove the logistic requests this mod added"
+    }
+
+    update_button_states(player)
 end
 
 -- ============================================================
@@ -222,6 +454,23 @@ function render_tasks(player, scroll)
             caption = ""
         }
 
+        -- Sits between checkbox and label so the buttons line up in a column.
+        -- Kept (disabled) on done rows rather than removed, for the same reason.
+        local sprite = request_button_sprite(player)
+        local req = row.add{
+            type    = "sprite-button",
+            name    = "task_request_" .. i,
+            sprite  = sprite,
+            caption = (not sprite) and "R" or nil,
+            style   = "tool_button",
+            enabled = not task.done,
+            tooltip = "Request " .. task.count .. "x via personal logistics"
+        }
+        req.style.width      = 20
+        req.style.height     = 20
+        req.style.padding    = 0
+        req.style.left_margin = 4
+
         local lbl = row.add{
             type    = "label",
             name    = "task_label_" .. i,
@@ -242,6 +491,7 @@ function refresh_gui(player)
     if scroll then
         render_tasks(player, scroll)
     end
+    update_button_states(player)
 end
 
 -- ============================================================
@@ -352,7 +602,7 @@ function search_for_producers(player, internal_name, display_name)
         position = found[1].position,
         surface  = player.surface
     }
-    player.zoom = 0.3
+    player.zoom = 0.2
 
     player.print("[Foreman2] Found " .. #found .. " assembler(s) producing " .. display_name .. ". Click 'Clear Pins' to remove.")
 end
@@ -402,25 +652,54 @@ script.on_event(defines.events.on_gui_click, function(event)
             local tasks = storage.tasks[player.index]
             if tasks and #tasks > 0 then
                 paste_section.visible = false
-                frame.button_row.foreman_import_btn.caption = "Import More"
             end
-            refresh_gui(player)
         else
             paste_section.visible = true
-            frame.button_row.foreman_import_btn.caption = "Import"
         end
+        refresh_gui(player)
         return
     end
 
     -- Clear All button
     if name == "foreman_clear_btn" then
+        clear_all_task_requests(player)
+        -- Clear Pins goes disabled with no tasks left, so drop the pins here too
+        clear_search_tags(player)
         storage.tasks[player.index] = {}
         local frame = player.gui.screen[FRAME_NAME]
         if frame then
             frame.paste_section.visible = true
-            frame.button_row.foreman_import_btn.caption = "Import"
         end
         refresh_gui(player)
+        return
+    end
+
+    -- Request All button
+    if name == "foreman_requestall_btn" then
+        local requested = 0
+        for _, task in ipairs(storage.tasks[player.index] or {}) do
+            if not task.done and request_task_item(player, task.internal_name, task.count) then
+                requested = requested + 1
+            end
+        end
+        player.print("[Foreman2] Added " .. requested .. " logistic request(s).")
+        return
+    end
+
+    -- Clear Requests button
+    if name == "foreman_clearrequests_btn" then
+        player.print("[Foreman2] Removed " .. clear_all_task_requests(player) .. " logistic request(s).")
+        return
+    end
+
+    -- Per-task request button
+    local request_idx = name:match("^task_request_(%d+)$")
+    if request_idx then
+        local tasks = storage.tasks[player.index]
+        local task  = tasks and tasks[tonumber(request_idx)]
+        if task and request_task_item(player, task.internal_name, task.count) then
+            player.print("[Foreman2] Requested " .. task.count .. "x " .. (task.name or task.display) .. ".")
+        end
         return
     end
 
@@ -438,6 +717,9 @@ script.on_event(defines.events.on_gui_click, function(event)
         local tasks = storage.tasks[player.index]
         if tasks and tasks[idx] then
             tasks[idx].done = element.state
+            if element.state then
+                clear_task_request(player, tasks[idx].internal_name)
+            end
             refresh_gui(player)
         end
         return
@@ -479,6 +761,9 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
         local tasks = storage.tasks[player.index]
         if tasks and tasks[idx] then
             tasks[idx].done = element.state
+            if element.state then
+                clear_task_request(player, tasks[idx].internal_name)
+            end
             refresh_gui(player)
         end
     end
