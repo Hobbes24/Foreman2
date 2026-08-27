@@ -2853,9 +2853,17 @@ namespace Foreman
 				form.Left = (_pf?.Left ?? 50) + 150;
 				form.Top  = (_pf?.Top  ?? 50) + 200;
 				DialogResult result = form.ShowDialog(); //LOAD FACTORIO DATA
-				if (DCache != null)
-					DCache.Clear();
+
+				//Clear() disposes every icon the old cache owns, so nothing may still be able to reach it when
+				//that happens - a repaint landing in the gap draws from freed GDI handles. Emptying the graph
+				//drops the nodes that point at it, and the new cache is installed before the old one is torn
+				//down, so a repaint at any point in between has something valid to draw. Three of the four
+				//callers already cleared the graph first; doing it here makes that a guarantee rather than a
+				//convention every future caller has to know about.
+				DataCache previousCache = DCache;
+				ClearGraph();
 				DCache = form.GetDataCache();
+				previousCache?.Clear();
 				LastAssemblerQuality = DCache.DefaultQuality; //QUALITY UPDATE
 				Graph.DefaultAssemblerQuality = DCache.DefaultQuality;
 				Graph.MaxQualitySteps = 5; //DCache.QualityMaxChainLength;
@@ -2870,9 +2878,10 @@ namespace Foreman
 						form2.Left = (_pf?.Left ?? 50) + 150;
 						form2.Top  = (_pf?.Top  ?? 50) + 200;
 						DialogResult result2 = form2.ShowDialog(); //LOAD default preset
-						if (DCache != null)
-							DCache.Clear();
+						DataCache abortedCache = DCache;
+						ClearGraph();
 						DCache = form2.GetDataCache();
+						abortedCache?.Clear();
 						if (result2 == DialogResult.Abort)
 							MessageBox.Show("The default preset (" + Properties.Settings.Default.CurrentPresetName + ") is corrupt. No Preset is loaded!");
 					}
@@ -2892,6 +2901,7 @@ namespace Foreman
 		public async Task LoadFromJson(JObject json, bool useFirstPreset, bool setEnablesFromJson)
 		{
 			IsLoading = true;
+			System.Diagnostics.Stopwatch loadTimer = System.Diagnostics.Stopwatch.StartNew();
 			try
 			{
 				await LoadFromJsonInternal(json, useFirstPreset, setEnablesFromJson);
@@ -2899,6 +2909,8 @@ namespace Foreman
 			finally
 			{
 				IsLoading = false;
+				loadTimer.Stop();
+				ErrorLogging.LogLine(string.Format("Graph loaded in {0} ms ({1} nodes).", loadTimer.ElapsedMilliseconds, Graph.Nodes.Count()));
 			}
 		}
 

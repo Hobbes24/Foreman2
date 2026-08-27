@@ -51,8 +51,11 @@ namespace Foreman
 				await createdDataCache.LoadAllData(selectedPreset, progress);
 				DialogResult = DialogResult.OK;
 			}
-			catch
+			catch (Exception ex)
 			{
+				//the caller only reports 'this preset is corrupt', which says nothing about why - without this
+				//the one piece of information that identifies the actual fault is thrown away
+				ErrorLogging.LogLine(string.Format("Preset '{0}' failed to load: {1}", selectedPreset?.Name, ex));
 				createdDataCache = new DataCache(true); //blank data cache in case of error.
 				DialogResult = DialogResult.Abort;
 			}

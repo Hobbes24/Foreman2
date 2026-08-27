@@ -398,6 +398,9 @@ namespace Foreman
 
 			if (iconCache != null)
 			{
+				//the composites built from these icons are held in a static cache that outlives this data cache,
+				//so they have to go first - otherwise it keeps handing out bitmaps backed by disposed originals
+				IconCacheProcessor.ClearCombinedIcons();
 				foreach (var iconset in iconCache.Values)
 					iconset.Icon.Dispose();
 				iconCache.Clear();

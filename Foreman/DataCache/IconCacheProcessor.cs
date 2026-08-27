@@ -526,6 +526,18 @@ namespace Foreman
 
 		private static Dictionary<KeyValuePair<Bitmap, Bitmap>, Bitmap> combinedBitmapDictionary = new Dictionary<KeyValuePair<Bitmap, Bitmap>, Bitmap>();
 		private const double qualitySizeMultiplier = 0.5;
+		/// <summary>
+		/// Drops every cached composite. Must be called whenever the icons these were built from are disposed
+		/// (a preset swap), or the cache hands back bitmaps whose underlying GDI objects are already gone.
+		/// The entries are released rather than disposed: this cache is shared by every open tab, so a tab
+		/// swapping presets would otherwise be disposing bitmaps another tab is in the middle of drawing.
+		/// Dropping the references lets the finalizer reclaim them, and LoadPreset collects straight after.
+		/// </summary>
+		public static void ClearCombinedIcons()
+		{
+			combinedBitmapDictionary.Clear();
+		}
+
 		public static Bitmap CombinedQualityIcon(Bitmap baseIcon, Bitmap qualityIcon)
 		{
 			if (baseIcon == null)
@@ -534,17 +546,31 @@ namespace Foreman
 			if(combinedBitmapDictionary.TryGetValue(new KeyValuePair<Bitmap, Bitmap>(baseIcon, qualityIcon), out Bitmap combinedBitmap ))
 				return combinedBitmap;
 
-            //combine the two bitmaps
-            Bitmap canvas = new Bitmap(baseIcon.Width, baseIcon.Height, baseIcon.PixelFormat);
-            using (Graphics g = Graphics.FromImage(canvas))
-            {
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                g.DrawImage(baseIcon, new Rectangle(0, 0, baseIcon.Width, baseIcon.Height));
-                g.DrawImage(qualityIcon, new Rectangle((int)(baseIcon.Width * (1-qualitySizeMultiplier)), (int)(baseIcon.Height * (1 - qualitySizeMultiplier)), (int)(baseIcon.Width * qualitySizeMultiplier), (int)(baseIcon.Height * qualitySizeMultiplier)));
-            }
-			combinedBitmapDictionary.Add(new KeyValuePair<Bitmap, Bitmap>(baseIcon, qualityIcon), canvas);
-            return canvas;
+			//swapping presets disposes the old cache's icons while the graph still holds nodes pointing at them,
+			//so a repaint landing in that window arrives here with a dead bitmap. GDI+ reports that as
+			//ArgumentException from the first property read, and there is no way to test for it beforehand.
+			//Drawing nothing for one frame is the right outcome - the graph repaints against the new cache.
+			try
+			{
+				//combine the two bitmaps
+				Bitmap canvas = new Bitmap(baseIcon.Width, baseIcon.Height, baseIcon.PixelFormat);
+				using (Graphics g = Graphics.FromImage(canvas))
+				{
+					g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+					g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+					g.DrawImage(baseIcon, new Rectangle(0, 0, baseIcon.Width, baseIcon.Height));
+					g.DrawImage(qualityIcon, new Rectangle((int)(baseIcon.Width * (1-qualitySizeMultiplier)), (int)(baseIcon.Height * (1 - qualitySizeMultiplier)), (int)(baseIcon.Width * qualitySizeMultiplier), (int)(baseIcon.Height * qualitySizeMultiplier)));
+				}
+				combinedBitmapDictionary.Add(new KeyValuePair<Bitmap, Bitmap>(baseIcon, qualityIcon), canvas);
+				return canvas;
+			}
+			catch (ArgumentException)
+			{
+				//not null: the draw sites hand this straight to Graphics.DrawImage, which throws on null just as
+				//readily as it does on a dead bitmap. The unknown icon is a static loaded from disk that the data
+				//cache never disposes, so it is always safe to draw, and the next repaint has the real one.
+				return IconCache.GetUnknownIcon();
+			}
         }
 	}
 }
