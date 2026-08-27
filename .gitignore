@@ -5,10 +5,22 @@
 /ForemanTest/bin/
 /ForemanTest/obj/
 /packages/
+# Signing keys and certificates - never belongs in a public repo
 *.pfx
 *.key
 *.pem
 *.p12
+*.snk
+*.jks
+*.keystore
+*.p7b
+*.p7c
+
+# Publish profiles and user project state - these carry credentials and machine paths
+*.publishsettings
+*.pubxml.user
+*.user
+secrets.json
 
 # Local Claude Code state - machine-specific paths, not for the public repo
 /.claude/settings.local.json
