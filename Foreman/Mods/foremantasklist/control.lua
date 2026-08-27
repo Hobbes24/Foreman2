@@ -152,6 +152,35 @@ function get_requester_point(player)
     return nil, reason1 .. "; " .. reason2
 end
 
+-- Whether a request we write will actually be acted on. This is not the same
+-- question as whether the write succeeds: the requester point exists and takes
+-- set_slot happily even when the feature is off, so a request can be stored and
+-- then quietly never filled. Two gates decide it, and neither reports itself at
+-- the point of writing:
+--   force.character_logistic_requests - false until personal logistics is
+--     researched. This is the one that bites on a fresh save.
+--   point.enabled - the player's own on/off switch in the logistics window.
+-- Only a definitive false counts. If a member cannot be read at all (version
+-- drift between 2.0 and 2.1), assume enabled rather than refuse a request that
+-- would have worked - a missing warning is a smaller failure than a blocked
+-- feature. Returns a reason string when blocked, nil when good to go.
+function requests_blocked_reason(player)
+    local ok, enabled = pcall(function() return player.force.character_logistic_requests end)
+    if ok and enabled == false then
+        return "personal logistics has not been researched yet"
+    end
+
+    local point = get_requester_point(player)
+    if point then
+        ok, enabled = pcall(function() return point.enabled end)
+        if ok and enabled == false then
+            return "personal logistics is switched off in your logistics window"
+        end
+    end
+
+    return nil
+end
+
 -- Our section on that point. Creates it when `create` is set, otherwise returns
 -- nil if we have never made a request for this player. Second return value is
 -- a diagnostic string, see get_requester_point above.
@@ -712,6 +741,12 @@ script.on_event(defines.events.on_gui_click, function(event)
             end
         end
         player.print("[Foreman2] Added " .. requested .. " logistic request(s).")
+        -- Checked once per click rather than per task, so a blocked Request All
+        -- prints one note instead of one per row.
+        local blocked = requests_blocked_reason(player)
+        if blocked and requested > 0 then
+            player.print("[Foreman2] These will not be filled yet - " .. blocked .. ". They stay in place and start working once that changes.")
+        end
         return
     end
 
@@ -728,6 +763,10 @@ script.on_event(defines.events.on_gui_click, function(event)
         local task  = tasks and tasks[tonumber(request_idx)]
         if task and request_task_item(player, task.internal_name, task.count) then
             player.print("[Foreman2] Requested " .. task.count .. "x " .. (task.name or task.display) .. ".")
+            local blocked = requests_blocked_reason(player)
+            if blocked then
+                player.print("[Foreman2] This will not be filled yet - " .. blocked .. ". It stays in place and starts working once that changes.")
+            end
         end
         return
     end

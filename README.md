@@ -78,6 +78,7 @@ The task list can now ask your logistic bots to bring the buildings to you.
 - **Clear Requests** drops everything the mod added, and *Clear All* does it too when wiping the list
 - All requests live in a single logistic section named after the player, so the mod never edits requests you set up yourself
 - Entity names are resolved to the item that places them, so the request works for buildings whose item name differs from the entity name
+- If personal logistics **isn't researched yet** — or you've switched logistics off in your own logistics window — the request is still recorded, and the mod tells you it won't be filled until that changes, rather than appearing to work and quietly doing nothing
 
 ---
 
