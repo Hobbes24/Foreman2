@@ -1,4 +1,4 @@
-# Foreman2 — Community Fork: Feature & Improvement Log
+﻿# Foreman2 — Community Fork: Feature & Improvement Log
 
 > A fork of [Foreman](https://github.com/DanielKote/Foreman2) — the Factorio 2.0 production planner.  
 > This fork extends the original with quality-of-life features, workflow improvements, and bug fixes  
@@ -7,6 +7,18 @@
 ---
 
 ## ✨ New Features
+
+---
+
+### 🧳 Shared Settings File *(2.4.0)*
+Settings can now live next to `Foreman.exe` instead of in the per-machine Windows store, so one set of preferences follows the program.
+- Windows keys the normal `user.config` to the machine, the windows user, **and** the assembly version — which is why settings appear to reset when you switch machines or update Foreman
+- **Settings → Graph Options → Settings Storage** turns on a `foreman-settings.json` written beside the exe; run Foreman from a drive both machines can reach and they share one set of settings
+- The presence of the file is the switch, so the second machine needs no setup — it picks the file up on its next start
+- Every save mirrors into the file, and the file is written to a temp name first so a dropped network connection cannot leave it half written
+- Last writer wins: if both machines are open at once, whichever saves last is the state that survives
+- Independently of the file, local settings now carry across a Foreman version update instead of starting from defaults
+- An unreachable share, a read-only folder, or a damaged file falls back to local settings and a log line rather than an error
 
 ---
 

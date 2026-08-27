@@ -1151,6 +1151,7 @@ namespace Foreman
             options.EnableExtraProductivityForNonMiners = activeViewer.Graph.EnableExtraProductivityForNonMiners;
             options.DEV_ShowUnavailableItems            = Properties.Settings.Default.ShowUnavailable;
             options.DEV_UseRecipeBWFilters              = Properties.Settings.Default.UseRecipeBWfilters;
+            options.UseSharedSettingsFile               = SharedSettings.IsEnabled;
 
             options.Solver_LowPriorityPower        = activeViewer.Graph.LowPriorityPower;
             options.Solver_PullConsumerNodes        = activeViewer.Graph.PullOutputNodes;
@@ -1241,6 +1242,7 @@ namespace Foreman
                     Properties.Settings.Default.AbbreviateSciPacks         = options.AbbreviateSciPacks;
                     Properties.Settings.Default.EnableExtraProductivityForNonMiners = options.EnableExtraProductivityForNonMiners;
                     Properties.Settings.Default.ShowUnavailable            = options.DEV_ShowUnavailableItems;
+                    ApplySettingsStorageChoice(options.UseSharedSettingsFile);
                     SafeSettings.Save();
 
                     for (int _ti = 0; _ti < GraphTabControl.RealTabCount; _ti++)
@@ -1282,6 +1284,33 @@ namespace Foreman
                     if (options.FilePresetNames != null)
                         activeViewer.SavedPresetNames = new List<string>(options.FilePresetNames);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Switches between the per-machine settings store and the shared file next to Foreman.exe.
+        /// Turning it on writes the current settings out immediately, so the other machine picks them up
+        /// the next time it starts; turning it off leaves the local settings exactly as they are now.
+        /// </summary>
+        private void ApplySettingsStorageChoice(bool useSharedFile)
+        {
+            if (useSharedFile == SharedSettings.IsEnabled)
+                return;
+
+            string error;
+            if (useSharedFile)
+            {
+                if (SharedSettings.Enable(out error))
+                    MessageBox.Show("Settings are now kept in:" + Environment.NewLine + SharedSettings.FilePath + Environment.NewLine + Environment.NewLine +
+                        "Any machine running Foreman from this folder will use them.", "Shared settings on", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                else
+                    MessageBox.Show("Could not create the shared settings file:" + Environment.NewLine + SharedSettings.FilePath + Environment.NewLine + Environment.NewLine + error +
+                        Environment.NewLine + Environment.NewLine + "Settings will keep being stored on this machine only.", "Shared settings unavailable", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else if (!SharedSettings.Disable(out error))
+            {
+                MessageBox.Show("Could not remove the shared settings file:" + Environment.NewLine + SharedSettings.FilePath + Environment.NewLine + Environment.NewLine + error,
+                    "Shared settings still on", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 

@@ -92,6 +92,10 @@
             this.label12 = new System.Windows.Forms.Label();
             this.advancedGroupBox = new System.Windows.Forms.GroupBox();
             this.AdvancedOptionsTable = new System.Windows.Forms.TableLayoutPanel();
+            this.settingsStorageGroupBox = new System.Windows.Forms.GroupBox();
+            this.SettingsStorageTable = new System.Windows.Forms.TableLayoutPanel();
+            this.SharedSettingsCheckBox = new System.Windows.Forms.CheckBox();
+            this.SharedSettingsInfoLabel = new System.Windows.Forms.Label();
             this.ShowUnavailablesCheckBox = new System.Windows.Forms.CheckBox();
             this.LoadBarrelingCheckBox = new System.Windows.Forms.CheckBox();
             this.ShowProductivityBonusOnAllCheckBox = new System.Windows.Forms.CheckBox();
@@ -164,6 +168,8 @@
             ((System.ComponentModel.ISupportInitialize)(this.QualityStepsInput)).BeginInit();
             this.advancedGroupBox.SuspendLayout();
             this.AdvancedOptionsTable.SuspendLayout();
+            this.settingsStorageGroupBox.SuspendLayout();
+            this.SettingsStorageTable.SuspendLayout();
             this.defaultsGroupBox.SuspendLayout();
             this.DefaultsTable.SuspendLayout();
             this.nodeGraphicsGroupBox.SuspendLayout();
@@ -962,17 +968,19 @@
             this.GraphOptionsTable.Controls.Add(this.nodeGraphicsGroupBox, 0, 1);
             this.GraphOptionsTable.Controls.Add(this.guideArrowsGroupBox, 0, 2);
             this.GraphOptionsTable.Controls.Add(this.solverOptionsGroupBox, 0, 5);
+            this.GraphOptionsTable.Controls.Add(this.settingsStorageGroupBox, 0, 6);
             this.GraphOptionsTable.Dock = System.Windows.Forms.DockStyle.Top;
             this.GraphOptionsTable.Location = new System.Drawing.Point(0, 0);
             this.GraphOptionsTable.Name = "GraphOptionsTable";
-            this.GraphOptionsTable.RowCount = 6;
+            this.GraphOptionsTable.RowCount = 7;
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
-            this.GraphOptionsTable.Size = new System.Drawing.Size(453, 800);
+            this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            this.GraphOptionsTable.Size = new System.Drawing.Size(453, 875);
             this.GraphOptionsTable.TabIndex = 0;
             // 
             // graphOptionsGroupBox
@@ -1079,6 +1087,60 @@
             this.AdvancedOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
             this.AdvancedOptionsTable.Size = new System.Drawing.Size(441, 69);
             this.AdvancedOptionsTable.TabIndex = 0;
+            // 
+            // settingsStorageGroupBox
+            // 
+            this.settingsStorageGroupBox.AutoSize = true;
+            this.settingsStorageGroupBox.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            this.settingsStorageGroupBox.Controls.Add(this.SettingsStorageTable);
+            this.settingsStorageGroupBox.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.settingsStorageGroupBox.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold);
+            this.settingsStorageGroupBox.Location = new System.Drawing.Point(3, 800);
+            this.settingsStorageGroupBox.Name = "settingsStorageGroupBox";
+            this.settingsStorageGroupBox.Size = new System.Drawing.Size(447, 72);
+            this.settingsStorageGroupBox.TabIndex = 7;
+            this.settingsStorageGroupBox.TabStop = false;
+            this.settingsStorageGroupBox.Text = "Settings Storage";
+            // 
+            // SettingsStorageTable
+            // 
+            this.SettingsStorageTable.AutoSize = true;
+            this.SettingsStorageTable.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            this.SettingsStorageTable.ColumnCount = 1;
+            this.SettingsStorageTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
+            this.SettingsStorageTable.Controls.Add(this.SharedSettingsCheckBox, 0, 0);
+            this.SettingsStorageTable.Controls.Add(this.SharedSettingsInfoLabel, 0, 1);
+            this.SettingsStorageTable.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.SettingsStorageTable.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F);
+            this.SettingsStorageTable.Location = new System.Drawing.Point(3, 16);
+            this.SettingsStorageTable.Name = "SettingsStorageTable";
+            this.SettingsStorageTable.RowCount = 2;
+            this.SettingsStorageTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            this.SettingsStorageTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            this.SettingsStorageTable.Size = new System.Drawing.Size(441, 53);
+            this.SettingsStorageTable.TabIndex = 0;
+            // 
+            // SharedSettingsCheckBox
+            // 
+            this.SharedSettingsCheckBox.AutoSize = true;
+            this.SharedSettingsCheckBox.Location = new System.Drawing.Point(3, 3);
+            this.SharedSettingsCheckBox.Name = "SharedSettingsCheckBox";
+            this.SharedSettingsCheckBox.Size = new System.Drawing.Size(360, 17);
+            this.SharedSettingsCheckBox.TabIndex = 0;
+            this.SharedSettingsCheckBox.Text = "Keep settings in a file next to Foreman.exe (shared between machines)";
+            this.SharedSettingsCheckBox.UseVisualStyleBackColor = true;
+            // 
+            // SharedSettingsInfoLabel
+            // 
+            this.SharedSettingsInfoLabel.AutoSize = true;
+            this.SharedSettingsInfoLabel.ForeColor = System.Drawing.SystemColors.GrayText;
+            this.SharedSettingsInfoLabel.Location = new System.Drawing.Point(3, 26);
+            this.SharedSettingsInfoLabel.Margin = new System.Windows.Forms.Padding(3, 6, 3, 3);
+            this.SharedSettingsInfoLabel.MaximumSize = new System.Drawing.Size(430, 0);
+            this.SharedSettingsInfoLabel.Name = "SharedSettingsInfoLabel";
+            this.SharedSettingsInfoLabel.Size = new System.Drawing.Size(430, 26);
+            this.SharedSettingsInfoLabel.TabIndex = 1;
+            this.SharedSettingsInfoLabel.Text = "";
             // 
             // ShowUnavailablesCheckBox
             // 
@@ -1781,6 +1843,10 @@
             this.advancedGroupBox.PerformLayout();
             this.AdvancedOptionsTable.ResumeLayout(false);
             this.AdvancedOptionsTable.PerformLayout();
+            this.settingsStorageGroupBox.ResumeLayout(false);
+            this.settingsStorageGroupBox.PerformLayout();
+            this.SettingsStorageTable.ResumeLayout(false);
+            this.SettingsStorageTable.PerformLayout();
             this.defaultsGroupBox.ResumeLayout(false);
             this.defaultsGroupBox.PerformLayout();
             this.DefaultsTable.ResumeLayout(false);
@@ -1867,6 +1933,10 @@
 		private System.Windows.Forms.GroupBox defaultsGroupBox;
 		private System.Windows.Forms.TableLayoutPanel AdvancedOptionsTable;
 		private System.Windows.Forms.CheckBox ShowUnavailablesCheckBox;
+		private System.Windows.Forms.GroupBox settingsStorageGroupBox;
+		private System.Windows.Forms.TableLayoutPanel SettingsStorageTable;
+		private System.Windows.Forms.CheckBox SharedSettingsCheckBox;
+		private System.Windows.Forms.Label SharedSettingsInfoLabel;
 		private System.Windows.Forms.TableLayoutPanel DefaultsTable;
 		private System.Windows.Forms.ComboBox ModuleSelectorStyleDropDown;
 		private System.Windows.Forms.ComboBox AssemblerSelectorStyleDropDown;

@@ -16,6 +16,7 @@ namespace Foreman
 		static void Main()
 		{
 			ErrorLogging.ClearLog();
+			SharedSettings.Initialize(); //must run before any form reads Properties.Settings
 			Application.EnableVisualStyles();
 			Application.SetCompatibleTextRenderingDefault(false);
 

@@ -48,6 +48,9 @@ namespace Foreman
 			public bool DEV_ShowUnavailableItems;
 			public bool DEV_UseRecipeBWFilters;
 
+			//settings storage: true = settings live in a file next to Foreman.exe and follow it between machines
+			public bool UseSharedSettingsFile;
+
 			public double Solver_LowPriorityPower;
 			public double Solver_PullConsumerNodesPower;
 			public bool Solver_PullConsumerNodes;
@@ -332,6 +335,10 @@ namespace Foreman
 			ShowProductivityBonusOnAllCheckBox.Checked = Options.EnableExtraProductivityForNonMiners;
 			ShowUnavailablesCheckBox.Checked = Options.DEV_ShowUnavailableItems;
             LoadBarrelingCheckBox.Checked = false;  // deprecated - barreling now handled automatically
+
+			SharedSettingsCheckBox.Checked = Options.UseSharedSettingsFile;
+			SharedSettingsCheckBox.CheckedChanged += SharedSettingsCheckBox_CheckedChanged;
+			UpdateSharedSettingsInfoLabel();
 
             LowPriorityPowerInput.Value = Math.Min(LowPriorityPowerInput.Maximum, (decimal)Options.Solver_LowPriorityPower);
 			PullConsumerNodesCheckBox.Checked = Options.Solver_PullConsumerNodes;
@@ -692,6 +699,26 @@ namespace Foreman
 			this.Close();
 		}
 
+		private void SharedSettingsCheckBox_CheckedChanged(object sender, EventArgs e)
+		{
+			UpdateSharedSettingsInfoLabel();
+		}
+
+		private void UpdateSharedSettingsInfoLabel()
+		{
+			if (!SharedSettingsCheckBox.Checked)
+			{
+				SharedSettingsInfoLabel.Text = "Settings are kept on this machine only (and are reset by a windows user, machine, or Foreman version change).";
+				return;
+			}
+
+			string text = "Settings are kept in " + SharedSettings.FilePath + " - put Foreman on a drive both machines can reach and they share one set of settings.";
+			string lastWrite = SharedSettings.GetLastWriteDescription();
+			if (lastWrite != null)
+				text += " (" + lastWrite + ")";
+			SharedSettingsInfoLabel.Text = text;
+		}
+
 		private void CancelButton_Click(object sender, EventArgs e)
 		{
 			DialogResult = DialogResult.Cancel;
@@ -727,6 +754,7 @@ namespace Foreman
 
 			Options.EnableExtraProductivityForNonMiners = ShowProductivityBonusOnAllCheckBox.Checked;
 			Options.DEV_ShowUnavailableItems = ShowUnavailablesCheckBox.Checked;
+			Options.UseSharedSettingsFile = SharedSettingsCheckBox.Checked;
             // No longer needed, barreling filter is now automatic
             // Options.DEV_UseRecipeBWFilters = !LoadBarrelingCheckBox.Checked;
 

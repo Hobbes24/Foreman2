@@ -96,6 +96,7 @@ namespace Foreman
 		{
 			try { Properties.Settings.Default.Save(); }
 			catch (Exception ex) { ErrorLogging.LogLine($"Could not save application settings: {ex.Message}"); }
+			SharedSettings.Save(); //no-op unless the shared settings file is in use
 		}
 	}
 }
