@@ -328,6 +328,7 @@ Right-click any item tab on a node to copy the item's internal or friendly name 
 - File access goes through `SafeIO` rather than `System.IO` directly. The guiding rule is that a storage failure should never be fatal: an unreachable network share, a removed drive, or a locked `user.config` degrades to a no-op or a fallback location instead of an unhandled exception.
 - Gutters are a **presentation-layer** concept living in `PassthroughNodeElement`. A gutter changes only how a passthrough node is drawn and where its links attach — it carries no rate semantics, so the solver is entirely unaware of it and throughput results are identical with or without gutters.
 - The project builds **x64 only**. Every platform in the solution maps to `x64`, so Debug lands in `bin\x64\Debug\` and Release in `bin\x64\Release\`. The old `Debug|x86` and `Release|x86` configurations that wrote to `bin\Debug\` and `bin\Release\` were unreachable through the solution and have been removed — their names were vestigial anyway, since `Release|x86` targeted x64 and `Debug|x86` targeted AnyCPU. Stale executables left in those folders were a trap to launch by mistake.
+- The `ForemanTest` project was removed. It was Foreman 1.0-era test code that did not survive the 2.0 rewrite: all 22 test methods called `GraphOptimisations.FindOptimalGraphToSatisfyFixedNodes`, which no longer exists, and it referenced Google.OrTools 5.1 against the 9.1 the application now uses. It had no `Build.0` entry in the solution, so it had silently stopped building long ago.
 
 ---
 
