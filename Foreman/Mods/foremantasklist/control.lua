@@ -77,6 +77,20 @@ function resolve_item_name(internal_name)
         end
     end
 
+    -- Last resort: ask the entity what places it. Needed where the entity is not the
+    -- place_result of any item - pyanodons' TURD machines are exactly that: entity
+    -- "fish-farm-mk01-turd" is placed by item "fish-farm-mk01", whose place_result
+    -- points at the plain "fish-farm-mk01" entity, so the scan above never finds it.
+    local entity_proto = prototypes.entity[internal_name]
+    if entity_proto and entity_proto.items_to_place_this then
+        for _, stack in pairs(entity_proto.items_to_place_this) do
+            if stack.name and prototypes.item[stack.name] then
+                storage.item_cache[internal_name] = stack.name
+                return stack.name
+            end
+        end
+    end
+
     -- Nothing found — cache the miss so we don't scan again
     storage.item_cache[internal_name] = false
     return nil
@@ -751,18 +765,12 @@ end
 function search_for_producers(player, internal_name, display_name)
     clear_search_tags(player)
 
-    -- internal_name == the item name (entity and item share the same name for placeables).
-    -- Search for assemblers whose recipe produces this item.
-    local search_item = internal_name
+    -- The line's internal name is the item name, so it can be searched for directly.
+    -- Older lists (and hand-typed ones) can still name an entity instead;
+    -- resolve_item_name maps that back to the item, which supersedes the '-turd'
+    -- suffix stripping this used to do.
+    local search_item = resolve_item_name(internal_name) or internal_name
     local found = find_producers_for_item(player, search_item)
-
-    -- Pyanodon's '-turd' suffix exists on the entity name but NOT on the item name.
-    -- e.g. entity "fish-farm-mk01-turd", item "fish-farm-mk01"
-    -- Strip the suffix and retry the item search.
-    if #found == 0 and internal_name:sub(-5) == "-turd" then
-        search_item = internal_name:sub(1, -6)
-        found = find_producers_for_item(player, search_item)
-    end
 
     if #found == 0 then
         player.print("[Foreman2] No assemblers producing '" .. display_name .. "' found on this surface.")
