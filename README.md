@@ -79,6 +79,7 @@ The task list can now ask your logistic bots to bring the buildings to you.
 - All requests live in a single logistic section named after the player, so the mod never edits requests you set up yourself
 - Entity names are resolved to the item that places them, so the request works for buildings whose item name differs from the entity name
 - If personal logistics **isn't researched yet** — or you've switched logistics off in your own logistics window — the request is still recorded, and the mod tells you it won't be filled until that changes, rather than appearing to work and quietly doing nothing
+- A **Logistics: On / Off** button leads the button row, acting as a status light as much as a control — green when personal logistics is on, red when it's off, and greyed to *n/a* when it hasn't been researched yet. Clicking it switches personal logistics without leaving the task list
 
 ---
 

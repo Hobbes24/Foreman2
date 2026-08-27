@@ -181,6 +181,35 @@ function requests_blocked_reason(player)
     return nil
 end
 
+-- On/off state of the player's personal logistics, as three values: true and
+-- false when we can read the point, nil when there is no point to read. nil is
+-- the unresearched case - not "off", because there is nothing there to switch.
+-- The button relies on that distinction to know when to disable itself rather
+-- than offer a toggle that cannot work.
+function logistics_enabled_state(player)
+    local point = get_requester_point(player)
+    if not point then return nil end
+
+    local ok, enabled = pcall(function() return point.enabled end)
+    if not ok then return nil end
+
+    return enabled and true or false
+end
+
+-- Flips that switch. Returns the new state, or nil if it could not be changed -
+-- same nil-means-unavailable contract as above.
+function set_logistics_enabled(player, target)
+    local point = get_requester_point(player)
+    if not point then return nil end
+
+    local ok = pcall(function() point.enabled = target end)
+    if not ok then return nil end
+
+    -- Read back rather than trusting the write: the point is the authority, and
+    -- a silently ignored assignment should not report success.
+    return logistics_enabled_state(player)
+end
+
 -- Our section on that point. Creates it when `create` is set, otherwise returns
 -- nil if we have never made a request for this player. Second return value is
 -- a diagnostic string, see get_requester_point above.
@@ -368,6 +397,29 @@ function update_button_states(player)
         end
     end
 
+    -- Personal logistics on/off. Deliberately not in GATED_BUTTONS: it reflects
+    -- and controls the player's own logistics, which is worth seeing and being
+    -- able to change whether or not a Foreman list has been imported. It gates
+    -- on the point existing instead.
+    local toggle = frame.logistics_row and frame.logistics_row.foreman_logitoggle_btn
+    if toggle then
+        local state = logistics_enabled_state(player)
+        if state == nil then
+            toggle.enabled = false
+            toggle.caption = "Logistics: n/a"
+            toggle.tooltip = "Personal logistics is not available yet - it unlocks with research"
+            toggle.style.font_color = { r = 0.7, g = 0.7, b = 0.7 }
+        else
+            toggle.enabled = true
+            toggle.caption = state and "Logistics: On" or "Logistics: Off"
+            toggle.tooltip = state
+                and "Personal logistics is on. Click to switch it off - bots stop filling requests."
+                or  "Personal logistics is off. Click to switch it on - bots start filling requests again."
+            toggle.style.font_color = state and { r = 0.4, g = 1.0, b = 0.4 }
+                                            or  { r = 1.0, g = 0.5, b = 0.5 }
+        end
+    end
+
     -- The caption tracks the paste box, not the task count: revealing the box again
     -- on a list that already has tasks turns "Import More" back into "Import".
     local paste  = frame.paste_section
@@ -461,6 +513,15 @@ function build_gui(player)
     }
     logi_row.style.horizontal_spacing = 6
 
+    -- Leads the row because it is a status light as much as a button: the
+    -- player should see whether logistics is on before reading the actions that
+    -- depend on it. Its caption and colour are set by update_button_states.
+    logi_row.add{
+        type    = "button",
+        name    = "foreman_logitoggle_btn",
+        caption = "Logistics: ?",
+        tooltip = "Turn personal logistics on or off"
+    }
     logi_row.add{
         type    = "button",
         name    = "foreman_requestall_btn",
@@ -740,6 +801,30 @@ script.on_event(defines.events.on_gui_click, function(event)
         local frame = player.gui.screen[FRAME_NAME]
         if frame then
             frame.paste_section.visible = true
+        end
+        refresh_gui(player)
+        return
+    end
+
+    -- Personal logistics on/off toggle
+    if name == "foreman_logitoggle_btn" then
+        local current = logistics_enabled_state(player)
+        if current == nil then
+            player.print("[Foreman2] Personal logistics cannot be switched: "
+                .. (requests_blocked_reason(player) or "no requester point available") .. ".")
+            refresh_gui(player)
+            return
+        end
+
+        local new_state = set_logistics_enabled(player, not current)
+        if new_state == nil then
+            player.print("[Foreman2] Personal logistics could not be switched.")
+        elseif new_state == current then
+            -- Wrote it, read it back unchanged - something else owns this switch.
+            player.print("[Foreman2] Personal logistics refused to switch; it is still "
+                .. (current and "on" or "off") .. ".")
+        else
+            player.print("[Foreman2] Personal logistics switched " .. (new_state and "on" or "off") .. ".")
         end
         refresh_gui(player)
         return
