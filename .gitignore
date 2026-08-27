@@ -13,3 +13,6 @@
 # Local Claude Code state - machine-specific paths, not for the public repo
 /.claude/settings.local.json
 /.claude/worktrees/
+
+# Local reference copy of a factorio mods folder - for inspection only, not part of the project
+/All Mods/
