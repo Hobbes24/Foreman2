@@ -54,6 +54,8 @@ namespace Foreman
 
 		private List<ListViewItem> filteredKeyNodesList;
 
+		private Timer exportFlashTimer;
+
 		private Dictionary<ListView, int> lastSortOrder; //int is +ve if sorted down, -ve if sorted up, |value| is the column # (starts from 1 due to 0 not having a sign) of the sort.
 
 		private readonly ProductionGraph graph;
@@ -921,6 +923,9 @@ namespace Foreman
 				}
 			}
 		}
+
+        private const string ExportToFactorioButtonCaption = "Copy for Factorio";
+
         private void ExportToFactorioButton_Click(object sender, EventArgs e)
         {
             var lines = new List<string>();
@@ -980,8 +985,27 @@ namespace Foreman
             }
 
             Clipboard.SetText(string.Join(Environment.NewLine, lines));
-            MessageBox.Show($"Copied {lines.Count} lines to clipboard.\nPaste into the Foreman2 Task List mod in Factorio.",
-                "Foreman2 → Factorio", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            FlashExportButton("Copied");
+        }
+
+        // Shows a transient caption on the export button instead of interrupting with a
+        // dialog. The timer is a field so a second click restarts the countdown rather
+        // than stacking timers, and it hangs off `components` so the form disposes it.
+        private void FlashExportButton(string message)
+        {
+            if (exportFlashTimer == null)
+            {
+                exportFlashTimer = new Timer(components) { Interval = 1200 };
+                exportFlashTimer.Tick += (sender, e) =>
+                {
+                    exportFlashTimer.Stop();
+                    ExportToFactorioButton.Text = ExportToFactorioButtonCaption;
+                };
+            }
+
+            exportFlashTimer.Stop();
+            ExportToFactorioButton.Text = message;
+            exportFlashTimer.Start();
         }
     }
 }
