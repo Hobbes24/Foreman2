@@ -224,18 +224,19 @@ function request_task_item(player, internal_name, count)
 
     local section, reason = get_request_section(player, true)
     if not section then
-        -- Lead with a cause the player can act on. Confirmed in game: with
-        -- personal logistics unresearched the requester point comes back nil,
-        -- so this path - not the post-write warning below - is what a fresh
-        -- save actually hits, and on its own it only said "returned nil".
-        -- The API detail stays in brackets: it is what separates "no character"
-        -- from "no point" when something genuinely unexpected happens.
+        -- Confirmed in game: with personal logistics unresearched the requester
+        -- point comes back nil, so this path - not the post-write warning below
+        -- - is what a fresh save actually hits.
+        --
+        -- When we can name the cause, say only that: the API detail is noise to
+        -- a player who just wants to know why the button did nothing. It is
+        -- printed only in the unexplained case, where separating "no character"
+        -- from "no point" is the whole value of the message.
         local blocked = requests_blocked_reason(player)
-        local detail  = reason or "unknown reason"
         if blocked then
-            player.print("[Foreman2] Personal logistic requests are not available: " .. blocked .. ". (" .. detail .. ")")
+            player.print("[Foreman2] Personal logistic requests are not available: " .. blocked .. ".")
         else
-            player.print("[Foreman2] Personal logistic requests are not available: " .. detail)
+            player.print("[Foreman2] Personal logistic requests are not available: " .. (reason or "unknown reason"))
         end
         return false
     end
