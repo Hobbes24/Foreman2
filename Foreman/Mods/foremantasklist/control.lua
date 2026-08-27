@@ -258,6 +258,31 @@ function first_free_slot(section)
     return section.filters_count + 1
 end
 
+-- Does this task currently have a request of ours outstanding? Drives both the
+-- green state on the button and which way a click goes.
+function task_has_request(player, internal_name)
+    local item_name = resolve_item_name(internal_name)
+    if not item_name then return false end
+
+    local section = get_request_section(player, false)
+    if not section then return false end
+
+    return find_request_slot(section, item_name) ~= nil
+end
+
+-- Style names are not guaranteed: base can rename one between versions and a
+-- modpack can remove it. Assigning an unknown style raises, so probe by
+-- assignment and keep the first that takes.
+--
+-- Assigning .style resets the style object, so every caller must re-apply size
+-- and padding afterwards.
+function apply_button_style(button, candidates, fallback)
+    for _, style in ipairs(candidates) do
+        if pcall(function() button.style = style end) then return end
+    end
+    button.style = fallback
+end
+
 -- Adds a personal logistic request for the item behind a task. An existing
 -- request is only ever raised, never lowered.
 function request_task_item(player, internal_name, count)
@@ -570,6 +595,10 @@ function render_tasks(player, scroll)
         return
     end
 
+    -- Fetched once rather than per row: render_tasks runs on every inventory
+    -- change, and this walks the logistic point.
+    local request_section = get_request_section(player, false)
+
     for i, task in ipairs(tasks) do
         local have = get_inventory_count(player, task.internal_name)
         local met  = (have >= task.count)
@@ -604,7 +633,9 @@ function render_tasks(player, scroll)
 
         -- Sits between checkbox and label so the buttons line up in a column.
         -- Kept (disabled) on done rows rather than removed, for the same reason.
-        local sprite = request_button_sprite(player)
+        local sprite      = request_button_sprite(player)
+        local has_request = request_section
+            and find_request_slot(request_section, resolve_item_name(task.internal_name) or "") ~= nil
         local req = row.add{
             type    = "sprite-button",
             name    = "task_request_" .. i,
@@ -612,8 +643,15 @@ function render_tasks(player, scroll)
             caption = (not sprite) and "R" or nil,
             style   = "tool_button",
             enabled = not task.done,
-            tooltip = "Request " .. task.count .. "x via personal logistics"
+            tooltip = has_request
+                and ("Requested " .. task.count .. "x - click to take the request back off")
+                or  ("Request " .. task.count .. "x via personal logistics")
         }
+        -- Green marks an outstanding request, so the button shows its own state.
+        if has_request then
+            apply_button_style(req, { "tool_button_green", "green_button", "confirm_button" }, "tool_button")
+        end
+        -- After the style assignment: setting .style resets these.
         req.style.width      = 20
         req.style.height     = 20
         req.style.padding    = 0
@@ -875,12 +913,22 @@ script.on_event(defines.events.on_gui_click, function(event)
     if request_idx then
         local tasks = storage.tasks[player.index]
         local task  = tasks and tasks[tonumber(request_idx)]
-        if task and request_task_item(player, task.internal_name, task.count) then
-            player.print("[Foreman2] Requested " .. task.count .. "x " .. (task.name or task.display) .. ".")
-            local blocked = requests_blocked_reason(player)
-            if blocked then
-                player.print("[Foreman2] This will not be filled yet - " .. blocked .. ". It stays in place and starts working once that changes.")
+        if task then
+            -- A toggle, not an add: clicking a row that already has a request
+            -- takes it back off. Previously a second click called
+            -- request_task_item again, which found the existing request, saw the
+            -- count was not higher, changed nothing, and still said "Requested".
+            if task_has_request(player, task.internal_name) then
+                clear_task_request(player, task.internal_name)
+                player.print("[Foreman2] Removed the request for " .. (task.name or task.display) .. ".")
+            elseif request_task_item(player, task.internal_name, task.count) then
+                player.print("[Foreman2] Requested " .. task.count .. "x " .. (task.name or task.display) .. ".")
+                local blocked = requests_blocked_reason(player)
+                if blocked then
+                    player.print("[Foreman2] This will not be filled yet - " .. blocked .. ". It stays in place and starts working once that changes.")
+                end
             end
+            refresh_gui(player)
         end
         return
     end
