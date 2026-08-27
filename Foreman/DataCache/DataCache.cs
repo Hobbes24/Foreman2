@@ -230,11 +230,21 @@ namespace Foreman
 			List<Recipe> miningWithFluidRecipes = new List<Recipe>();
 
 			PresetName = preset.Name;
-			JObject jsonData = await Task.Run(() => PresetProcessor.PrepPreset(preset));
+
+			//the preset json and the icon cache are independent of each other, so read them at the same time -
+			//on a big modpack that hides the better part of a second of json parsing behind the icon load
+			Stopwatch loadTimer = Stopwatch.StartNew();
+			Task<JObject> presetTask = Task.Run(() => PresetProcessor.PrepPreset(preset));
+			Task<Dictionary<string, IconColorPair>> iconTask = loadIcons
+				? IconCache.LoadIconCache(Path.Combine(new string[] { Application.StartupPath, "Presets", preset.Name + ".dat" }), progress, 0, 90)
+				: Task.FromResult(new Dictionary<string, IconColorPair>());
+
+			JObject jsonData = await presetTask;
+			long presetReadMS = loadTimer.ElapsedMilliseconds;
+			iconCache = await iconTask;
+			long dataReadMS = loadTimer.ElapsedMilliseconds;
 			if (jsonData == null)
 				return;
-
-			iconCache = loadIcons ? await IconCache.LoadIconCache(Path.Combine(new string[] { Application.StartupPath, "Presets", preset.Name + ".dat" }), progress, 0, 90) : new Dictionary<string, IconColorPair>();
 
 			await Task.Run(() =>
 			{
@@ -355,6 +365,9 @@ namespace Foreman
 				progress.Report(new KeyValuePair<int, string>(98, "Finalizing..."));
 				progress.Report(new KeyValuePair<int, string>(100, "Done!"));
 			});
+
+			ErrorLogging.LogLine(string.Format("Preset '{0}' loaded in {1} ms (preset json {2} ms, icons+json {3} ms, processing {4} ms).",
+				preset.Name, loadTimer.ElapsedMilliseconds, presetReadMS, dataReadMS, loadTimer.ElapsedMilliseconds - dataReadMS));
 		}
 
 		public void Clear()

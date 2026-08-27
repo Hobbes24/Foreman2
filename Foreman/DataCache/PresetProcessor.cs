@@ -58,6 +58,297 @@ namespace Foreman
 			return jsonData;
 		}
 
+		/// <summary>
+		/// Everything TestPreset needs to know about a preset, extracted from its pjson. Building one means
+		/// reading and parsing the whole preset file (16MB+ for a big modpack), which is why the last one is
+		/// kept around: loading several graphs, or restoring a session of tabs, otherwise re-parses the same
+		/// preset once per graph.
+		/// </summary>
+		private class PresetSnapshot
+		{
+			public string Key;
+			public Dictionary<string, string> Mods;
+			public HashSet<string> Items;
+			public HashSet<string> Qualities;
+			public Dictionary<string, RecipeShort> Recipes;
+			public Dictionary<string, PlantShort> PlantProcesses;
+		}
+
+		private static readonly object snapshotLock = new object();
+
+		//a graph names several presets it can load under, and each tab tests them in turn, so keeping only the
+		//last snapshot means two presets take turns evicting each other and every tab pays the full parse again.
+		//The two most recent are held outright; older ones stay reachable until the GC needs the memory.
+		private const int StrongSnapshotCount = 2;
+		private static readonly List<PresetSnapshot> recentSnapshots = new List<PresetSnapshot>();
+		private static readonly Dictionary<string, WeakReference> snapshotPool = new Dictionary<string, WeakReference>();
+
+		/// <summary>Looks up an already built snapshot, promoting it to most-recently-used. Null when there is none.</summary>
+		private static PresetSnapshot GetCachedSnapshot(string key)
+		{
+			lock (snapshotLock)
+			{
+				PresetSnapshot snapshot = recentSnapshots.FirstOrDefault(s => s.Key == key);
+				if (snapshot == null)
+				{
+					WeakReference reference;
+					if (snapshotPool.TryGetValue(key, out reference))
+						snapshot = reference.Target as PresetSnapshot; //null once the GC has collected it
+				}
+
+				if (snapshot != null)
+					Remember(snapshot);
+				return snapshot;
+			}
+		}
+
+		/// <summary>Caller must hold snapshotLock.</summary>
+		private static void Remember(PresetSnapshot snapshot)
+		{
+			recentSnapshots.RemoveAll(s => s.Key == snapshot.Key);
+			recentSnapshots.Insert(0, snapshot);
+			while (recentSnapshots.Count > StrongSnapshotCount)
+				recentSnapshots.RemoveAt(recentSnapshots.Count - 1); //still in the pool below, just collectable now
+
+			snapshotPool[snapshot.Key] = new WeakReference(snapshot);
+			foreach (string deadKey in snapshotPool.Where(kvp => !kvp.Value.IsAlive).Select(kvp => kvp.Key).ToList())
+				snapshotPool.Remove(deadKey);
+		}
+
+		/// <summary>Identifies a preset file by path, size and write time, so an updated preset is never reused.</summary>
+		private static string GetPresetKey(string presetPath)
+		{
+			FileInfo info = new FileInfo(presetPath);
+			return presetPath + "|" + info.Length + "|" + info.LastWriteTimeUtc.Ticks;
+		}
+
+		private static PresetSnapshot GetPresetSnapshot(Preset preset)
+		{
+			string presetPath = Path.Combine(new string[] { Application.StartupPath, "Presets", preset.Name + ".pjson" });
+			if (!File.Exists(presetPath))
+				return null;
+
+			string key;
+			try { key = GetPresetKey(presetPath); }
+			catch { key = null; } //cannot stat the file (network hiccup) - just build a fresh snapshot
+
+			if (key != null)
+			{
+				PresetSnapshot cached = GetCachedSnapshot(key);
+				if (cached != null)
+					return cached;
+			}
+
+			PresetSnapshot snapshot = BuildPresetSnapshot(preset, key);
+			if (snapshot != null && key != null)
+			{
+				lock (snapshotLock)
+					Remember(snapshot);
+			}
+			return snapshot;
+		}
+
+		private static PresetSnapshot BuildPresetSnapshot(Preset preset, string key)
+		{
+			System.Diagnostics.Stopwatch timer = System.Diagnostics.Stopwatch.StartNew();
+
+				JObject jsonData = PrepPreset(preset);
+
+				//parse preset (note: this is preset data, so we are guaranteed to only have one name per item/recipe/mod/etc.)
+				HashSet<string> presetItems = new HashSet<string>();
+				HashSet<string> presetEntities = new HashSet<string>();
+				Dictionary<string, RecipeShort> presetRecipes = new Dictionary<string, RecipeShort>();
+				Dictionary<string, PlantShort> presetPlantProcesses = new Dictionary<string, PlantShort>();
+				Dictionary<string, string> presetMods = new Dictionary<string, string>();
+				HashSet<string> presetQualities = new HashSet<string>();
+
+				//built in items
+				presetItems.Add("§§i:heat");
+				//built in recipes:
+				RecipeShort heatRecipe = new RecipeShort("§§r:h:heat-generation");
+				heatRecipe.Products.Add("§§i:heat", 1);
+				presetRecipes.Add(heatRecipe.Name, heatRecipe);
+				RecipeShort burnerRecipe = new RecipeShort("§§r:h:burner-electicity");
+				presetRecipes.Add(burnerRecipe.Name, burnerRecipe);
+				//built in assemblers:
+				presetEntities.Add("§§a:player-assembler");
+				presetEntities.Add("§§a:rocket-assembler");
+
+				//read in mods
+				foreach (var objJToken in jsonData["mods"].ToList())
+					presetMods.Add((string)objJToken["name"], (string)objJToken["version"]);
+				//read in items (and their plant results)
+				foreach (var objJToken in jsonData["items"].ToList())
+				{
+					presetItems.Add((string)objJToken["name"]);
+                if (objJToken["plant_results"] != null)
+					{
+						PlantShort plantProcess = new PlantShort((string)objJToken["name"]);
+						foreach(var productJToken in objJToken["plant_results"])
+						{
+                        double amount = (double)productJToken["amount"];
+                        if (amount > 0)
+                        {
+                            string productName = (string)productJToken["name"];
+                            if (plantProcess.Products.ContainsKey(productName))
+                                plantProcess.Products[productName] += amount;
+                            else
+                                plantProcess.Products.Add(productName, amount);
+                        }
+                    }
+						presetPlantProcesses.Add(plantProcess.Name, plantProcess);
+					}
+				}
+				//read in fluids
+				foreach (var objJToken in jsonData["fluids"].ToList())
+					presetItems.Add((string)objJToken["name"]);
+				//read in entities
+				foreach (var objJToken in jsonData["entities"].ToList())
+					presetEntities.Add((string)objJToken["name"]);
+				//read in quality data
+				foreach (var objJToken in jsonData["qualities"].ToList())
+					presetQualities.Add((string)objJToken["name"]);
+
+				//read in recipes
+				foreach (var objJToken in jsonData["recipes"].ToList())
+				{
+
+					RecipeShort recipe = new RecipeShort((string)objJToken["name"]);
+					foreach (var ingredientJToken in objJToken["ingredients"].ToList())
+					{
+						double amount = (double)ingredientJToken["amount"];
+						if (amount > 0)
+						{
+								string ingredientName = (string)ingredientJToken["name"];
+								if (recipe.Ingredients.ContainsKey(ingredientName))
+									recipe.Ingredients[ingredientName] +=amount;
+								else
+									recipe.Ingredients.Add(ingredientName, amount);
+						}
+					}
+					foreach (var productJToken in objJToken["products"].ToList())
+					{
+						double amount = (double)productJToken["amount"];
+						if (amount > 0)
+						{
+
+								string productName = (string)productJToken["name"];
+								if (recipe.Products.ContainsKey(productName))
+									recipe.Products[productName] += amount;
+								else
+									recipe.Products.Add(productName, amount);
+						}
+					}
+					presetRecipes.Add(recipe.Name, recipe);
+				}
+
+				//have to process mining, generators and boilers (since we convert them to recipes as well)
+				foreach (var objJToken in jsonData["resources"])
+				{
+					if (objJToken["products"].Count() == 0)
+						continue;
+
+					RecipeShort recipe = new RecipeShort("§§r:e:" + (string)objJToken["name"]);
+
+					foreach (var productJToken in objJToken["products"])
+					{
+						double amount = (double)productJToken["amount"];
+						if (amount > 0)
+						{
+								string productName = (string)productJToken["name"];
+								if (recipe.Products.ContainsKey(productName))
+									recipe.Products[productName] += amount;
+								else
+									recipe.Products.Add(productName, amount);
+						}
+					}
+					if (recipe.Products.Count == 0)
+						continue;
+
+					if (objJToken["required_fluid"] != null && (double)objJToken["fluid_amount"] != 0)
+						recipe.Ingredients.Add((string)objJToken["required_fluid"], (double)objJToken["fluid_amount"]);
+
+					presetRecipes.Add(recipe.Name, recipe);
+				}
+
+				foreach (var objJToken in jsonData["entities"])
+				{
+					string type = (string)objJToken["type"];
+					if (type == "boiler")
+					{
+						if (objJToken["fluid_ingredient"] == null || objJToken["fluid_product"] == null)
+								continue;
+
+						double temp = (double)objJToken["target_temperature"];
+						string ingredient = (string)objJToken["fluid_ingredient"];
+						string product = (string)objJToken["fluid_product"];
+
+						RecipeShort recipe = new RecipeShort(string.Format("§§r:b:{0}:{1}:{2}", ingredient, product, temp.ToString()));
+						recipe.Ingredients.Add(ingredient, 60);
+						recipe.Products.Add(product, 60);
+
+						if (!presetRecipes.ContainsKey(recipe.Name))
+								presetRecipes.Add(recipe.Name, recipe);
+					}
+					else if (type == "generator")
+					{
+						if (objJToken["fluid_ingredient"] == null)
+								continue;
+
+						string ingredient = (string)objJToken["fluid_ingredient"];
+						double minTemp = (double)(objJToken["minimum_temperature"] ?? double.NaN);
+						double maxTemp = (double)(objJToken["maximum_temperature"] ?? double.NaN);
+						RecipeShort recipe = new RecipeShort(string.Format("§§r:g:{0}:{1}>{2}", ingredient, minTemp, maxTemp));
+						recipe.Ingredients.Add(ingredient, 60);
+
+						if (!presetRecipes.ContainsKey(recipe.Name))
+								presetRecipes.Add(recipe.Name, recipe);
+					}
+				}
+
+				//process launch product recipes
+				if (presetItems.Contains("rocket-part") && presetRecipes.ContainsKey("rocket-part") && presetEntities.Contains("rocket-silo"))
+				{
+					foreach (var objJToken in jsonData["items"].Concat(jsonData["fluids"]).Where(t => t["launch_products"] != null))
+					{
+						RecipeShort recipe = new RecipeShort(string.Format("§§r:rl:launch-{0}", (string)objJToken["name"]));
+
+						int inputSize = (int)objJToken["stack"];
+						foreach (var productJToken in objJToken["launch_products"])
+						{
+								double amount = (double)productJToken["amount"];
+								int productStack = (int)(jsonData["items"].First(t => (string)t["name"] == (string)productJToken["name"])["stack"]?? 1);
+								if (amount != 0 && inputSize * amount > productStack)
+									inputSize = (int)(productStack / amount);
+						}
+						foreach (var productJToken in objJToken["launch_products"])
+						{
+								double amount = (double)productJToken["amount"];
+								if (amount != 0)
+									recipe.Products.Add((string)productJToken["name"], amount * inputSize);
+						}
+
+						recipe.Ingredients.Add((string)objJToken["name"], inputSize);
+						recipe.Ingredients.Add("rocket-part", 100);
+
+						presetRecipes.Add(recipe.Name, recipe);
+					}
+				}
+
+				timer.Stop();
+				ErrorLogging.LogLine(string.Format("Preset '{0}' read for comparison in {1} ms.", preset.Name, timer.ElapsedMilliseconds));
+
+				return new PresetSnapshot()
+				{
+					Key = key,
+					Mods = presetMods,
+					Items = presetItems,
+					Qualities = presetQualities,
+					Recipes = presetRecipes,
+					PlantProcesses = presetPlantProcesses
+				};
+		}
+
 		public static async Task<PresetErrorPackage> TestPreset(Preset preset, Dictionary<string, string> modList, List<string> itemList, List<string> entityList, List<string> qualityList, List<RecipeShort> recipeShorts, List<PlantShort> plantShorts)
 		{
             //try
@@ -160,188 +451,15 @@ namespace Foreman
 		//any changes to preset json style have to be reflected here though (unlike for a full data cache loader above, which just incorporates any changes to data cache as long as they dont impact the outputs)
 		private static async Task<PresetErrorPackage> TestPresetStreamlined(Preset preset, Dictionary<string, string> modList, List<string> itemList, List<string> entityList, List<string> qualityList, List<RecipeShort> recipeShorts, List<PlantShort> plantShorts)
 		{
-			JObject jsonData = PrepPreset(preset);
+			PresetSnapshot snapshot = await Task.Run(() => GetPresetSnapshot(preset));
+			if (snapshot == null)
+				return null;
 
-			//parse preset (note: this is preset data, so we are guaranteed to only have one name per item/recipe/mod/etc.)
-			HashSet<string> presetItems = new HashSet<string>();
-			HashSet<string> presetEntities = new HashSet<string>();
-			Dictionary<string, RecipeShort> presetRecipes = new Dictionary<string, RecipeShort>();
-			Dictionary<string, PlantShort> presetPlantProcesses = new Dictionary<string, PlantShort>();
-			Dictionary<string, string> presetMods = new Dictionary<string, string>();
-			HashSet<string> presetQualities = new HashSet<string>();
-
-			//built in items
-			presetItems.Add("§§i:heat");
-			//built in recipes:
-			RecipeShort heatRecipe = new RecipeShort("§§r:h:heat-generation");
-			heatRecipe.Products.Add("§§i:heat", 1);
-			presetRecipes.Add(heatRecipe.Name, heatRecipe);
-			RecipeShort burnerRecipe = new RecipeShort("§§r:h:burner-electicity");
-			presetRecipes.Add(burnerRecipe.Name, burnerRecipe);
-			//built in assemblers:
-			presetEntities.Add("§§a:player-assembler");
-			presetEntities.Add("§§a:rocket-assembler");
-
-			//read in mods
-			foreach (var objJToken in jsonData["mods"].ToList())
-				presetMods.Add((string)objJToken["name"], (string)objJToken["version"]);
-			//read in items (and their plant results)
-			foreach (var objJToken in jsonData["items"].ToList())
-			{
-				presetItems.Add((string)objJToken["name"]);
-                if (objJToken["plant_results"] != null)
-				{
-					PlantShort plantProcess = new PlantShort((string)objJToken["name"]);
-					foreach(var productJToken in objJToken["plant_results"])
-					{
-                        double amount = (double)productJToken["amount"];
-                        if (amount > 0)
-                        {
-                            string productName = (string)productJToken["name"];
-                            if (plantProcess.Products.ContainsKey(productName))
-                                plantProcess.Products[productName] += amount;
-                            else
-                                plantProcess.Products.Add(productName, amount);
-                        }
-                    }
-					presetPlantProcesses.Add(plantProcess.Name, plantProcess);
-				}
-			}
-			//read in fluids
-			foreach (var objJToken in jsonData["fluids"].ToList())
-				presetItems.Add((string)objJToken["name"]);
-			//read in entities
-			foreach (var objJToken in jsonData["entities"].ToList())
-				presetEntities.Add((string)objJToken["name"]);
-			//read in quality data
-			foreach (var objJToken in jsonData["qualities"].ToList())
-				presetQualities.Add((string)objJToken["name"]);
-
-			//read in recipes
-			foreach (var objJToken in jsonData["recipes"].ToList())
-			{
-
-				RecipeShort recipe = new RecipeShort((string)objJToken["name"]);
-				foreach (var ingredientJToken in objJToken["ingredients"].ToList())
-				{
-					double amount = (double)ingredientJToken["amount"];
-					if (amount > 0)
-					{
-						string ingredientName = (string)ingredientJToken["name"];
-						if (recipe.Ingredients.ContainsKey(ingredientName))
-							recipe.Ingredients[ingredientName] +=amount;
-						else
-							recipe.Ingredients.Add(ingredientName, amount);
-					}
-				}
-				foreach (var productJToken in objJToken["products"].ToList())
-				{
-					double amount = (double)productJToken["amount"];
-					if (amount > 0)
-					{
-
-						string productName = (string)productJToken["name"];
-						if (recipe.Products.ContainsKey(productName))
-							recipe.Products[productName] += amount;
-						else
-							recipe.Products.Add(productName, amount);
-					}
-				}
-				presetRecipes.Add(recipe.Name, recipe);
-			}
-
-			//have to process mining, generators and boilers (since we convert them to recipes as well)
-			foreach (var objJToken in jsonData["resources"])
-			{
-				if (objJToken["products"].Count() == 0)
-					continue;
-
-				RecipeShort recipe = new RecipeShort("§§r:e:" + (string)objJToken["name"]);
-
-				foreach (var productJToken in objJToken["products"])
-				{
-					double amount = (double)productJToken["amount"];
-					if (amount > 0)
-					{
-						string productName = (string)productJToken["name"];
-						if (recipe.Products.ContainsKey(productName))
-							recipe.Products[productName] += amount;
-						else
-							recipe.Products.Add(productName, amount);
-					}
-				}
-				if (recipe.Products.Count == 0)
-					continue;
-
-				if (objJToken["required_fluid"] != null && (double)objJToken["fluid_amount"] != 0)
-					recipe.Ingredients.Add((string)objJToken["required_fluid"], (double)objJToken["fluid_amount"]);
-
-				presetRecipes.Add(recipe.Name, recipe);
-			}
-
-			foreach (var objJToken in jsonData["entities"])
-			{
-				string type = (string)objJToken["type"];
-				if (type == "boiler")
-				{
-					if (objJToken["fluid_ingredient"] == null || objJToken["fluid_product"] == null)
-						continue;
-
-					double temp = (double)objJToken["target_temperature"];
-					string ingredient = (string)objJToken["fluid_ingredient"];
-					string product = (string)objJToken["fluid_product"];
-
-					RecipeShort recipe = new RecipeShort(string.Format("§§r:b:{0}:{1}:{2}", ingredient, product, temp.ToString()));
-					recipe.Ingredients.Add(ingredient, 60);
-					recipe.Products.Add(product, 60);
-
-					if (!presetRecipes.ContainsKey(recipe.Name))
-						presetRecipes.Add(recipe.Name, recipe);
-				}
-				else if (type == "generator")
-				{
-					if (objJToken["fluid_ingredient"] == null)
-						continue;
-
-					string ingredient = (string)objJToken["fluid_ingredient"];
-					double minTemp = (double)(objJToken["minimum_temperature"] ?? double.NaN);
-					double maxTemp = (double)(objJToken["maximum_temperature"] ?? double.NaN);
-					RecipeShort recipe = new RecipeShort(string.Format("§§r:g:{0}:{1}>{2}", ingredient, minTemp, maxTemp));
-					recipe.Ingredients.Add(ingredient, 60);
-
-					if (!presetRecipes.ContainsKey(recipe.Name))
-						presetRecipes.Add(recipe.Name, recipe);
-				}
-			}
-
-			//process launch product recipes
-			if (presetItems.Contains("rocket-part") && presetRecipes.ContainsKey("rocket-part") && presetEntities.Contains("rocket-silo"))
-			{
-				foreach (var objJToken in jsonData["items"].Concat(jsonData["fluids"]).Where(t => t["launch_products"] != null))
-				{
-					RecipeShort recipe = new RecipeShort(string.Format("§§r:rl:launch-{0}", (string)objJToken["name"]));
-
-					int inputSize = (int)objJToken["stack"];
-					foreach (var productJToken in objJToken["launch_products"])
-					{
-						double amount = (double)productJToken["amount"];
-						int productStack = (int)(jsonData["items"].First(t => (string)t["name"] == (string)productJToken["name"])["stack"]?? 1);
-						if (amount != 0 && inputSize * amount > productStack)
-							inputSize = (int)(productStack / amount);
-					}
-					foreach (var productJToken in objJToken["launch_products"])
-					{
-						double amount = (double)productJToken["amount"];
-						if (amount != 0)
-							recipe.Products.Add((string)productJToken["name"], amount * inputSize);
-					}
-
-					recipe.Ingredients.Add((string)objJToken["name"], inputSize);
-					recipe.Ingredients.Add("rocket-part", 100);
-
-					presetRecipes.Add(recipe.Name, recipe);
-				}
-			}
+			Dictionary<string, string> presetMods = snapshot.Mods;
+			HashSet<string> presetItems = snapshot.Items;
+			HashSet<string> presetQualities = snapshot.Qualities;
+			Dictionary<string, RecipeShort> presetRecipes = snapshot.Recipes;
+			Dictionary<string, PlantShort> presetPlantProcesses = snapshot.PlantProcesses;
 
 			//compare to provided mod/item/recipe sets (recipes have a chance of existing in multitudes - aka: missing recipes)
 			PresetErrorPackage errors = new PresetErrorPackage(preset);

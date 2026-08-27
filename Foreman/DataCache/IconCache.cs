@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -103,19 +104,37 @@ namespace Foreman
 		}
 
 
-		private static string GetLocalCachePath(string networkPath)
+		private static string GetLocalCacheDirectory()
 		{
 			string localDir = Path.Combine(
 				Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
 				"Foreman2", "IconCache");
 			Directory.CreateDirectory(localDir);
-			// Use (uint) cast to avoid Math.Abs(int.MinValue) overflow edge case.
-			string safeName = Path.GetFileNameWithoutExtension(networkPath)
-				+ "_" + ((uint)networkPath.GetHashCode()).ToString() + ".dat";
-			return Path.Combine(localDir, safeName);
+			return localDir;
 		}
 
-		private static void CopyToLocalCacheAsync(string sourcePath, string localPath)
+		/// <summary>
+		/// Local mirror for a preset's icon cache, named after the source file's size and write time rather
+		/// than its path: two installs of Foreman pointing at the same preset then share one mirror instead of
+		/// keeping a (125MB+) copy each, and a rebuilt preset never matches a stale mirror.
+		/// </summary>
+		private static string GetLocalCachePath(string sourcePath)
+		{
+			string stamp;
+			try
+			{
+				FileInfo info = new FileInfo(sourcePath);
+				stamp = info.Length + "_" + info.LastWriteTimeUtc.Ticks;
+			}
+			catch
+			{
+				// Use (uint) cast to avoid Math.Abs(int.MinValue) overflow edge case.
+				stamp = ((uint)sourcePath.GetHashCode()).ToString();
+			}
+			return Path.Combine(GetLocalCacheDirectory(), Path.GetFileNameWithoutExtension(sourcePath) + "_" + stamp + ".dat");
+		}
+
+		private static void MirrorToLocalCacheAsync(string sourcePath, string localPath)
 		{
 			// Fire-and-forget background copy using write-to-temp-then-rename
 			// so an interrupted copy never leaves a corrupt local cache file.
@@ -124,16 +143,57 @@ namespace Foreman
 				string tempPath = localPath + ".tmp";
 				try
 				{
-					File.Copy(sourcePath, tempPath, true);
+					//the icons inside are already compressed, so gzip buys ~nothing on size and costs most of a
+					//second in decompression on every launch - the local mirror is stored expanded instead.
+					using (Stream source = File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+					using (Stream target = File.Open(tempPath, FileMode.Create, FileAccess.Write))
+					{
+						Stream readStream = IsGZip(source) ? new GZipStream(source, CompressionMode.Decompress) : source;
+						try { readStream.CopyTo(target); }
+						finally { if (!ReferenceEquals(readStream, source)) readStream.Dispose(); }
+					}
+
 					if (File.Exists(localPath))
 						File.Delete(localPath);
 					File.Move(tempPath, localPath);
+					PruneLocalCache(Path.GetFileNameWithoutExtension(sourcePath));
 				}
 				catch
 				{
 					try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
 				}
 			});
+		}
+
+		/// <summary>
+		/// Keeps the two most recent mirrors of a preset (the current one plus whatever another install of
+		/// Foreman is using) and deletes the rest, so old preset builds do not pile up hundreds of MB.
+		/// </summary>
+		private static void PruneLocalCache(string presetName)
+		{
+			try
+			{
+				DirectoryInfo directory = new DirectoryInfo(GetLocalCacheDirectory());
+				FileInfo[] mirrors = directory.GetFiles(presetName + "_*.dat");
+				if (mirrors.Length <= 2)
+					return;
+
+				foreach (FileInfo mirror in mirrors.OrderByDescending(f => f.LastWriteTimeUtc).Skip(2))
+				{
+					try { mirror.Delete(); }
+					catch { } //in use by another Foreman instance - it will be caught by a later prune
+				}
+			}
+			catch { }
+		}
+
+		/// <summary>Checks for the GZip magic number, leaving the stream where it found it.</summary>
+		private static bool IsGZip(Stream stream)
+		{
+			byte[] header = new byte[2];
+			int read = stream.Read(header, 0, 2);
+			stream.Seek(0, SeekOrigin.Begin);
+			return read == 2 && header[0] == 0x1F && header[1] == 0x8B;
 		}
 
 		public static void SaveIconCache(string path, Dictionary<string, IconColorPair> iconCache)
@@ -157,28 +217,12 @@ namespace Foreman
 		{
 			Dictionary<string, IconColorPair> iconCache = new Dictionary<string, IconColorPair>();
 
-			// Determine whether to read from the network path or a local mirror.
+			// The mirror is keyed to the source file's size and write time, so if one exists it is this exact
+			// preset build and can be used without further checks.
 			string localPath = GetLocalCachePath(path);
-			string sourcePath = path;
-
-			if (File.Exists(path) && File.Exists(localPath))
-			{
-				try
-				{
-					DateTime networkWrite = File.GetLastWriteTimeUtc(path);
-					DateTime localWrite   = File.GetLastWriteTimeUtc(localPath);
-					if (localWrite >= networkWrite)
-						sourcePath = localPath;
-				}
-				catch
-				{
-					// If we can't read timestamps (e.g. network hiccup), fall back
-					// to the network file.
-					sourcePath = path;
-				}
-			}
-
-			bool loadedFromNetwork = (sourcePath == path && sourcePath != localPath);
+			string sourcePath = File.Exists(localPath) ? localPath : path;
+			bool loadedFromNetwork = (sourcePath != localPath);
+			Stopwatch timer = Stopwatch.StartNew();
 
 			await Task.Run(() =>
 			{
@@ -186,13 +230,9 @@ namespace Foreman
 				{
 					using (Stream fileStream = File.Open(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read))
 					{
-						// Detect GZip magic number (0x1F 0x8B) for backward compatibility
-						// with .dat files written before compression was added.
-						byte[] header = new byte[2];
-						fileStream.Read(header, 0, 2);
-						fileStream.Seek(0, SeekOrigin.Begin);
-
-						Stream readStream = (header[0] == 0x1F && header[1] == 0x8B)
+						// Mirrors are written expanded; the shipped .dat files are gzipped (as are any written
+						// by an older Foreman), so both have to be readable here.
+						Stream readStream = IsGZip(fileStream)
 							? (Stream)new GZipStream(fileStream, CompressionMode.Decompress)
 							: fileStream;
 
@@ -227,10 +267,14 @@ namespace Foreman
 				}
 			});
 
+			timer.Stop();
+			ErrorLogging.LogLine(string.Format("Loaded {0} icons from the {1} copy in {2} ms.",
+				iconCache.Count, loadedFromNetwork ? "original" : "local", timer.ElapsedMilliseconds));
+
 			// If we read from the network, mirror the file locally in the background
 			// so the next launch can use the fast local copy.
 			if (loadedFromNetwork && iconCache.Count > 0)
-				CopyToLocalCacheAsync(path, localPath);
+				MirrorToLocalCacheAsync(path, localPath);
 
 			return iconCache;
 		}
