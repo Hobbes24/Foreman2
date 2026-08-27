@@ -346,6 +346,10 @@ namespace Foreman
 					Console.WriteLine(string.Format("Removal of {0} due to having no assemblers associated with it.", recipe));
 				}
 
+				//re-attach the technologies of any mod upgrade that unlocks its recipes through a script instead of
+				//a technology effect. must run before availability is calculated, since that is derived from unlock technologies.
+				ProcessTurdUpgrades(jsonData);
+
 				//calculate the availability of various recipes and entities (based on their unlock technologies + entity place objects' unlock technologies)
 				ProcessAvailableStatuses();
 
@@ -1968,6 +1972,74 @@ namespace Foreman
 			}
 		}
 
+
+		//Pyanodon's TURD upgrades let the player pick one of several sub-techs under a master technology, and the
+		//chosen sub-tech's recipes are switched on by the mod's own script when that research finishes rather than
+		//by a normal 'unlock-recipe' effect. Nothing in the exported prototype data connects the two, so these
+		//recipes arrive with zero unlock technologies and ProcessAvailableStatuses would stamp them unavailable
+		//forever - indistinguishable from genuinely orphaned junk recipes. The exporter reads the mapping out of
+		//the mod itself; re-attaching the master technology here is the whole fix, as availability, science pack
+		//tiers and the recipe chooser all derive from myUnlockTechnologies.
+		private void ProcessTurdUpgrades(JToken jsonData)
+		{
+			if (jsonData["turd_upgrades"] == null)
+				return;
+
+			foreach (var upgradeJToken in jsonData["turd_upgrades"].ToList())
+			{
+				if (!technologies.TryGetValue((string)upgradeJToken["name"], out Technology masterTech))
+					continue;
+
+				foreach (var subTechJToken in upgradeJToken["sub_techs"].ToList())
+				{
+					foreach (var recipeName in subTechJToken["unlocked_recipes"].ToList())
+						LinkTurdRecipe((string)recipeName, (TechnologyPrototype)masterTech);
+
+					//only the replacement is a turd recipe - the recipe it replaces is an ordinary one that is already linked
+					foreach (var replacementJToken in subTechJToken["replaced_recipes"].ToList())
+						LinkTurdRecipe((string)replacementJToken["new"], (TechnologyPrototype)masterTech);
+
+					//a sub-tech can also swap in a whole machine. an entity is available when something that places
+					//it can be built, so the machine is reached through the recipe that crafts its place item.
+					foreach (var replacementJToken in subTechJToken["replaced_machines"].ToList())
+						LinkTurdMachine((string)replacementJToken["new"], (TechnologyPrototype)masterTech);
+				}
+			}
+		}
+
+		private void LinkTurdRecipe(string recipeName, TechnologyPrototype masterTech)
+		{
+			if (string.IsNullOrEmpty(recipeName) || !recipes.TryGetValue(recipeName, out Recipe recipe))
+				return;
+
+			RecipePrototype rPrototype = (RecipePrototype)recipe;
+			if (rPrototype.myUnlockTechnologies.Add(masterTech))
+				masterTech.unlockedRecipes.Add(rPrototype);
+		}
+
+		/// <summary>
+		/// Attributes the recipes that build a turd-swapped machine to the master technology. Only recipes that
+		/// carry no unlock technology of their own are touched: those are the ones step 3 of ProcessAvailableStatuses
+		/// would otherwise discard, and anything already unlocked by real research is left to its own tech.
+		/// </summary>
+		private void LinkTurdMachine(string entityName, TechnologyPrototype masterTech)
+		{
+			if (string.IsNullOrEmpty(entityName))
+				return;
+
+			EntityObjectBasePrototype entity = null;
+			if (assemblers.TryGetValue(entityName, out Assembler assembler))
+				entity = (EntityObjectBasePrototype)assembler;
+			else if (beacons.TryGetValue(entityName, out Beacon beacon))
+				entity = (EntityObjectBasePrototype)beacon;
+
+			if (entity == null)
+				return;
+
+			foreach (ItemPrototype placeItem in entity.associatedItems)
+				foreach (RecipePrototype producer in placeItem.productionRecipes.Where(r => r.myUnlockTechnologies.Count == 0).ToList())
+					LinkTurdRecipe(producer.Name, masterTech);
+		}
 
 		private void ProcessAvailableStatuses()
 		{

@@ -172,8 +172,75 @@ local function ExportResearch()
 	etable['technologies'] = ttechnologies
 end
 
+-- Pyanodon's TURD upgrades (pyalienlife) let you pick one of several sub-techs under a master technology.
+-- The chosen sub-tech's recipes are switched on by the mod's own script when research completes, rather than
+-- by a normal 'unlock-recipe' technology effect, so nothing in the prototype data connects the two. Foreman
+-- would see those recipes as having no unlocking technology at all and mark them permanently unavailable.
+-- pyalienlife's 'prototypes/turd' returns {tech_upgrades, farm_building_tiers, turd_machines}, so we can read
+-- the real mapping straight from the mod instead of guessing at it.
+-- factorio only allows require while control.lua is being parsed, never from inside an event handler, so the
+-- table is pulled in here at load time and the export below just reads what we already have.
+local turdUpgrades = nil
+if script.active_mods and script.active_mods['pyalienlife'] then
+	local ok, result = pcall(require, '__pyalienlife__/prototypes/turd')
+	if ok and type(result) == 'table' and type(result[1]) == 'table' then
+		turdUpgrades = result[1]
+	else
+		log('FOREMAN: pyalienlife is active but its turd table could not be read: '..tostring(result))
+	end
+end
+
+local function ExportTurdUpgrades()
+	if turdUpgrades == nil then return end
+
+	tturds = {}
+	for masterName, upgrade in pairs(turdUpgrades) do
+		tturd = {}
+		tturd['name'] = masterName
+		tturd['module_category'] = upgrade.module_category
+
+		-- affected_entities arrives as a name -> tier index map (mk01 = 1, mk02 = 2, ...)
+		tturd['affected_entities'] = {}
+		for entityName, tier in pairs(type(upgrade.affected_entities) == 'table' and upgrade.affected_entities or {}) do
+			table.insert(tturd['affected_entities'], {['name'] = entityName, ['tier'] = tier})
+		end
+
+		tturd['sub_techs'] = {}
+		for subName, subTech in pairs(type(upgrade.sub_techs) == 'table' and upgrade.sub_techs or {}) do
+			tsub = {}
+			tsub['name'] = subTech.name or subName
+			tsub['unlocked_recipes'] = {}
+			tsub['replaced_recipes'] = {}
+			tsub['replaced_machines'] = {}
+
+			for _, effect in pairs(type(subTech.effects) == 'table' and subTech.effects or {}) do
+				if effect.type == 'unlock-recipe' and effect.recipe then
+					table.insert(tsub['unlocked_recipes'], effect.recipe)
+				elseif effect.type == 'recipe-replacement' and effect.new then
+					table.insert(tsub['replaced_recipes'], {['old'] = effect.old, ['new'] = effect.new})
+				elseif effect.type == 'machine-replacement' and effect.new then
+					table.insert(tsub['replaced_machines'], {['old'] = effect.old, ['new'] = effect.new})
+				end
+			end
+
+			table.insert(tturd['sub_techs'], tsub)
+		end
+
+		table.insert(tturds, tturd)
+	end
+	etable['turd_upgrades'] = tturds
+end
+
 local function ExportRecipes()
 	trecipes = {}
+	-- factorio 2.1 replaced LuaRecipePrototype's single 'category' with a 'categories' array, and reading the
+	-- key that does not exist raises rather than returning nil - so settle which one this game has up front
+	-- instead of guarding every recipe.
+	local useCategories = false
+	for _, probeRecipe in pairs(prototypes.recipe) do
+		useCategories = pcall(function() return probeRecipe.categories end)
+		break
+	end
 	for _, recipe in pairs(prototypes.recipe) do
 		trecipe = {}
 		trecipe['name'] = recipe.name
@@ -701,6 +768,7 @@ script.on_nth_tick(1,
 
 		ExportModList()
 		ExportResearch()
+		ExportTurdUpgrades()
 		ExportRecipes()
 
 		ExportQuality()
