@@ -327,6 +327,7 @@ Right-click any item tab on a node to copy the item's internal or friendly name 
 - WinForms Designer limitations with `TableLayoutPanel`: layout changes to forms with filling `TableLayoutPanel` controls must be made directly in `Designer.cs` rather than through the Visual Studio Designer UI.
 - File access goes through `SafeIO` rather than `System.IO` directly. The guiding rule is that a storage failure should never be fatal: an unreachable network share, a removed drive, or a locked `user.config` degrades to a no-op or a fallback location instead of an unhandled exception.
 - Gutters are a **presentation-layer** concept living in `PassthroughNodeElement`. A gutter changes only how a passthrough node is drawn and where its links attach — it carries no rate semantics, so the solver is entirely unaware of it and throughput results are identical with or without gutters.
+- The project builds **x64 only**. Every platform in the solution maps to `x64`, so Debug lands in `bin\x64\Debug\` and Release in `bin\x64\Release\`. The old `Debug|x86` and `Release|x86` configurations that wrote to `bin\Debug\` and `bin\Release\` were unreachable through the solution and have been removed — their names were vestigial anyway, since `Release|x86` targeted x64 and `Debug|x86` targeted AnyCPU. Stale executables left in those folders were a trap to launch by mistake.
 
 ---
 
