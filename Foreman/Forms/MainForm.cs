@@ -234,12 +234,17 @@ namespace Foreman
 
                 if (!loaded)
                 {
-                    // Nothing could be loaded (unreadable file, missing preset, ...). Keep the original entry
-                    // aside so its snapshot is neither overwritten nor pruned, and give this tab a fresh one.
-                    unrestoredTabs.Add(tab);
+                    // Nothing could be loaded (unreadable file, missing preset, ...). The tab itself stays open
+                    // carrying its save path, so it is persisted by SaveSession like any other tab - setting it
+                    // aside as well would store it twice and double the entry on every launch. Only a snapshot
+                    // that still holds data is worth keeping back, and only then to save it from the pruner.
+                    if (snapshotJson != null)
+                    {
+                        unrestoredTabs.Add(tab);
+                        state.SnapshotFile     = null;
+                        state.LastSnapshotHash = null;
+                    }
                     unrestored.Add(tab.Title ?? $"Tab {tabIndex + 1}");
-                    state.SnapshotFile     = null;
-                    state.LastSnapshotHash = null;
                 }
 
                 UpdateTabTitle(tabIndex);
@@ -301,12 +306,22 @@ namespace Foreman
         /// user is offered that instead - the backup is left on disk either way until the graph is saved.
         /// </summary>
         /// <summary>"664 nodes, 1016 links" for a graph json - used to describe recovery options to the user.</summary>
-        private string DescribeGraphSize(string graphJson)
+        /// <summary>Parses a saved graph. An empty or malformed file is not an error here - it simply has no graph.</summary>
+        private static bool TryParseGraph(string graphJson, out JObject graph)
         {
-            if (string.IsNullOrEmpty(graphJson)) return "unreadable";
+            graph = null;
+            if (string.IsNullOrWhiteSpace(graphJson))
+                return false;
+            try { graph = JObject.Parse(graphJson); return true; }
+            catch { return false; }
+        }
+
+        private string DescribeGraphSize(JObject graphJson)
+        {
+            if (graphJson == null) return "unreadable";
             try
             {
-                JObject graph = (JObject)JObject.Parse(graphJson)["ProductionGraph"];
+                JObject graph = (JObject)graphJson["ProductionGraph"];
                 int nodes = (graph?["Nodes"] as JArray)?.Count ?? 0;
                 int links = (graph?["NodeLinks"] as JArray)?.Count ?? 0;
                 return $"{nodes} nodes, {links} links";
@@ -318,21 +333,68 @@ namespace Foreman
             }
         }
 
-        private string GetJsonToLoad(string path, out bool fromBackup)
+        private JObject GetGraphToLoad(string path, out bool fromBackup)
         {
             fromBackup = false;
             DateTime? backupTime = GraphBackup.GetTimestamp(path);
             DateTime? fileTime   = SafeIO.GetLastWriteTime(path);
+            bool fileReadable    = TryParseGraph(SafeIO.ReadAllText(path), out JObject fileGraph);
+
+            //an empty or malformed save file (an interrupted write, a share that dropped mid-save) holds nothing,
+            //so any backup at all beats it - the timestamp comparison further down only decides between two real graphs
+            if (!fileReadable)
+            {
+                bool haveBackup = TryParseGraph(GraphBackup.Read(path), out JObject recovered);
+
+                //during session restore the summary at the end already names every tab that failed, and the
+                //restore loop has its own snapshot to fall back on - so recover quietly here rather than stacking
+                //a modal dialog per damaged tab on top of startup
+                if (sessionRestoreInProgress)
+                {
+                    if (haveBackup)
+                    {
+                        ErrorLogging.LogLine($"'{path}' is empty or malformed - restored from its backup instead.");
+                        fromBackup = true;
+                        return recovered;
+                    }
+                    ErrorLogging.LogLine($"'{path}' is empty or malformed and has no usable backup.");
+                    return null;
+                }
+
+                if (haveBackup)
+                {
+                    DialogResult recover = MessageBox.Show(
+                        $"\"{Path.GetFileName(path)}\" is empty or damaged and cannot be opened.\n\n" +
+                        $"A backup from {(backupTime != null ? backupTime.Value.ToString("g") : "an earlier session")} " +
+                        $"({DescribeGraphSize(recovered)}) was found alongside it.\n\n" +
+                        "Load the backup?\n" +
+                        "(The damaged file is left exactly as it is until you save over it.)",
+                        "Saved file damaged", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                    if (recover == DialogResult.Yes)
+                    {
+                        fromBackup = true;
+                        return recovered;
+                    }
+                    return null;
+                }
+
+                ErrorLogging.LogLine($"'{path}' is empty or malformed and has no usable backup.");
+                MessageBox.Show(
+                    $"\"{Path.GetFileName(path)}\" is empty or damaged and could not be opened.\n\n" +
+                    "No backup was found next to it, so there is nothing to recover from.\n\n" +
+                    "The tab has been left empty; the file itself has not been changed.",
+                    "Saved file damaged", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return null;
+            }
 
             if (backupTime != null && (fileTime == null || backupTime > fileTime))
             {
-                string backupJson = GraphBackup.Read(path);
-                if (backupJson != null)
+                if (TryParseGraph(GraphBackup.Read(path), out JObject backupGraph))
                 {
                     //node counts turn this into an informed choice - a backup holding far less than the saved
                     //file is a warning sign, not something to accept blind
-                    string backupSize = DescribeGraphSize(backupJson);
-                    string fileSize   = DescribeGraphSize(SafeIO.ReadAllText(path));
+                    string backupSize = DescribeGraphSize(backupGraph);
+                    string fileSize   = DescribeGraphSize(fileGraph);
 
                     DialogResult r = MessageBox.Show(
                         $"\"{Path.GetFileName(path)}\" has unsaved changes from an earlier session.\n\n" +
@@ -344,11 +406,11 @@ namespace Foreman
                     if (r == DialogResult.Yes)
                     {
                         fromBackup = true;
-                        return backupJson;
+                        return backupGraph;
                     }
                 }
             }
-            return SafeIO.ReadAllText(path);
+            return fileGraph;
         }
 
         private async Task<bool> LoadGraphAsync(int tabIndex, string path)
@@ -358,11 +420,11 @@ namespace Foreman
             var viewer = GraphTabControl.GetViewer(tabIndex);
             if (viewer == null) return false;
 
-            string json = GetJsonToLoad(path, out bool fromBackup);
-            if (json == null) return false;
+            JObject graphJson = GetGraphToLoad(path, out bool fromBackup);
+            if (graphJson == null) return false;
             try
             {
-                await viewer.LoadFromJson(JObject.Parse(json), false, true);
+                await viewer.LoadFromJson(graphJson, false, true);
                 if (fromBackup) viewer.MarkDirty();   // recovered work is not in the save file yet
                 else viewer.MarkClean();
                 state.SaveFilePath = path;
@@ -593,6 +655,19 @@ namespace Foreman
             if (!TestTabSavedStatus(index)) return;
             tabStates[index].SummaryForm?.Close();
             SessionManager.DeleteSnapshot(tabStates[index].SnapshotFile);
+
+            //a tab that failed to restore also has an entry held back for its snapshot; closing the tab is the
+            //user saying they are done with it, so drop that too or SaveSession would put it straight back
+            string closingPath = tabStates[index].SaveFilePath;
+            if (closingPath != null)
+            {
+                foreach (SessionTabInfo stale in unrestoredTabs.Where(t => t.SaveFilePath == closingPath).ToList())
+                {
+                    SessionManager.DeleteSnapshot(stale.SnapshotFile);
+                    unrestoredTabs.Remove(stale);
+                }
+            }
+
             tabStates.RemoveAt(index);
             GraphTabControl.RemoveGraphTab(index);
             UpdateTitleBar();
@@ -845,15 +920,12 @@ namespace Foreman
             var state    = ActiveTabState;
             if (state == null || ActiveViewer == null) return;
 
-            string json = GetJsonToLoad(path, out bool fromBackup);
-            if (json == null)
-            {
-                MessageBox.Show("Could not read this file. See log for more details");
+            JObject graphJson = GetGraphToLoad(path, out bool fromBackup);
+            if (graphJson == null) //GetGraphToLoad has already said why, or the user declined the backup
                 return;
-            }
             try
             {
-                await ActiveViewer.LoadFromJson(JObject.Parse(json), false, true);
+                await ActiveViewer.LoadFromJson(graphJson, false, true);
                 if (fromBackup) ActiveViewer.MarkDirty();   // recovered work is not in the save file yet
                 else ActiveViewer.MarkClean();
                 state.SaveFilePath = path;
