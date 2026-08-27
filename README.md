@@ -10,6 +10,15 @@
 
 ---
 
+### 📋 Copy for Factorio — Inline Feedback *(2.4.0)*
+Copying the building list no longer interrupts with a dialog you have to dismiss every time.
+- The **"Copy for Factorio"** button reports on itself: it flashes **"Copied 42 lines"** for just over a second, then returns to its normal caption
+- The line count is preserved from the old dialog, with correct singular wording for a one-line list
+- The empty-graph case — nothing to export — flashes **"Nothing to copy"** on the same button instead of raising a message box
+- Clicking again mid-flash restarts the countdown rather than stacking timers, so a rapid double-click cannot leave the button stuck on the wrong caption
+
+---
+
 ### 🧳 Shared Settings File *(2.4.0)*
 Settings can now live next to `Foreman.exe` instead of in the per-machine Windows store, so one set of preferences follows the program.
 - Windows keys the normal `user.config` to the machine, the windows user, **and** the assembly version — which is why settings appear to reset when you switch machines or update Foreman

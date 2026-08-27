@@ -979,13 +979,12 @@ namespace Foreman
 
             if (lines.Count == 0)
             {
-                MessageBox.Show("No buildings or modules in current graph.", "Foreman2 → Factorio",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                FlashExportButton("Nothing to copy");
                 return;
             }
 
             Clipboard.SetText(string.Join(Environment.NewLine, lines));
-            FlashExportButton("Copied");
+            FlashExportButton(lines.Count == 1 ? "Copied 1 line" : $"Copied {lines.Count} lines");
         }
 
         // Shows a transient caption on the export button instead of interrupting with a
