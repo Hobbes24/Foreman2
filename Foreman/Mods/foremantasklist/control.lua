@@ -242,6 +242,22 @@ function find_request_slot(section, item_name)
     return nil
 end
 
+-- First slot with nothing in it, or one past the end if the section is full.
+--
+-- filters_count is the highest slot index, not a count of occupied slots:
+-- verified in game that clear_slot empties a slot (get_slot then returns {})
+-- while filters_count stays where it was. Appending blindly at
+-- filters_count + 1 therefore leaks a slot on every request/clear cycle -
+-- clear two requests, add one back, and it lands in slot 3 with 1 and 2 empty
+-- forever. Reusing the holes keeps the section bounded.
+function first_free_slot(section)
+    for slot = 1, section.filters_count do
+        local ok, filter = pcall(function() return section.get_slot(slot) end)
+        if ok and (not filter or not filter.value) then return slot end
+    end
+    return section.filters_count + 1
+end
+
 -- Adds a personal logistic request for the item behind a task. An existing
 -- request is only ever raised, never lowered.
 function request_task_item(player, internal_name, count)
@@ -283,7 +299,7 @@ function request_task_item(player, internal_name, count)
     end
 
     -- max stays nil so nothing gets auto-trashed once the request is filled
-    section.set_slot(section.filters_count + 1, {
+    section.set_slot(first_free_slot(section), {
         value = { type = "item", name = item_name, quality = "normal", comparator = "=" },
         min   = count
     })
