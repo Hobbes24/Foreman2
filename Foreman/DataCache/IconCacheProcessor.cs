@@ -100,7 +100,10 @@ namespace Foreman
 					string foundFile = files.FirstOrDefault(f => Regex.IsMatch(Path.GetFileName(f).ToLower(), string.Format("{0}_{1}.zip", mod.Key, versionMatch)));
 					if (foundFile == null)
 					{
-						if (mod.Key.ToLower() != "core" && mod.Key.ToLower() != "base" && mod.Key.ToLower() != "elevated-rails" && mod.Key.ToLower() != "quality" && mod.Key.ToLower() != "space-age")
+						//factorio ships some mods inside its own data folder instead of the mods folder, so a mod
+						//missing from the mods folder is only a problem when it is not one of those. Which ones exist
+						//is version dependent - 2.1 added 'recycler' - so ask the folder rather than keeping a list.
+						if (!Directory.Exists(Path.Combine(dataPath, mod.Key.ToLower())))
 							return false;
 						continue;
 					}
@@ -125,11 +128,15 @@ namespace Foreman
 					}
 				}
 			}
-			folderLinks.Add("__core__", Path.Combine(dataPath, "core"));
-			folderLinks.Add("__base__", Path.Combine(dataPath, "base"));
-			folderLinks.Add("__elevated-rails__", Path.Combine(dataPath, "elevated-rails"));
-			folderLinks.Add("__quality__", Path.Combine(dataPath, "quality"));
-			folderLinks.Add("__space-age__", Path.Combine(dataPath, "space-age"));
+			//every directory in factorio's data folder is a mod it ships with (core, base, quality, space-age,
+			//elevated-rails, and 2.1's recycler). Linking whatever is actually there keeps a new built-in from
+			//silently costing us its icons. A mod found in the mods folder above already has its link and wins.
+			foreach (string builtInMod in Directory.GetDirectories(dataPath))
+			{
+				string modKey = "__" + Path.GetFileName(builtInMod).ToLower() + "__";
+				if (!folderLinks.ContainsKey(modKey))
+					folderLinks.Add(modKey, builtInMod);
+			}
 
 			return true;
 		}

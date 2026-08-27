@@ -201,7 +201,8 @@ namespace Foreman
 #endif
 			ImportStarted = true;
 			string foremanModName = "foremanexport_"+ factorioVersionInfo.ProductMajorPart + ".0.0";
-			NewPresetName = await ProcessPreset(installPath, foremanModName, modsPath, progress, token);
+			string modFactorioVersion = FactorioModDeployer.GetModFactorioVersion(factorioVersionInfo);
+			NewPresetName = await ProcessPreset(installPath, foremanModName, modFactorioVersion, modsPath, progress, token);
 #if DEBUG
 			Console.WriteLine(string.Format("Preset import time: {0} seconds.", (stopwatch.ElapsedMilliseconds / 1000).ToString("0.0")));
 			ErrorLogging.LogLine(string.Format("Preset import time: {0} seconds.", (stopwatch.ElapsedMilliseconds / 1000).ToString("0.0")));
@@ -220,7 +221,7 @@ namespace Foreman
 
 		}
 
-		private async Task<string> ProcessPreset(string installPath, string foremanModName, string modsPath, IProgress<KeyValuePair<int, string>> progress, CancellationToken token)
+		private async Task<string> ProcessPreset(string installPath, string foremanModName, string modFactorioVersion, string modsPath, IProgress<KeyValuePair<int, string>> progress, CancellationToken token)
 		{
 			return await Task.Run(() =>
 			{
@@ -239,7 +240,7 @@ namespace Foreman
 					if (!Directory.Exists(modsPath))
 						Directory.CreateDirectory(modsPath);
 					if (Directory.Exists(Path.Combine(modsPath, foremanModName)))
-						Directory.Delete(Path.Combine(modsPath, foremanModName));
+						Directory.Delete(Path.Combine(modsPath, foremanModName), true);
 				}
 				catch (Exception e)
 				{
@@ -297,7 +298,8 @@ namespace Foreman
 				{
 					Directory.CreateDirectory(Path.Combine(modsPath, foremanModName));
 
-					File.Copy(Path.Combine(new string[] { "Mods", foremanModName, "info.json" }), Path.Combine(new string[] { modsPath, foremanModName, "info.json" }));
+					//the mod has to declare the exact factorio version it is being loaded by, so stamp it in on the way out
+					FactorioModDeployer.DeployModInfo(Path.Combine(new string[] { "Mods", foremanModName, "info.json" }), Path.Combine(new string[] { modsPath, foremanModName, "info.json" }), modFactorioVersion);
 					File.Copy(Path.Combine(new string[] { "Mods", foremanModName, "instrument-after-data.lua" }), Path.Combine(new string[] { modsPath, foremanModName, "instrument-after-data.lua" }), true);
 
                     File.Copy(Path.Combine(new string[] { "Mods", foremanModName, "instrument-control.lua" }), Path.Combine(new string[] { modsPath, foremanModName, "instrument-control.lua" }), true);
@@ -482,11 +484,13 @@ namespace Foreman
 			if (modsPath != "" && foremanModName != "" && Directory.Exists(Path.Combine(modsPath, foremanModName)))
 				Directory.Delete(Path.Combine(modsPath, foremanModName), true);
 
-			if (presetPath != "" && foremanModName != "" && File.Exists(Path.Combine(Application.StartupPath, presetPath + ".pjson")))
+			//these are the half written preset, not the export mod - gating them on foremanModName meant the
+			//callers that pass only a presetPath left a preset behind with no icon cache to go with it
+			if (presetPath != "" && File.Exists(Path.Combine(Application.StartupPath, presetPath + ".pjson")))
 				File.Delete(Path.Combine(Application.StartupPath, presetPath + ".pjson"));
-			if (presetPath != "" && foremanModName != "" && File.Exists(Path.Combine(Application.StartupPath, presetPath + ".json")))
+			if (presetPath != "" && File.Exists(Path.Combine(Application.StartupPath, presetPath + ".json")))
 				File.Delete(Path.Combine(Application.StartupPath, presetPath + ".json"));
-			if (presetPath != "" && foremanModName != "" && File.Exists(Path.Combine(Application.StartupPath, presetPath + ".dat")))
+			if (presetPath != "" && File.Exists(Path.Combine(Application.StartupPath, presetPath + ".dat")))
 				File.Delete(Path.Combine(Application.StartupPath, presetPath + ".dat"));
 		}
 

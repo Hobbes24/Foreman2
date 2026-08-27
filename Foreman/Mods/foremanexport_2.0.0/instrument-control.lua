@@ -57,6 +57,23 @@ local function ProcessIngredientList(ingredients)
 	return ingredientlist
 end
 
+-- factorio 2.1 moved a number of entity stats from plain fields onto quality-aware methods. Reading a key
+-- that does not exist raises instead of returning nil, so each form has to be probed rather than or-ed
+-- together. Returns nil when the entity has neither, which every caller below already handles.
+-- NOTE: these methods come back already bound to the entity and their first argument is the quality, not
+-- self - so they take no argument here. Calling one as entity:method() passes the entity as the quality
+-- and fails with 'Invalid QualityID', which looks exactly like the stat being unavailable.
+local function EntityStat(entity, fieldName, methodName)
+	local okMethod, method = pcall(function() return entity[methodName] end)
+	if okMethod and type(method) == 'function' then
+		local okCall, value = pcall(method)
+		if okCall then return value end
+	end
+	local okField, field = pcall(function() return entity[fieldName] end)
+	if okField then return field end
+	return nil
+end
+
 local function ProcessProductList(products)
 	productlist = {}
 	for _, product in pairs(products) do
@@ -65,7 +82,17 @@ local function ProcessProductList(products)
 		tproduct['type'] = product.type
 
 		amount = (product.amount == nil) and ((product.amount_max + product.amount_min)/2) or product.amount
-		amount = amount * product.probability
+		-- factorio 2.1 replaced the single 'probability' with two rolls: one shared draw across a group of
+		-- products, where this product is given if the draw lands inside its [min, max] window, and an
+		-- independent per-product chance. The expected fraction is the window's width times that chance,
+		-- which reduces to the old 'probability' for an ordinary product.
+		local probability = product.probability
+		if probability == nil then
+			local shared = product.shared_probability
+			local sharedChance = (shared == nil) and 1 or (shared.max - shared.min)
+			probability = sharedChance * (product.independent_probability or 1)
+		end
+		amount = amount * probability
 		amount_ignored_by_productivity = (product.ignored_by_productivity == nil) and 0 or product.ignored_by_productivity
 		if amount_ignored_by_productivity > amount then amount_ignored_by_productivity = amount end
 		amount_added_by_extra_fraction = (product.extra_count_fraction == nil) and 0 or product.extra_count_fraction
@@ -161,7 +188,12 @@ local function ExportRecipes()
 		end
 
 		trecipe['enabled'] = recipe.enabled
-		trecipe['category'] = recipe.category
+		local rcategories
+		if useCategories then rcategories = recipe.categories else rcategories = { recipe.category } end
+		-- 'category' stays the first entry so existing presets and readers are unaffected; 'categories' carries
+		-- the whole set, which is what a 2.1 recipe needs to match every machine that can craft it
+		trecipe['categories'] = rcategories
+		trecipe['category'] = rcategories[1]
 		trecipe['energy'] = recipe.energy
 		trecipe['order'] = recipe.order
 		trecipe['subgroup'] = recipe.subgroup.name
@@ -373,12 +405,13 @@ local function ExportEntities()
 			if entity.type == 'mining-drill' or entity.type == 'character' then
 				tentity['speed'] = entity.mining_speed
 			elseif entity.type == 'offshore-pump' then
-				tentity['speed'] = entity.pumping_speed
+				tentity['speed'] = EntityStat(entity, 'pumping_speed', 'get_pumping_speed')
 			elseif entity.type == 'furnace' or entity.type == 'assembling-machine' or entity.type == 'rocket-silo' then
 				tentity['q_speed'] = ProcessQualityValue(entity.get_crafting_speed, 1)
 			end
 
-			if entity.fluid_usage_per_tick ~= nil then tentity['fluid_usage_per_sec'] = entity.fluid_usage_per_tick * 60 end
+			local fluidUsage = EntityStat(entity, 'fluid_usage_per_tick', 'get_fluid_usage_per_tick')
+			if fluidUsage ~= nil then tentity['fluid_usage_per_sec'] = fluidUsage * 60 end
 
 			if entity.module_inventory_size ~= nil then tentity['module_inventory_size'] =  entity.module_inventory_size end
 			if entity.distribution_effectivity ~= nil then tentity['distribution_effectivity'] = entity.distribution_effectivity end
@@ -451,7 +484,7 @@ local function ExportEntities()
 				end
 			elseif entity.type == 'generator' then
 				tentity['full_power_temperature'] = ProcessTemperature(entity.maximum_temperature)
-				tentity['max_power_output'] = entity.max_power_output * 60
+				tentity['max_power_output'] = (EntityStat(entity, 'max_power_output', 'get_max_power_output') or 0) * 60
 
 				tentity['minimum_temperature'] = ProcessTemperature(entity.fluidbox_prototypes[1].minimum_temperature)
 				tentity['maximum_temperature'] = ProcessTemperature(entity.fluidbox_prototypes[1].maximum_temperature)

@@ -48,11 +48,25 @@ The Ctrl+F find panel was reworked end to end.
 
 ---
 
+### 🤖 Task-List Mod — Personal Logistic Requests *(2.4.0)*
+The task list can now ask your logistic bots to bring the buildings to you.
+- Each task row has a **request button** that adds a personal logistic request for that item at the task's count
+- **Request All** does the same for every unchecked task in one click
+- Requests are only ever raised, never lowered, so re-importing a bigger list tops up an existing request instead of shrinking it
+- The request is **cleared automatically once the task goes done** — whether the bots filled it or you checked the box yourself — so nothing keeps hauling after the fact
+- **Clear Requests** drops everything the mod added, and *Clear All* does it too when wiping the list
+- All requests live in a single logistic section named after the player, so the mod never edits requests you set up yourself
+- Entity names are resolved to the item that places them, so the request works for buildings whose item name differs from the entity name
+
+---
+
 ### 📦 Task-List Mod — Inventory Scanning & Producer Search *(2.4.0)*
 The companion `foremantasklist` Factorio mod control script was reworked, and the packaged mod zip rebuilt to match.
 - Scans player and platform inventories to track task progress against what you actually have
 - Correct producer search for locating the machine that makes a given item
 - Mod zip is regenerated automatically by a post-build step, so the shipped zip never drifts from source
+- One zip is built per supported Factorio version (`foreman-tasklist_1.2.0.zip` for 2.0, `foreman-tasklist_1.3.0.zip` for 2.1) because Factorio matches a mod's `factorio_version` exactly - drop both into the mods folder and the game loads the one it can
+- The helper mods Foreman deploys itself (`foremanexport`, `foremansavereader`) are stamped with the version of the Factorio install being launched, so preset import and save-file loading work on 2.0 and 2.1 alike
 
 ---
 

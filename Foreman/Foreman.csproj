@@ -128,6 +128,7 @@
   <ItemGroup>
     <Compile Include="UndoRedoManager.cs" />
     <Compile Include="BenchmarkTimer.cs" />
+    <Compile Include="FactorioModDeployer.cs" />
     <Compile Include="Controls\ControlExtensions.cs" />
     <Compile Include="Controls\DataObjectCheckedListBox.cs">
       <SubType>Component</SubType>
@@ -369,6 +370,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
     <None Include="Foreman_TemporaryKey.pfx" />
+    <None Include="Mods\build-tasklist-zips.ps1" />
     <None Include="Mods\foremantasklist\control.lua" />
     <None Include="Mods\foremantasklist\data.lua" />
     <None Include="Mods\foremanexport_1.0.0\info.json">
@@ -498,7 +500,7 @@
   <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>powershell -ExecutionPolicy Bypass -NoProfile -Command "&amp; { $projDir = '$(ProjectDir)'; $targetDir = '$(TargetDir)Mods\'; $info = Get-Content ($projDir + 'Mods\foremantasklist\info.json') | ConvertFrom-Json; $zipName = $info.name + '_' + $info.version + '.zip'; $zipPath = $projDir + 'Mods\' + $zipName; Compress-Archive -Force ($projDir + 'Mods\foremantasklist') $zipPath; Copy-Item $zipPath $targetDir -Force }"</PostBuildEvent>
+    <PostBuildEvent>powershell -ExecutionPolicy Bypass -NoProfile -File "$(ProjectDir)Mods\build-tasklist-zips.ps1" -ProjectDir "$(ProjectDir)." -TargetDir "$(TargetDir)."</PostBuildEvent>
   </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

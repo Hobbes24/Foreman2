@@ -872,6 +872,30 @@ namespace Foreman
 			modules.Add(module.Name, module);
 		}
 
+		/// <summary>
+		/// The crafting categories a recipe belongs to. Prefers the 2.1 'categories' list and falls back to the
+		/// single 'category' of older exports; duplicates are dropped so a category is only registered once.
+		/// </summary>
+		private static IEnumerable<string> ReadRecipeCategories(JToken objJToken)
+		{
+			HashSet<string> categories = new HashSet<string>();
+			if (objJToken["categories"] is JArray categoryList)
+				foreach (JToken categoryJToken in categoryList)
+				{
+					string name = (string)categoryJToken;
+					if (!string.IsNullOrEmpty(name))
+						categories.Add(name);
+				}
+
+			if (categories.Count == 0)
+			{
+				string single = (string)objJToken["category"];
+				if (!string.IsNullOrEmpty(single))
+					categories.Add(single);
+			}
+			return categories;
+		}
+
 		private void ProcessRecipe(JToken objJToken, Dictionary<string, IconColorPair> iconCache, Dictionary<string, List<RecipePrototype>> craftingCategories, Dictionary<string, List<ModulePrototype>> moduleCategories)
 		{
 			RecipePrototype recipe = new RecipePrototype(
@@ -888,10 +912,15 @@ namespace Foreman
 				startingTech.unlockedRecipes.Add(recipe);
 			}
 
-			string category = (string)objJToken["category"];
-			if (!craftingCategories.ContainsKey(category))
-				craftingCategories.Add(category, new List<RecipePrototype>());
-			craftingCategories[category].Add(recipe);
+			//factorio 2.1 lets a recipe sit in several crafting categories at once, so the exporter sends a
+			//'categories' list. Older presets only carry the single 'category' - fall back to it so they keep
+			//loading. Registering under every category is what lets each machine that can craft the recipe find it.
+			foreach (string category in ReadRecipeCategories(objJToken))
+			{
+				if (!craftingCategories.ContainsKey(category))
+					craftingCategories.Add(category, new List<RecipePrototype>());
+				craftingCategories[category].Add(recipe);
+			}
 
 			if (iconCache.ContainsKey((string)objJToken["icon_name"]))
 				recipe.SetIconAndColor(iconCache[(string)objJToken["icon_name"]]);

@@ -74,14 +74,24 @@ output['qualities'] = data.raw.quality
 
 --depreciated: 'item-with-inventory', 'item-with-label', 'item-with-tags'
 for _, section in ipairs({ 'ammo', 'armor', 'capsule', 'gun', 'item', 'item-with-entity-data', 'module', 'rail-planner', 'repair-tool', 'selection-tool', 'spider-vehicle', 'spidertron-remote', 'tool', 'upgrade-item' }) do
-	for name, obj in pairs(data.raw[section]) do
-		output['items'][name] = obj
+	-- a prototype category with no members at all is absent from data.raw, and which categories exist
+	-- differs between factorio versions, so a missing one is normal rather than an error
+	if data.raw[section] == nil then
+		log('FOREMAN: no item prototypes of type '..section)
+	else
+		for name, obj in pairs(data.raw[section]) do
+			output['items'][name] = obj
+		end
 	end
 end
 
 for _, section in ipairs({'assembling-machine', 'beacon', 'furnace', 'mining-drill', 'module', 'offshore-pump', 'rocket-silo'}) do
-	for name, obj in pairs(data.raw[section]) do
-		output['entities'][name] = obj
+	if data.raw[section] == nil then
+		log('FOREMAN: no entity prototypes of type '..section)
+	else
+		for name, obj in pairs(data.raw[section]) do
+			output['entities'][name] = obj
+		end
 	end
 end
 
