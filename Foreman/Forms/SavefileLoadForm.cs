@@ -151,7 +151,8 @@ namespace Foreman
 					try
 					{
 
-						File.Copy(Path.Combine(new string[] { "Mods", "foremansavereader_2.0.0", "info.json" }), Path.Combine(new string[] { modsPath, "foremansavereader_2.0.0", "info.json" }), true);
+						//the mod has to declare the exact factorio version it is being loaded by, so stamp it in on the way out
+						FactorioModDeployer.DeployModInfo(Path.Combine(new string[] { "Mods", "foremansavereader_2.0.0", "info.json" }), Path.Combine(new string[] { modsPath, "foremansavereader_2.0.0", "info.json" }), FactorioModDeployer.GetModFactorioVersion(factorioVersionInfo));
 						File.Copy(Path.Combine(new string[] { "Mods", "foremansavereader_2.0.0", "instrument-control.lua" }), Path.Combine(new string[] { modsPath, "foremansavereader_2.0.0", "instrument-control.lua" }), true);
 					}
 					catch
