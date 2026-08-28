@@ -121,7 +121,7 @@ namespace Foreman
 			if (Math.Abs(value) >= 0.1)
 				return value.ToString("0.###");
 			if (Math.Abs(value) != 0)
-				return value.ToString("0.######");
+				return value.ToString("0.########"); //matches the 8 places the rate boxes now accept
 			return "0";
 		}
 
@@ -284,8 +284,15 @@ namespace Foreman
 	//https://stackoverflow.com/questions/13477689/find-number-of-decimal-places-in-decimal-value-regardless-of-culture
 	public static class MathDecimals
 	{
+		//a double carries at most ~15 significant digits, and the cast back to decimal rounds to exactly that, so this
+		//always settles well before the cap. The cap is here so a value that does not settle cannot recurse until the
+		//multiplication overflows decimal - now that rates reach down to 1e-8, that is worth being explicit about.
+		private const int MaxDecimals = 15;
+
 		public static int GetDecimals(decimal d, int i = 0)
 		{
+			if (i >= MaxDecimals)
+				return MaxDecimals;
 			decimal multiplied = (decimal)((double)d * Math.Pow(10, i));
 			if (Math.Round(multiplied) == multiplied)
 				return i;

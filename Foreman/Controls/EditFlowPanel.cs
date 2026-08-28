@@ -66,10 +66,16 @@ namespace Foreman
 			UpdateFixedFlowInputDecimals(FixedFlowInput);
 		}
 
+		//NumericUpDown re-parses its own text back into Value when the box is committed, so DecimalPlaces is not just a
+		//display setting - anything past it is rounded away for good. At 4 a flowrate below 0.0001 was read back as 0
+		//and written to the node, which is why small Pyanodons rates would not survive being looked at. Only as many
+		//places as the value actually uses are shown, so ordinary rates still read as "100" rather than "100.00000000".
+		private const int MaxRateDecimals = 8;
+
 		private void UpdateFixedFlowInputDecimals(NumericUpDown nud)
 		{
 			int decimals = MathDecimals.GetDecimals(nud.Value);
-			decimals = Math.Min(decimals, 4);
+			decimals = Math.Min(decimals, MaxRateDecimals);
 			nud.DecimalPlaces = decimals;
 		}
 

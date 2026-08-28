@@ -102,7 +102,7 @@ namespace Foreman
             this.QualitySelectorLabel = new System.Windows.Forms.Label();
             this.KeyNodeTitleInput = new System.Windows.Forms.TextBox();
             this.KeyNodeCheckBox = new System.Windows.Forms.CheckBox();
-            this.FixedAssemblerInput = new System.Windows.Forms.NumericUpDown();
+            this.FixedAssemblerInput = new Foreman.DigitStepNumericUpDown();
             this.LowPriorityCheckBox = new System.Windows.Forms.CheckBox();
             this.KeyNodeTitleLabel = new System.Windows.Forms.Label();
             this.QualitySelector = new System.Windows.Forms.ComboBox();
@@ -1361,7 +1361,7 @@ namespace Foreman
 		private System.Windows.Forms.NumericUpDown ConstantBeaconInput;
 		private System.Windows.Forms.NumericUpDown BeaconCountInput;
 		private System.Windows.Forms.NumericUpDown BeaconsPerAssemblerInput;
-		private System.Windows.Forms.NumericUpDown FixedAssemblerInput;
+		private Foreman.DigitStepNumericUpDown FixedAssemblerInput;
 		private System.Windows.Forms.Label label3;
 		private System.Windows.Forms.Label TotalBeaconEnergyLabel;
 		private System.Windows.Forms.Label GeneratorTemperatureLabel;

@@ -112,6 +112,7 @@
     <Compile Include="FactorioModDeployer.cs" />
     <Compile Include="SharedSettings.cs" />
     <Compile Include="Controls\ControlExtensions.cs" />
+    <Compile Include="Controls\DigitStepNumericUpDown.cs" />
     <Compile Include="Controls\DataObjectCheckedListBox.cs">
       <SubType>Component</SubType>
     </Compile>

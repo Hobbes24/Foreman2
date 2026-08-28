@@ -514,7 +514,10 @@ namespace Foreman
 				table.RowStyles[i].Height = height;
 		}
 
-		private void UpdateFixedFlowInputDecimals(NumericUpDown nud, int max = 4)
+		//see EditFlowPanel: DecimalPlaces also governs what survives the box being re-parsed, so the default has to be
+		//wide enough for the smallest building count anyone would set. The callers that pass an explicit max (beacon and
+		//neighbour counts) are unaffected.
+		private void UpdateFixedFlowInputDecimals(NumericUpDown nud, int max = 8)
 		{
 			int decimals = MathDecimals.GetDecimals(nud.Value);
 			decimals = Math.Min(decimals, max);

@@ -34,7 +34,7 @@
             this.FixedOption = new System.Windows.Forms.RadioButton();
             this.AutoOption = new System.Windows.Forms.RadioButton();
             this.RateLabel = new System.Windows.Forms.Label();
-            this.FixedFlowInput = new System.Windows.Forms.NumericUpDown();
+            this.FixedFlowInput = new Foreman.DigitStepNumericUpDown();
             this.KeyNodeTitleInput = new System.Windows.Forms.TextBox();
             this.KeyNodeTitleLabel = new System.Windows.Forms.Label();
             this.RateOptionsTable.SuspendLayout();
@@ -136,7 +136,7 @@
             // 
             // FixedFlowInput
             // 
-            this.FixedFlowInput.DecimalPlaces = 4;
+            this.FixedFlowInput.DecimalPlaces = 8;
             this.FixedFlowInput.Dock = System.Windows.Forms.DockStyle.Fill;
             this.FixedFlowInput.Location = new System.Drawing.Point(132, 24);
             this.FixedFlowInput.Maximum = new decimal(new int[] {
@@ -196,7 +196,7 @@
 		public System.Windows.Forms.RadioButton FixedOption;
 		public System.Windows.Forms.RadioButton AutoOption;
 		private System.Windows.Forms.Label RateLabel;
-		private System.Windows.Forms.NumericUpDown FixedFlowInput;
+		private Foreman.DigitStepNumericUpDown FixedFlowInput;
 		private System.Windows.Forms.CheckBox SimplePassthroughNodesCheckBox;
 		private System.Windows.Forms.CheckBox KeyNodeCheckBox;
 		private System.Windows.Forms.TextBox KeyNodeTitleInput;
