@@ -35,7 +35,19 @@ namespace Foreman
 		public bool ShowRecipeToolTip { get; set; }
 		public bool TooltipsEnabled { get; set; }
 		private bool SubwindowOpen; //used together with tooltip enabled -> if we open up an item/recipe/assembler window, this will halt tooltip show.
-		public bool DynamicLinkWidth = false;
+
+		private bool _dynamicLinkWidth = false;
+		public bool DynamicLinkWidth
+		{
+			get { return _dynamicLinkWidth; }
+			set
+			{
+				if (_dynamicLinkWidth == value)
+					return;
+				_dynamicLinkWidth = value;
+				linkWidthsDirty = true;
+			}
+		}
 		public bool LockedRecipeEditPanelPosition = true;
 		public bool FlagOUSuppliedNodes = false; //if true, will add a flag for over or under supplied nodes
 
@@ -67,8 +79,41 @@ namespace Foreman
 		private const int maxLinkWidth = 35;
 
 		private static readonly Pen pausedBorders = new Pen(Color.FromArgb(255, 80, 80), 5);
+		private static readonly Brush solveIssueBgBrush = new SolidBrush(Color.FromArgb(240, 70, 45, 15));
+		private static readonly Brush solveIssueTextBrush = new SolidBrush(Color.FromArgb(255, 240, 220));
+		private static readonly Pen solveIssueBorderPen = new Pen(Color.FromArgb(255, 170, 60), 2);
+		private static readonly Font solveIssueTitleFont = new Font(FontFamily.GenericSansSerif, 10, FontStyle.Bold);
+		private static readonly Font solveIssueDetailFont = new Font(FontFamily.GenericSansSerif, 8.5f);
+		private const int solveIssueBannerPadding = 8;
+		private const int solveIssueBannerMaxWidth = 620;
 		private static readonly Pen selectionPen = new Pen(Color.FromArgb(100, 100, 200), 2);
         private static readonly Pen drawShapePen = new Pen(Color.FromArgb(200, 60, 120, 220), 2) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+
+        //----------------------------------------------Redraw scheduling & per-frame caches
+
+        //pointer samples arrive far faster than a large graph can be drawn - 1000Hz is ordinary for a gaming mouse -
+        //and every one of them used to invalidate the whole control. requests are coalesced onto a frame budget here,
+        //so a fast pan or a spin of the wheel can never ask for more repaints than the graph can actually deliver
+        private const int RedrawIntervalMs = 16;
+        private readonly System.Windows.Forms.Timer redrawTimer = new System.Windows.Forms.Timer() { Interval = RedrawIntervalMs };
+        private bool redrawPending = false;
+        private BaseNodeElement lastHoveredNode = null;
+
+        //link widths only change when the solver hands back new numbers or the set of links changes, but they were
+        //recomputed from scratch every frame - two full passes over every link in the graph, per repaint
+        private bool linkWidthsDirty = true;
+
+        //likewise the solver-diagnostic banner: it scanned every node in the graph on every frame to work out what to say
+        private SolveIssue cachedSolveIssue = SolveIssue.None;
+        private int cachedSolveIssueNodeCount = 0;
+        private bool solveIssueDirty = true;
+
+        //the two node draw styles cost very different amounts, so a view sitting right on the boundary flipped the
+        //entire graph between them on every wheel notch. leaving detailed drawing and returning to it use different
+        //thresholds, so a small zoom either side of the line stays where it is
+        private const float SimpleViewEnterScale = 0.20f; //drop below this -> simple drawing
+        private const float SimpleViewExitScale = 0.24f;  //must climb back above this to return to detailed drawing
+        private bool usingSimpleView = false;
 
         private bool _inDrawShapeMode = false;
 
@@ -141,6 +186,7 @@ namespace Foreman
 			InitializeComponent();
 			MouseWheel += new MouseEventHandler(ProductionGraphViewer_MouseWheel);
 			Resize += new EventHandler(ProductionGraphViewer_Resized);
+			redrawTimer.Tick += RedrawTimer_Tick;
 
 			ViewOffset = new Point(Width / -2, Height / -2);
 			ViewScale = 1f;
@@ -179,6 +225,37 @@ namespace Foreman
             InitFindPanel();
             Invalidate();
         }
+
+		/// <summary>
+		/// Asks for a repaint at the next available frame. The first request paints immediately and then closes the
+		/// gate for one interval, so a burst of pointer or wheel events collapses into a single extra frame instead
+		/// of one full graph redraw each. Use this for anything driven by pointer movement; Invalidate() is still the
+		/// right call for one-off changes (a graph edit, a selection change) that should show up straight away.
+		/// </summary>
+		public void RequestRedraw()
+		{
+			if (redrawTimer.Enabled) //a frame is already spoken for - fold this request into it
+			{
+				redrawPending = true;
+				return;
+			}
+
+			redrawPending = false;
+			redrawTimer.Enabled = true;
+			Invalidate();
+		}
+
+		private void RedrawTimer_Tick(object sender, EventArgs e)
+		{
+			if (!redrawPending) //nothing asked for a frame during the last interval - stop ticking until something does
+			{
+				redrawTimer.Enabled = false;
+				return;
+			}
+
+			redrawPending = false;
+			Invalidate();
+		}
 
 		/// <summary>Raised whenever the graph switches between having and not having unsaved changes.</summary>
 		public event EventHandler DirtyStateChanged;
@@ -226,14 +303,24 @@ namespace Foreman
 		/// </summary>
 		public string CaptureSnapshot()
 		{
-			JsonSerializer serializer = JsonSerializer.Create();
+			//the graph is written straight into the wrapper rather than being serialised, parsed back into a JObject and
+			//written out a second time. on a large graph that round trip cost two extra passes over a multi-megabyte
+			//string plus a full token tree to hold it - enough allocation to provoke a gen 2 collection at the exact
+			//moment a node drag begins, which is what the stall on grabbing a node was
 			StringBuilder sb = new StringBuilder();
-			using (var writer = new JsonTextWriter(new StringWriter(sb)))
+			JsonSerializer serializer = JsonSerializer.Create();
+			serializer.Formatting = Formatting.None;
+
+			sb.Append("{\"ProductionGraph\":");
+			using (var writer = new JsonTextWriter(new StringWriter(sb)) { Formatting = Formatting.None })
 				serializer.Serialize(writer, Graph);
-			JObject snap = new JObject();
-			snap["ProductionGraph"] = JObject.Parse(sb.ToString());
-			snap["Annotations"] = new JArray(annotationElements.Select(a => a.ToJson()));
-			return snap.ToString(Formatting.None);
+
+			sb.Append(",\"Annotations\":");
+			using (var writer = new JsonTextWriter(new StringWriter(sb)) { Formatting = Formatting.None })
+				new JArray(annotationElements.Select(a => a.ToJson())).WriteTo(writer);
+
+			sb.Append("}");
+			return sb.ToString();
 		}
 		/// <summary>
 		/// Captures the current state and pushes it onto the undo stack.
@@ -1505,6 +1592,10 @@ namespace Foreman
 
         public void UpdateNodeVisuals()
 		{
+			//new solver numbers: both of the per-frame caches derived from them have to be rebuilt
+			linkWidthsDirty = true;
+			solveIssueDirty = true;
+
 			try
 			{
 				foreach (BaseNodeElement node in nodeElements)
@@ -1529,18 +1620,31 @@ namespace Foreman
 
 		public new void Paint(Graphics graphics, bool FullGraph = false)
 		{
-            //update visibility of all elements
+            //update visibility of all elements. the visible node count is tallied in the same walk - it used to be a
+            //second full enumeration of every element on the graph, once per frame, purely to pick a draw style
+            int visibleElements = 0;
             if (FullGraph)
             {
+                Rectangle fullBounds = Graph.Bounds; //O(nodes) to compute, and it was being recomputed per element
                 foreach (GraphElement element in GetPaintingOrder())
-                    element.UpdateVisibility(Graph.Bounds);
+                {
+                    element.UpdateVisibility(fullBounds);
+                    if (element.Visible && element is BaseNodeElement)
+                        visibleElements++;
+                }
                 // Annotations are viewer-side and may live outside Graph.Bounds — force them visible
                 foreach (AnnotationElement ann in annotationElements)
                     ann.ForceVisible();
             }
             else
+            {
                 foreach (GraphElement element in GetPaintingOrder())
+                {
                     element.UpdateVisibility(VisibleGraphBounds);
+                    if (element.Visible && element is BaseNodeElement)
+                        visibleElements++;
+                }
+            }
 
             //ensure width of selection is correct
             selectionPen.Width = 2 / ViewScale;
@@ -1549,43 +1653,66 @@ namespace Foreman
 			if(!FullGraph)
 				Grid.Paint(graphics, ViewScale, VisibleGraphBounds, (currentDragOperation == DragOperation.Item) ? MouseDownElement as BaseNodeElement : null);
 
-			//process link element widths
-			if (DynamicLinkWidth)
+			//process link element widths. these depend only on solved throughputs and the set of links, neither of which
+			//can change between frames, so the two full passes over every link now run only when something marks them
+			//stale rather than on every repaint
+			if (linkWidthsDirty)
 			{
-				double itemMax = 0;
-				double fluidMax = 0;
-				foreach (LinkElement element in linkElements)
-				{
-					if (element.Item.Item is Fluid && !element.Item.Item.Name.StartsWith("§§")) //§§ is the foreman added special items (currently just §§heat). ignore them
-						fluidMax = Math.Max(fluidMax, element.ConsumerElement.DisplayedNode.GetConsumeRate(element.Item));
-					else
-						itemMax = Math.Max(itemMax, element.ConsumerElement.DisplayedNode.GetConsumeRate(element.Item));
-				}
-				itemMax += itemMax == 0 ? 1 : 0;
-				fluidMax += fluidMax == 0 ? 1 : 0;
+				linkWidthsDirty = false;
 
-				foreach (LinkElement element in linkElements)
+				if (DynamicLinkWidth)
 				{
-					if (element.Item.Item is Fluid)
-						element.LinkWidth = (float)Math.Min((minLinkWidth + (maxLinkWidth - minLinkWidth) * (element.DisplayedLink.Throughput / fluidMax)), maxLinkWidth);
-					else
-						element.LinkWidth = (float)Math.Min((minLinkWidth + (maxLinkWidth - minLinkWidth) * (element.DisplayedLink.Throughput / itemMax)), maxLinkWidth);
+					double itemMax = 0;
+					double fluidMax = 0;
+					foreach (LinkElement element in linkElements)
+					{
+						if (element.Item.Item is Fluid && !element.Item.Item.Name.StartsWith("§§")) //§§ is the foreman added special items (currently just §§heat). ignore them
+							fluidMax = Math.Max(fluidMax, element.ConsumerElement.DisplayedNode.GetConsumeRate(element.Item));
+						else
+							itemMax = Math.Max(itemMax, element.ConsumerElement.DisplayedNode.GetConsumeRate(element.Item));
+					}
+					itemMax += itemMax == 0 ? 1 : 0;
+					fluidMax += fluidMax == 0 ? 1 : 0;
+
+					foreach (LinkElement element in linkElements)
+					{
+						if (element.Item.Item is Fluid)
+							element.LinkWidth = (float)Math.Min((minLinkWidth + (maxLinkWidth - minLinkWidth) * (element.DisplayedLink.Throughput / fluidMax)), maxLinkWidth);
+						else
+							element.LinkWidth = (float)Math.Min((minLinkWidth + (maxLinkWidth - minLinkWidth) * (element.DisplayedLink.Throughput / itemMax)), maxLinkWidth);
+					}
 				}
-			}
-			else
-			{
-				foreach (LinkElement element in linkElements)
-					element.LinkWidth = minLinkWidth;
+				else
+				{
+					foreach (LinkElement element in linkElements)
+						element.LinkWidth = minLinkWidth;
+				}
 			}
 
 			//run any pre-paint functions
 			foreach (GraphElement elemnent in GetPaintingOrder())
 				elemnent.PrePaint();
 
+			//pick the draw style. if viewscale is 0.2, then the text, images, etc being drawn are ~1/5th the size: aka:
+			//~6x6 pixel images, etc. Use simple draw. Also simple draw if too many objects. the thresholds are hysteretic
+			//so a view parked on the boundary does not flip the whole graph between cheap and detailed drawing on every
+			//single wheel notch - that step change was what made zooming feel like it stuttered at one particular point
+			if (!FullGraph) //the print pass sees every element at once and must not drag the on-screen state with it
+			{
+				if (usingSimpleView)
+					usingSimpleView = ViewScale < SimpleViewExitScale || visibleElements > (NodeCountForSimpleView * 9 / 10);
+				else
+					usingSimpleView = ViewScale < SimpleViewEnterScale || visibleElements > NodeCountForSimpleView;
+			}
+
+			NodeDrawingStyle drawStyle = FullGraph ? NodeDrawingStyle.PrintStyle
+									   : IconsOnly ? NodeDrawingStyle.IconsOnly
+									   : usingSimpleView ? NodeDrawingStyle.Simple
+									   : NodeDrawingStyle.Regular;
+
 			//paint all elements (nodes & lines)
-			int visibleElements = GetPaintingOrder().Count(e => e.Visible && e is BaseNodeElement);
 			foreach (GraphElement element in GetPaintingOrder())
-				element.Paint(graphics, FullGraph? NodeDrawingStyle.PrintStyle : IconsOnly? NodeDrawingStyle.IconsOnly : (visibleElements > NodeCountForSimpleView || ViewScale < 0.2)? NodeDrawingStyle.Simple : NodeDrawingStyle.Regular); //if viewscale is 0.2, then the text, images, etc being drawn are ~1/5th the size: aka: ~6x6 pixel images, etc. Use simple draw. Also simple draw if too many objects
+				element.Paint(graphics, drawStyle);
 
 			//trace pass: every link touching a selected node is redrawn on top of the finished graph. done here rather
 			//than in the normal painting order so a traced link cannot be buried under the nodes and links drawn after it
@@ -1635,7 +1762,75 @@ namespace Foreman
 				//paused border
 				if (Graph != null && Graph.PauseUpdates) //graph null check is purely for design view
 					graphics.DrawRectangle(pausedBorders, 0, 0, Width - 3, Height - 3);
+
+				//solver diagnostic banner
+				if (Graph != null)
+					DrawSolveIssueBanner(graphics);
 			}
+		}
+
+		//only the solver revises these, so the scan over every node runs once per solve rather than once per frame
+		private void RecalculateSolveIssue()
+		{
+			solveIssueDirty = false;
+			cachedSolveIssue = SolveIssue.None;
+			cachedSolveIssueNodeCount = 0;
+
+			foreach (ReadOnlyBaseNode node in Graph.Nodes)
+			{
+				if (node.SolveIssue == SolveIssue.None)
+					continue;
+				if (node.SolveIssue > cachedSolveIssue) //enum is ordered least->most severe, so the worst group wins the banner
+				{
+					cachedSolveIssue = node.SolveIssue;
+					cachedSolveIssueNodeCount = 0;
+				}
+				if (node.SolveIssue == cachedSolveIssue)
+					cachedSolveIssueNodeCount++;
+			}
+		}
+
+		//the solver reports 'produced nothing' the same way whether the graph is genuinely idle, was never given a rate, or blew up.
+		//without this the only clue is that every number on screen reads 0, which is exactly the case that is hardest to track down.
+		private void DrawSolveIssueBanner(Graphics graphics)
+		{
+			if (solveIssueDirty)
+				RecalculateSolveIssue();
+
+			SolveIssue issue = cachedSolveIssue;
+			if (issue == SolveIssue.None)
+				return;
+			int affectedNodes = cachedSolveIssueNodeCount;
+
+			string title;
+			string detail;
+			switch (issue)
+			{
+				case SolveIssue.NoFixedRate:
+					title = string.Format("{0} nodes are producing nothing", affectedNodes);
+					detail = "No node in this group has a fixed rate, so 'build nothing' is a valid answer and the solver takes it.\nSet a fixed rate on an output node to drive the group.";
+					break;
+				case SolveIssue.TargetUnreachable:
+					title = "Requested rate could not be reached";
+					detail = "The solver got as close as it could. Check for a missing input, or a loop that consumes more of an item than it produces.";
+					break;
+				default:
+					title = "Solver found no solution - every node was reset to 0";
+					detail = "Usually an unbounded graph: a self-feeding loop that nets out positive while 'pull output nodes' is enabled.\nDisable that option, or pin the loop down with a fixed rate.";
+					break;
+			}
+
+			SizeF titleSize = graphics.MeasureString(title, solveIssueTitleFont, solveIssueBannerMaxWidth);
+			SizeF detailSize = graphics.MeasureString(detail, solveIssueDetailFont, solveIssueBannerMaxWidth);
+
+			int width = (int)Math.Max(titleSize.Width, detailSize.Width) + (solveIssueBannerPadding * 2);
+			int height = (int)(titleSize.Height + detailSize.Height) + (solveIssueBannerPadding * 2) + 2;
+			Rectangle bounds = new Rectangle(Math.Max(0, (Width - width) / 2), 10, width, height);
+
+			graphics.FillRectangle(solveIssueBgBrush, bounds);
+			graphics.DrawRectangle(solveIssueBorderPen, bounds);
+			graphics.DrawString(title, solveIssueTitleFont, solveIssueTextBrush, new RectangleF(bounds.X + solveIssueBannerPadding, bounds.Y + solveIssueBannerPadding, width - (solveIssueBannerPadding * 2), titleSize.Height));
+			graphics.DrawString(detail, solveIssueDetailFont, solveIssueTextBrush, new RectangleF(bounds.X + solveIssueBannerPadding, bounds.Y + solveIssueBannerPadding + titleSize.Height + 2, width - (solveIssueBannerPadding * 2), detailSize.Height));
 		}
 
 		//----------------------------------------------Production Graph events
@@ -1654,6 +1849,7 @@ namespace Foreman
 			linkElementDictionary.Remove(e.nodeLink);
 			linkElements.Remove(element);
 			element.Dispose();
+			linkWidthsDirty = true;
 
 			supplier.RequestStateUpdate();
 			consumer.RequestStateUpdate();
@@ -1668,6 +1864,7 @@ namespace Foreman
 			LinkElement element = new LinkElement(this, e.nodeLink, supplier, consumer);
 			linkElementDictionary.Add(e.nodeLink, element);
 			linkElements.Add(element);
+			linkWidthsDirty = true;
 
 			supplier.RequestStateUpdate();
 			consumer.RequestStateUpdate();
@@ -1685,6 +1882,9 @@ namespace Foreman
             selectedNodes.Remove(element);
             if (MouseDownElement == element)   // ADD THIS
                 MouseDownElement = null;       // ADD THIS
+            if (lastHoveredNode == element)
+                lastHoveredNode = null;
+            solveIssueDirty = true;
             element.Dispose();
             Invalidate();
         }
@@ -1709,6 +1909,7 @@ namespace Foreman
 
             nodeElementDictionary.Add(e.node, element);
             nodeElements.Add(element);
+            solveIssueDirty = true;
             if (!suppressInvalidate)
                 Invalidate();
         }
@@ -1850,6 +2051,18 @@ namespace Foreman
                             {
                                 AddTextAnnotation(ScreenToGraph(e.Location));
                             })));
+
+                        // copy every building in the graph, no filter and no summary window. Disabled rather than
+                        // hidden when there is nothing to copy, so the entry stays where the eye expects it.
+                        List<string> taskLines = FactorioTaskList.BuildLines(Graph.Nodes);
+                        MenuItem copyForFactorio = new MenuItem("Copy all buildings for Factorio",
+                            new EventHandler((o, ee) =>
+                            {
+                                Clipboard.SetText(string.Join(Environment.NewLine, taskLines));
+                            }));
+                        copyForFactorio.Enabled = taskLines.Count > 0;
+                        rightClickMenu.MenuItems.Add(copyForFactorio);
+
                         rightClickMenu.Show(this, e.Location);
                     }
 					else if(currentDragOperation != DragOperation.Selection)
@@ -2009,6 +2222,12 @@ namespace Foreman
                     MouseDownElement = null;
                     break;
             }
+
+            //the middle and right cases above return without clearing the claimed element, so a release that leaves
+            //nothing held could leave MouseDownElement set with no drag in progress. a link drag is exempt - it is
+            //meant to keep following the cursor unpressed
+            if (downButtons == MouseButtons.None && currentDragOperation == DragOperation.None && !(MouseDownElement is DraggedLinkElement))
+                MouseDownElement = null;
 		}
 
 		private void ProductionGraphViewer_MouseMove(object sender, MouseEventArgs e)
@@ -2023,7 +2242,7 @@ namespace Foreman
                 pendingTextAnnotation.X = graph_location.X;
                 pendingTextAnnotation.Y = graph_location.Y;
                 this.Cursor = Cursors.Cross;
-                Invalidate();
+                RequestRedraw();
                 return;
             }
 
@@ -2042,7 +2261,13 @@ namespace Foreman
 						if ((downButtons & MouseButtons.Middle) == MouseButtons.Middle || (downButtons & MouseButtons.Right) == MouseButtons.Right)
 							viewBeingDragged = true;
 
-						if (MouseDownElement != null && !_inDrawShapeMode) //there is an item under the mouse during drag
+						//a drag needs the left button to still be held. without that test the only conditions were a
+						//non-null MouseDownElement and a distance measured from mouseDownStartScreenPoint, which is
+						//left over from the previous press - so a stale claim could turn a plain hover into a drag,
+						//and pay for a full graph snapshot to do it. a link drag is the deliberate exception: it
+						//follows the cursor with nothing held until it is clicked into place
+						bool leftHeld = (downButtons & MouseButtons.Left) == MouseButtons.Left;
+						if (MouseDownElement != null && !_inDrawShapeMode && (leftHeld || MouseDownElement is DraggedLinkElement)) //there is an item under the mouse during drag
 						{
 							currentDragOperation = DragOperation.Item;
 							// Capture pre-drag state for node/annotation moves.
@@ -2102,7 +2327,7 @@ namespace Foreman
                                     }
                                 }
                             }
-                            Invalidate();
+                            RequestRedraw();
                         }
                     }
                     else if (MouseDownElement is AnnotationElement draggedAnn && selectedAnnotations.Contains(draggedAnn)) //dragging a selected annotation
@@ -2110,7 +2335,7 @@ namespace Foreman
                         if (draggedAnn.IsResizing) // resize — don't group-drag other annotations
                         {
                             MouseDownElement.Dragged(graph_location);
-                            Invalidate();
+                            RequestRedraw();
                         }
                         else // move — group drag all selected annotations and nodes together
                         {
@@ -2151,7 +2376,7 @@ namespace Foreman
                                     }
                                 }
                             }
-                            Invalidate();
+                            RequestRedraw();
                         }
                     }
                     else //dragging a single unselected item
@@ -2188,7 +2413,7 @@ namespace Foreman
                         {
                             MouseDownElement.Dragged(graph_location);
                         }
-                        Invalidate();
+                        RequestRedraw();
                     }
 
                     //accept middle mouse button for view dragging purposes (while dragging item or selection)
@@ -2246,12 +2471,15 @@ namespace Foreman
 				UpdateGraphBounds(MouseDownElement == null); //only hard limit the graph bounds if we arent dragging an object
 			}
 
-			Invalidate();
+            //anything actually being moved has to be redrawn as it moves. a bare hover is decided further down
+            bool redrawNeeded = currentDragOperation != DragOperation.None || viewBeingDragged
+                                || draggedLinkElement != null || MouseDownElement != null;
 
             // Update cursor based on what's under the mouse
             if (currentDragOperation == DragOperation.DrawShape || (_inDrawShapeMode && currentDragOperation == DragOperation.None))
             {
                 this.Cursor = Cursors.Cross;
+                redrawNeeded = true; //the shape preview tracks the pointer
             }
             else if (currentDragOperation == DragOperation.None && !viewBeingDragged)
             {
@@ -2268,11 +2496,21 @@ namespace Foreman
                         if (annCursor != null) { newCursor = annCursor; break; }
                     }
                 this.Cursor = newCursor;
+
+                //with nothing being dragged, the only thing a hover can change is which element is under the pointer
+                //and any tooltip tracking it - tooltips are drawn per sub-region, so a move within one still counts.
+                //over empty canvas there is nothing new to draw at all, and the frame is skipped outright
+                if (hoveredNode != lastHoveredNode || (hoveredNode != null && TooltipsEnabled && !SubwindowOpen))
+                    redrawNeeded = true;
+                lastHoveredNode = hoveredNode;
             }
             else if (currentDragOperation == DragOperation.None)
             {
                 this.Cursor = Cursors.Default;
             }
+
+            if (redrawNeeded)
+                RequestRedraw();
         }
 
 		private void ProductionGraphViewer_MouseWheel(object sender, MouseEventArgs e)
@@ -2296,7 +2534,7 @@ namespace Foreman
 			ViewOffset = new Point(ViewOffset.X + newZoomCenter.X - oldZoomCenter.X, ViewOffset.Y + newZoomCenter.Y - oldZoomCenter.Y);
 
 			UpdateGraphBounds();
-			Invalidate();
+			RequestRedraw(); //a free-spinning wheel delivers notches far faster than the graph can be redrawn
 		}
 
 		private void ProductionGraphViewer_KeyDown(object sender, KeyEventArgs e)
@@ -2965,10 +3203,30 @@ namespace Foreman
                 else
                     SavedPresetNames = new List<string>();
 
+                // A preset the graph does not name is still the right one to use when it can represent the graph
+                // completely. Switching between presets that differ only in name is pure churn, and it is what put a
+                // "Preset switched" box on screen every single load for anyone keeping two builds of the same modpack.
+                //
+                // MICount rather than ErrorCount is deliberate. ErrorCount also counts mod list differences - added,
+                // missing and wrong-version mods - and two builds of the same modpack differ on all three by
+                // definition, so nothing would ever qualify. MICount is the question actually being asked: are any
+                // items, recipes, planting processes or qualities this graph uses absent or defined differently here.
+                // Zero means the loaded preset reproduces the graph exactly, so staying on it changes no numbers.
+                // This is only ever a fast path. If the loaded preset cannot host the graph it is left entirely alone -
+                // not removed from the candidate list, and no error recorded - so the original selection below runs
+                // exactly as it always did. Re-testing it there costs nothing: snapshots are cached per preset file.
+                Preset currentPreset = allPresets.FirstOrDefault(p => p.Name == Properties.Settings.Default.CurrentPresetName);
+                if (currentPreset != null)
+                {
+                    PresetErrorPackage currentErrors = await PresetProcessor.TestPreset(currentPreset, modSet, itemNames, assemblerNames, qualityNames, recipeShorts, plantShorts);
+                    if (currentErrors != null && currentErrors.MICount == 0)
+                        chosenPreset = currentPreset; //already loaded and reproduces the graph - no switch, nothing to report
+                }
+
                 // Try each candidate name in order before falling back to full search
                 Preset bestNamedCandidate = null;
 
-                foreach (string candidateName in SavedPresetNames.ToList())
+                foreach (string candidateName in chosenPreset == null ? SavedPresetNames.ToList() : Enumerable.Empty<string>())
                 {
                     Preset candidate = allPresets.FirstOrDefault(p => p.Name == candidateName);
                     if (candidate == null) continue;
@@ -3132,6 +3390,12 @@ namespace Foreman
 		{
 			ClearGraph();
 
+			if (disposing)
+			{
+				redrawTimer.Enabled = false;
+				redrawTimer.Tick -= RedrawTimer_Tick;
+				redrawTimer.Dispose();
+			}
 
 			if (disposing && (components != null))
 			{
