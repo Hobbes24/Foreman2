@@ -23,6 +23,7 @@ namespace Foreman
         // ── Fields ──────────────────────────────────────────────────────────────
         private readonly TabPage _plusTab;
         private bool _suppressEvents = false;
+        private int  _hotCloseTab = -1;   // real-tab index whose × is under the pointer, -1 for none
 
         // ── Constructor ─────────────────────────────────────────────────────────
         public GraphTabControl()
@@ -190,9 +191,10 @@ namespace Foreman
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
                     TextFormatFlags.EndEllipsis);
 
-                // × close button
+                // × close button. the hot tab is tracked in OnMouseMove rather than re-tested against the live cursor
+                // here, so what is drawn always matches what triggered the repaint
                 Rectangle cr    = GetCloseButtonRect(e.Index);
-                bool closeHover = cr.Contains(PointToClient(Cursor.Position));
+                bool closeHover = e.Index == _hotCloseTab;
                 using (var xPen = new Pen(closeHover ? Color.Red : fg, 1.5f))
                 {
                     e.Graphics.DrawLine(xPen, cr.Left, cr.Top,   cr.Right,  cr.Bottom);
@@ -201,11 +203,49 @@ namespace Foreman
             }
         }
 
-        // Invalidate tab area on mouse move so the × hover colour updates
+        // The × changes colour on hover, so the strip does have to repaint when that changes - but only then. This
+        // used to invalidate the whole header band on every single mouse move, which at a modern pointer's poll rate
+        // is a continuous repaint storm. A native tab strip paints straight to the screen instead of through a back
+        // buffer (DoubleBuffered does not cover owner-drawn tabs), so each of those repaints was a visible flash.
         protected override void OnMouseMove(MouseEventArgs e)
         {
-            Invalidate(new Rectangle(0, 0, Width, ItemSize.Height + 4));
+            int hot = -1;
+            for (int i = 0; i < RealTabCount; i++)
+            {
+                if (GetCloseButtonRect(i).Contains(e.Location))
+                {
+                    hot = i;
+                    break;
+                }
+            }
+
+            if (hot != _hotCloseTab)
+            {
+                InvalidateTab(_hotCloseTab);   // repaint the one being left
+                InvalidateTab(hot);            // and the one being entered
+                _hotCloseTab = hot;
+            }
+
             base.OnMouseMove(e);
+        }
+
+        // The pointer can leave without a final move over the tab it was on, which would strand that × red
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            if (_hotCloseTab != -1)
+            {
+                InvalidateTab(_hotCloseTab);
+                _hotCloseTab = -1;
+            }
+            base.OnMouseLeave(e);
+        }
+
+        // OnDrawItem redraws a whole tab at a time, so the update region has to be the tab, not just the button
+        private void InvalidateTab(int tabIndex)
+        {
+            if (tabIndex < 0 || tabIndex >= RealTabCount)
+                return;
+            Invalidate(GetTabRect(tabIndex));
         }
 
         private Rectangle GetCloseButtonRect(int tabIndex)
