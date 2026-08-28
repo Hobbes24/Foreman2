@@ -27,18 +27,25 @@ namespace Foreman
 
 		public void Paint(Graphics graphics, ProductionGraph graph)
 		{
-			if (ShowErrorArrows)
-				foreach (Point errorPoint in graph.Nodes.Where(node => node.State == NodeState.Error).Select(node => Viewer.GraphToScreen(node.Location)))
-					DrawArrow(graphics, errorPoint, ErrorArrowPen);
-			if (ShowWarningArrows)
-				foreach (Point warningPoint in graph.Nodes.Where(node => node.State == NodeState.Warning).Select(node => Viewer.GraphToScreen(node.Location)))
-					DrawArrow(graphics, warningPoint, WarningArrowPen);
-			if (ShowDisconnectedArrows)
-				foreach (Point errorPoint in graph.Nodes.Where(node => node.State == NodeState.MissingLink).Select(node => Viewer.GraphToScreen(node.Location)))
-					DrawArrow(graphics, errorPoint, DisconnectedArrowPen);
-			if (ShowOUNodeArrows)
-				foreach (Point errorPoint in graph.Nodes.Where(node => node.IsOverproducing() || node.ManualRateNotMet()).Select(node => Viewer.GraphToScreen(node.Location)))
-					DrawArrow(graphics, errorPoint, OUNodeArrowPen);
+			if (!ShowErrorArrows && !ShowWarningArrows && !ShowDisconnectedArrows && !ShowOUNodeArrows)
+				return;
+
+			//one walk over the nodes rather than up to four separate filtered passes. this runs on every repaint, so
+			//while a pan or a zoom is in progress the graph was being enumerated several times per frame. the three
+			//state arrows are mutually exclusive (NodeState is a single value), so testing them in sequence per node
+			//draws exactly what the separate passes did; the over/under arrow is independent and still drawn after it
+			foreach (ReadOnlyBaseNode node in graph.Nodes)
+			{
+				if (ShowErrorArrows && node.State == NodeState.Error)
+					DrawArrow(graphics, Viewer.GraphToScreen(node.Location), ErrorArrowPen);
+				else if (ShowWarningArrows && node.State == NodeState.Warning)
+					DrawArrow(graphics, Viewer.GraphToScreen(node.Location), WarningArrowPen);
+				else if (ShowDisconnectedArrows && node.State == NodeState.MissingLink)
+					DrawArrow(graphics, Viewer.GraphToScreen(node.Location), DisconnectedArrowPen);
+
+				if (ShowOUNodeArrows && (node.IsOverproducing() || node.ManualRateNotMet()))
+					DrawArrow(graphics, Viewer.GraphToScreen(node.Location), OUNodeArrowPen);
+			}
 		}
 
 		private void DrawArrow(Graphics graphics, Point nodeOrigin, Pen arrowPen)

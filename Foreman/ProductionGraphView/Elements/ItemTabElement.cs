@@ -48,7 +48,12 @@ namespace Foreman
 			HideItemTab = false;
 
 			borderPen = regularBorderPen;
-			int textHeight = (int)base.graphViewer.CreateGraphics().MeasureString("a", textFont).Height;
+			//CreateGraphics hands back a live device context that has to be released. it was leaked here, one per item
+			//tab built, and only ever reclaimed by a finalizer - a large graph could put real pressure on the GDI
+			//handle count just by being loaded
+			int textHeight;
+			using (Graphics measure = base.graphViewer.CreateGraphics())
+				textHeight = (int)measure.MeasureString("a", textFont).Height;
 			Width = TabWidth;
 			Height = iconSize + textHeight + border + 3;
 			X = 0; Y = 0;
