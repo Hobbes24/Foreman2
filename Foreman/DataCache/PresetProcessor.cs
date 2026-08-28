@@ -243,7 +243,15 @@ namespace Foreman
 				}
 
 				//have to process mining, generators and boilers (since we convert them to recipes as well)
-				foreach (var objJToken in jsonData["resources"])
+				//water_resources is a separate list in the preset json, but the data cache feeds it through the very
+				//same ProcessResource path as "resources" - which is where §§r:e:water, the offshore pump, comes from.
+				//Leaving it out here meant every graph containing an offshore pump reported §§r:e:water missing from
+				//every preset, a phantom incompatibility that no preset could ever satisfy.
+				IEnumerable<JToken> resourceTokens = jsonData["resources"];
+				if (jsonData["water_resources"] != null)
+					resourceTokens = resourceTokens.Concat(jsonData["water_resources"]);
+
+				foreach (var objJToken in resourceTokens)
 				{
 					if (objJToken["products"].Count() == 0)
 						continue;
