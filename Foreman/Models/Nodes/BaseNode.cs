@@ -13,6 +13,17 @@ namespace Foreman
 	public enum NodeState { Clean, MissingLink, Warning, Error }
 	public enum NodeDirection { Up, Down }
 
+	//why the last solve produced nothing (or less than asked for) for the connected group this node belongs to.
+	//node states cover structural problems (missing links, disabled recipes, etc); these cover the solver result itself,
+	//which is otherwise invisible - a group that solves to all-zeroes looks exactly like one that was never given a rate.
+	public enum SolveIssue
+	{
+		None,
+		NoFixedRate,        //nothing in the group has a manual rate, so 'produce nothing' is the cheapest valid answer
+		TargetUnreachable,  //a manual rate exists but the solver couldnt reach it
+		SolverFailed        //solver returned no solution at all (unbound/abnormal) and every node was forced to 0
+	}
+
 	[Serializable]
 	public abstract partial class BaseNode : ISerializable
 	{
@@ -57,6 +68,8 @@ namespace Foreman
 		public List<NodeLink> OutputLinks { get; private set; }
 
 		public NodeState State { get; protected set; }
+
+		public SolveIssue SolveIssue { get; internal set; } //set by the solver for every node of a solved group. clean groups arent re-solved, so this has to live on the node to survive an update
 
 		public event EventHandler<EventArgs> NodeStateChanged; //includes node state, as well as any changes that may influence the input/output links (ex: switching fuel, assembler, etc.)
 		public event EventHandler<EventArgs> NodeValuesChanged; //includes actual amount / actual rate changes (ex: graph solved), as well as minor updates (ex:beacon numbers, etc.)
@@ -170,6 +183,7 @@ namespace Foreman
 		public double ActualRatePerSec => MyNode.ActualRatePerSec;
 		public double DesiredRate => MyNode.DesiredRate;
 		public NodeState State => MyNode.State;
+		public SolveIssue SolveIssue => MyNode.SolveIssue;
 
 		public double ActualSetValue => MyNode.ActualSetValue;
 		public double DesiredSetValue => MyNode.DesiredSetValue;

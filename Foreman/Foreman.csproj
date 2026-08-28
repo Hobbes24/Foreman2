@@ -209,6 +209,7 @@
     </Compile>
     <Compile Include="Forms\Textpropertiesform.designer.cs" />
     <Compile Include="Models\AssemblerSelector.cs" />
+    <Compile Include="Models\FactorioTaskList.cs" />
     <Compile Include="Models\FuelSelector.cs" />
     <Compile Include="Models\LinkChecker.cs" />
     <Compile Include="Models\ModuleSelector.cs" />

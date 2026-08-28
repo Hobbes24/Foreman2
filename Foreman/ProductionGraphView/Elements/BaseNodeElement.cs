@@ -521,6 +521,25 @@ namespace Foreman
 				AddRClickMenuOptions(graphViewer.SelectedNodes.Count == 0 || graphViewer.SelectedNodes.Contains(this));
 
 				RightClickMenu.Items.Add(new ToolStripSeparator());
+
+				// same selection rule the grouping options use: the selection when this node is part of it,
+				// otherwise just this node. The lines are built up front so the entry can disable itself when
+				// nothing in range yields any - a selection of nothing but passthrough nodes, say.
+				HashSet<ReadOnlyBaseNode> toCopy = new HashSet<ReadOnlyBaseNode>(
+					inMultiSelection ? graphViewer.SelectedNodes.Select(ne => ne.DisplayedNode) : Enumerable.Empty<ReadOnlyBaseNode>());
+				toCopy.Add(DisplayedNode);
+
+				List<string> taskLines = FactorioTaskList.BuildLines(toCopy);
+				ToolStripMenuItem copyForFactorio = new ToolStripMenuItem(inMultiSelection ? "Copy selected buildings for Factorio" : "Copy node buildings for Factorio", null,
+					new EventHandler((o, e) =>
+					{
+						RightClickMenu.Close();
+						Clipboard.SetText(string.Join(Environment.NewLine, taskLines));
+					}));
+				copyForFactorio.Enabled = taskLines.Count > 0;
+				RightClickMenu.Items.Add(copyForFactorio);
+
+				RightClickMenu.Items.Add(new ToolStripSeparator());
 				RightClickMenu.Items.Add(new ToolStripMenuItem("Copy key node status", null,
 					new EventHandler((o, e) =>
 					{

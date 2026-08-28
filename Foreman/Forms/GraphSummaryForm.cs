@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -327,6 +326,7 @@ namespace Foreman
 				}
 
 				lvItem.Text = buildingCounters[assembler] >= 10000000? buildingCounters[assembler].ToString("0.##e0") : buildingCounters[assembler].ToString("N0");
+				lvItem.SubItems[0].Tag = (double)buildingCounters[assembler]; //display text is grouped (and exponent past 10M) -> keep the number for export & csv
 				lvItem.Tag = assembler;
 				lvItem.Name = assembler.Assembler.Name + ":" + assembler.Quality.Name; //key
 				lvItem.BackColor = assembler.Assembler.Available ? AvailableObjectColor : UnavailableObjectColor;
@@ -365,6 +365,7 @@ namespace Foreman
 				}
 
 				lvItem.Text = beaconCounters[beacon].ToString();
+				lvItem.SubItems[0].Tag = (double)beaconCounters[beacon];
 				lvItem.Tag = beacon;
 				lvItem.Name = beacon.Beacon.Name + ":" + beacon.Quality.Name; //key
 				lvItem.BackColor = beacon.Beacon.Available ? AvailableObjectColor : UnavailableObjectColor;
@@ -927,77 +928,37 @@ namespace Foreman
 
         private const string ExportToFactorioButtonCaption = "Copy for Factorio";
 
-        // The mod turns each line into a personal logistic request, so the internal name
-        // has to be the ITEM that places the building - not the entity. They are usually
-        // spelled the same, which is why this went unnoticed, but pyanodons' TURD
-        // machines are not: entity "fish-farm-mk01-turd" is placed by item
-        // "fish-farm-mk01", and Factorio has no item under the entity's name.
-        private static string GetPlacingItemName(object tag, string entityName)
-        {
-            switch (tag)
-            {
-                case AssemblerQualityPair assembler: return assembler.Assembler.AssociatedItems.FirstOrDefault()?.Name ?? entityName;
-                case BeaconQualityPair beacon: return beacon.Beacon.AssociatedItems.FirstOrDefault()?.Name ?? entityName;
-                default: return entityName;
-            }
-        }
-
-        // The building lists only carry their count as display text (grouped, and in
-        // exponent form past 10 million), so it has to come back through a parse.
-        private static double ParseListViewCount(string text)
-        {
-            if (double.TryParse(text, NumberStyles.Any, CultureInfo.CurrentCulture, out double count))
-                return count;
-            return double.TryParse(text.Replace(",", ""), NumberStyles.Any, CultureInfo.InvariantCulture, out count) ? count : 0;
-        }
-
         private void ExportToFactorioButton_Click(object sender, EventArgs e)
         {
-            //one line per item: several rows can collapse onto the same one once the placing
-            //item is resolved - quality variants of a building, a TURD machine sitting next to
-            //its plain form, or a module used in both assemblers and beacons
-            var taskCounts = new Dictionary<string, double>();
-            var taskNames = new Dictionary<string, string>();
-            var taskOrder = new List<string>();
-
-            void addTask(string internalName, string friendlyName, double count)
-            {
-                if (count <= 0)
-                    return;
-                if (!taskCounts.ContainsKey(internalName))
-                {
-                    taskCounts.Add(internalName, 0);
-                    taskNames.Add(internalName, friendlyName);
-                    taskOrder.Add(internalName);
-                }
-                taskCounts[internalName] += count;
-            }
+            //deliberately walks the FILTERED lists: typing in the buildings filter box narrows what
+            //gets copied. The graph-view copy has no filter and goes straight through FactorioTaskList.
+            FactorioTaskListBuilder builder = new FactorioTaskListBuilder();
 
             var allBuildingLists = new[]
             {
 				filteredAssemblerList,
 				filteredMinerList,
 				filteredPowerList,
-				filteredBeaconList
+				filteredBeaconList,
+				filteredModuleList,
+				filteredBeaconModuleList
 			};
 
             foreach (var list in allBuildingLists)
             {
                 foreach (ListViewItem lvi in list)
                 {
-                    // lvi.Name is "internal-name:quality-name" — grab just the entity name
-                    string entityName = lvi.Name.Split(':')[0];
-                    addTask(GetPlacingItemName(lvi.Tag, entityName), lvi.SubItems[1].Text, ParseListViewCount(lvi.SubItems[0].Text));
+                    double count = (double)lvi.SubItems[0].Tag;
+                    switch (lvi.Tag)
+                    {
+                        case AssemblerQualityPair assembler: builder.AddAssembler(assembler, count); break;
+                        case BeaconQualityPair beacon: builder.AddBeacon(beacon, count); break;
+                        case ModuleQualityPair module: builder.AddModule(module, count); break;
+                    }
                 }
             }
 
-            //module names are already item names - nothing to resolve
-            foreach (var list in new[] { filteredModuleList, filteredBeaconModuleList })
-                foreach (ListViewItem lvi in list)
-                    addTask(lvi.Name.Split(':')[0], lvi.SubItems[1].Text, (double)lvi.SubItems[0].Tag);
-
-            //the mod parses "<digits>x " -> group separators or an exponent make the line unparsable
-            var lines = taskOrder.Select(key => $"{taskCounts[key].ToString("0", CultureInfo.InvariantCulture)}x {taskNames[key]} [{key}]").ToList();
+            List<string> lines = builder.ToLines();
 
             if (lines.Count == 0)
             {

@@ -10,6 +10,8 @@ namespace Foreman
 {
 	public partial class ProductionGraph
 	{
+		private const double ZeroRateThreshold = 1e-9; //below this a solved rate is 'nothing was built'
+
 		private int updateCounter = 0;
 		public void OptimizeGraphNodeValues()
 		{
@@ -52,6 +54,33 @@ namespace Foreman
 				foreach (NodeLink link in node.OutputLinks)
 					link.ThroughputPerSec = solution?.Throughput(link) ?? 0;
 			}
+
+			UpdateSolveIssue(nodeGroup, solution == null);
+		}
+
+		//a group that solves to all-zeroes is indistinguishable on screen from one that was never given a rate, and a failed
+		//solve is silently flattened to zero as well. work out which of those happened while we still have the answer.
+		private static void UpdateSolveIssue(IEnumerable<BaseNode> nodeGroup, bool solverFailed)
+		{
+			SolveIssue issue = SolveIssue.None;
+
+			if (solverFailed)
+				issue = SolveIssue.SolverFailed;
+			else if (nodeGroup.Any(node => node.InputLinks.Any() || node.OutputLinks.Any()) //a lone unlinked node sitting at 0 is normal, dont nag about it
+				&& nodeGroup.All(node => node.ActualRatePerSec < ZeroRateThreshold))
+			{
+				//the solver minimizes buildings, so with nothing pinned down 'build nothing' is the cheapest valid answer
+				if (nodeGroup.Any(node => node.RateType == RateType.Manual && node.DesiredRatePerSec > 0))
+					issue = SolveIssue.TargetUnreachable;
+				else if (!nodeGroup.Any(node => node.RateType == RateType.Manual))
+					issue = SolveIssue.NoFixedRate;
+				//a manual rate of 0 is left alone - the group produces nothing because that is what was asked for
+			}
+			else if (nodeGroup.Any(node => !(node is SupplierNode) && node.ManualRateNotMet())) //suppliers report their desired rate as their actual, same exemption the node border draw makes
+				issue = SolveIssue.TargetUnreachable;
+
+			foreach (BaseNode node in nodeGroup)
+				node.SolveIssue = issue;
 		}
 	}
 
