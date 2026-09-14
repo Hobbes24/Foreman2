@@ -197,18 +197,20 @@ namespace Foreman
 		private static float TraceHaloWidth { get { return Math.Max(2, Properties.Settings.Default.LinkTraceWidth); } }
 		private static float TraceCoreWidth { get { return TraceHaloWidth * 0.43f; } }
 		private static readonly Color traceHaloColor = Color.FromArgb(190, 20, 20, 25);
+		private static readonly Color cheapTraceHaloColor = Color.FromArgb(255, 20, 20, 25);
 
-		public void DrawTrace(Graphics graphics)
+		//widths come from the viewer already divided by the view scale, so the trace keeps a constant thickness on
+		//screen, and are worked out once per frame rather than read back out of the settings twice per link.
+		//a detailed trace is the full look: translucent halo, round ends. otherwise the halo is opaque and the ends
+		//square - blending and capping wide strokes is most of what a large trace costs in GDI+
+		public void DrawTrace(Graphics graphics, float haloWidth, float coreWidth, bool detailed)
 		{
 			UpdateCurve();
 
-			//widths are divided by the view scale so the trace keeps a constant thickness on screen - zoomed out far
-			//enough to need tracing is exactly where a graph-space width would shrink to nothing
-			float scale = (float)Math.Max(0.05, graphViewer.ViewScale);
-
-			using (Pen halo = new Pen(traceHaloColor, LinkWidth + (TraceHaloWidth / scale)) { EndCap = LineCap.Round, StartCap = LineCap.Round })
+			LineCap cap = detailed ? LineCap.Round : LineCap.Flat;
+			using (Pen halo = new Pen(detailed ? traceHaloColor : cheapTraceHaloColor, LinkWidth + haloWidth) { EndCap = cap, StartCap = cap })
 				DrawCurve(graphics, halo);
-			using (Pen core = new Pen(Item.Item.AverageColor, LinkWidth + (TraceCoreWidth / scale)) { EndCap = LineCap.Round, StartCap = LineCap.Round })
+			using (Pen core = new Pen(Item.Item.AverageColor, LinkWidth + coreWidth) { EndCap = cap, StartCap = cap })
 				DrawCurve(graphics, core);
 		}
 
@@ -271,8 +273,15 @@ namespace Foreman
 			iconOnlyDraw = (style == NodeDrawingStyle.IconsOnly);
 			UpdateCurve();
 
+			bool traced = IsTraced;
+
+			//the trace pass paints this link again on top, wider than the link itself - drawing it here as well would be
+			//a full stroke per selected link that nobody ever sees
+			if (traced && graphViewer.TracePassActive)
+				return;
+
 			//selecting either end brings a hidden link back in full - the same condition the trace pass uses
-			if (!iconOnlyDraw && !IsTraced && !graphViewer.IgnoreUtilityHiding && graphViewer.Graph.IsUtilityItemHidden(Item))
+			if (!iconOnlyDraw && !traced && !graphViewer.IgnoreUtilityHiding && graphViewer.Graph.IsUtilityItemHidden(Item))
 			{
 				DrawUtilityStubs(graphics);
 				return;

@@ -127,6 +127,21 @@ namespace Foreman
         private const float SimpleViewExitScale = 0.24f;  //must climb back above this to return to detailed drawing
         private bool usingSimpleView = false;
 
+        //link tracing redraws every link touching the selection as two wide antialiased strokes with a translucent halo -
+        //in GDI+ that is several times the cost of the link itself. past this many traced links (or once the graph has
+        //already dropped to simple drawing) the trace is drawn aliased with an opaque halo, which measured ~2.3x cheaper
+        private const int DetailedTraceLinkLimit = 60;
+
+        /// <summary>True while a frame's trace pass will redraw traced links, so the normal link pass can skip them.</summary>
+        public bool TracePassActive { get; private set; }
+
+        //a paint slower than this is written to the error log with a breakdown, so a stall on a slower machine can be
+        //pinned to a phase without a profiler. throttled so a run of slow frames does not flood the log
+        private const long SlowPaintLogMs = 250;
+        private const long SlowPaintLogIntervalMs = 5000;
+        private readonly Stopwatch paintPhaseTimer = new Stopwatch();
+        private DateTime lastSlowPaintLog = DateTime.MinValue;
+
         private bool _inDrawShapeMode = false;
 
 		private Dictionary<ReadOnlyBaseNode, BaseNodeElement> nodeElementDictionary;
@@ -1652,6 +1667,8 @@ namespace Foreman
 
 		public new void Paint(Graphics graphics, bool FullGraph = false)
 		{
+			paintPhaseTimer.Restart();
+
             //update visibility of all elements. the visible node count is tallied in the same walk - it used to be a
             //second full enumeration of every element on the graph, once per frame, purely to pick a draw style
             int visibleElements = 0;
@@ -1742,16 +1759,41 @@ namespace Foreman
 									   : usingSimpleView ? NodeDrawingStyle.Simple
 									   : NodeDrawingStyle.Regular;
 
+			TracePassActive = !FullGraph && !IconsOnly && selectedNodes.Count > 0 && Properties.Settings.Default.ShowLinkTracing;
+			long prepareMs = paintPhaseTimer.ElapsedMilliseconds;
+
 			//paint all elements (nodes & lines)
 			foreach (GraphElement element in GetPaintingOrder())
 				element.Paint(graphics, drawStyle);
+			long elementsMs = paintPhaseTimer.ElapsedMilliseconds;
 
 			//trace pass: every link touching a selected node is redrawn on top of the finished graph. done here rather
 			//than in the normal painting order so a traced link cannot be buried under the nodes and links drawn after it
-			if (!FullGraph && !IconsOnly && selectedNodes.Count > 0 && Properties.Settings.Default.ShowLinkTracing)
+			int tracedLinks = 0;
+			if (TracePassActive)
+			{
+				List<LinkElement> traced = new List<LinkElement>();
 				foreach (LinkElement element in linkElements)
 					if (element.Visible && element.IsTraced)
-						element.DrawTrace(graphics);
+						traced.Add(element);
+				tracedLinks = traced.Count;
+
+				if (tracedLinks > 0)
+				{
+					bool detailed = drawStyle == NodeDrawingStyle.Regular && tracedLinks <= DetailedTraceLinkLimit;
+					float scale = (float)Math.Max(0.05, ViewScale);
+					float haloWidth = Math.Max(2, Properties.Settings.Default.LinkTraceWidth) / scale;
+					float coreWidth = haloWidth * 0.43f;
+
+					System.Drawing.Drawing2D.SmoothingMode previousSmoothing = graphics.SmoothingMode;
+					if (!detailed)
+						graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighSpeed;
+					foreach (LinkElement element in traced)
+						element.DrawTrace(graphics, haloWidth, coreWidth, detailed);
+					graphics.SmoothingMode = previousSmoothing;
+				}
+			}
+			long traceMs = paintPhaseTimer.ElapsedMilliseconds;
 
 			//find pass: matched links are redrawn last so a search hit sits on top of both the graph and any traces
 			if (!FullGraph && !IconsOnly)
@@ -1770,11 +1812,24 @@ namespace Foreman
 			if (currentDragOperation == DragOperation.Selection && !FullGraph)
 			{
 				graphics.DrawRectangle(selectionPen, SelectionZone);
-				double pConsumption = currentSelectionNodes.Where(n => n.DisplayedNode is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n.DisplayedNode).GetTotalAssemblerElectricalConsumption() + ((ReadOnlyRecipeNode)n.DisplayedNode).GetTotalBeaconElectricalConsumption());
-				double pProduction = currentSelectionNodes.Where(n => n.DisplayedNode is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n.DisplayedNode).GetTotalGeneratorElectricalProduction());
-				int recipeNodeCount = currentSelectionNodes.Count(n => n.DisplayedNode is ReadOnlyRecipeNode);
-				int buildingCount = (int)Math.Ceiling(currentSelectionNodes.Where(n => n.DisplayedNode is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n.DisplayedNode).ActualSetValue));
-				int beaconCount = currentSelectionNodes.Where(n => n.DisplayedNode is ReadOnlyRecipeNode).Sum(n => ((ReadOnlyRecipeNode)n.DisplayedNode).GetTotalBeacons());
+
+				//one walk over the zone rather than five - this runs on every frame of the drag
+				double pConsumption = 0;
+				double pProduction = 0;
+				int recipeNodeCount = 0;
+				double buildings = 0;
+				int beaconCount = 0;
+				foreach (BaseNodeElement n in currentSelectionNodes)
+				{
+					if (!(n.DisplayedNode is ReadOnlyRecipeNode rNode))
+						continue;
+					recipeNodeCount++;
+					pConsumption += rNode.GetTotalAssemblerElectricalConsumption() + rNode.GetTotalBeaconElectricalConsumption();
+					pProduction += rNode.GetTotalGeneratorElectricalProduction();
+					buildings += rNode.ActualSetValue;
+					beaconCount += rNode.GetTotalBeacons();
+				}
+				int buildingCount = (int)Math.Ceiling(buildings);
 
 				ToolTipRenderer.AddExtraToolTip(new TooltipInfo() { Text = string.Format("Power consumption: {0}\nPower production: {1}\nRecipe count: {2}\nBuilding count: {3}\nBeacon count: {4}", GraphicsStuff.DoubleToEnergy(pConsumption, "W"), GraphicsStuff.DoubleToEnergy(pProduction, "W"), recipeNodeCount, buildingCount, beaconCount), Direction = Direction.None, ScreenLocation = new Point(10, 10) });
 			}
@@ -1798,7 +1853,31 @@ namespace Foreman
 				//solver diagnostic banner
 				if (Graph != null)
 					DrawSolveIssueBanner(graphics);
+
+				LogSlowPaint(prepareMs, elementsMs, traceMs, visibleElements, tracedLinks, drawStyle);
 			}
+		}
+
+		private void LogSlowPaint(long prepareMs, long elementsMs, long traceMs, int visibleNodes, int tracedLinks, NodeDrawingStyle drawStyle)
+		{
+			long totalMs = paintPhaseTimer.ElapsedMilliseconds;
+			if (totalMs < SlowPaintLogMs)
+				return;
+			DateTime now = DateTime.UtcNow;
+			if ((now - lastSlowPaintLog).TotalMilliseconds < SlowPaintLogIntervalMs)
+				return;
+			lastSlowPaintLog = now;
+
+			int visibleLinks = 0;
+			foreach (LinkElement link in linkElements)
+				if (link.Visible)
+					visibleLinks++;
+
+			ErrorLogging.LogLine(string.Format(
+				"Slow paint {0} ms (prepare {1}, elements {2}, trace {3}, overlays {4}) - style {5}, scale {6:0.00}, nodes {7}/{8} visible, links {9}/{10} visible, selected {11}, in zone {12}, traced {13}, drag {14}",
+				totalMs, prepareMs, elementsMs - prepareMs, traceMs - elementsMs, totalMs - traceMs,
+				drawStyle, ViewScale, visibleNodes, nodeElements.Count, visibleLinks, linkElements.Count,
+				selectedNodes.Count, currentSelectionNodes.Count, tracedLinks, currentDragOperation));
 		}
 
 		//only the solver revises these, so the scan over every node runs once per solve rather than once per frame
@@ -2093,6 +2172,11 @@ namespace Foreman
                     foreach (AnnotationElement ann in selectedAnnotations)
                         ann.IsSelected = false;
                     selectedAnnotations.Clear();
+
+                    //a click on empty canvas is how a selection is dropped, and nothing else here repaints: hovering bare
+                    //canvas deliberately skips frames, so without this the old highlight stayed up until the pointer
+                    //happened to cross a node
+                    Invalidate();
                 }
             }
         }
@@ -2259,6 +2343,10 @@ namespace Foreman
                             ann.IsSelected = selectedAnnotations.Contains(ann);
 
                         currentSelectionNodes.Clear();
+
+                        //the committed selection changes what is drawn (the zone and its tooltip go, link tracing comes in)
+                        //and a release with the pointer at rest has no pending drag frame to show it
+                        Invalidate();
                     }
 
                     //this is a release of a left click (non-drag operation) -> modify selection if clicking on node & using modifier keys
