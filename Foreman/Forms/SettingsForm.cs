@@ -56,6 +56,7 @@ namespace Foreman
 			public bool Solver_PullConsumerNodes;
 
 			public HashSet<DataObjectBase> EnabledObjects;
+			public bool EnabledObjectsChanged; //only then are the enabled objects written to the preset
 
 			public SettingsFormOptions(DataCache cache)
 			{
@@ -68,24 +69,31 @@ namespace Foreman
 
 		private static readonly Color AvailableObjectColor = Color.White;
 		private static readonly Color UnavailableObjectColor = Color.Pink;
+		private static readonly Color DisabledObjectTextColor = Color.Gray;
+		private const int StatusColumnWidth = 64;
 
 		public SettingsFormOptions Options;
 
-		private List<ListViewItem> unfilteredAssemblerList;
-		private List<ListViewItem> unfilteredMinerList;
-		private List<ListViewItem> unfilteredPowerList;
-		private List<ListViewItem> unfilteredBeaconList;
-		private List<ListViewItem> unfilteredModuleList;
-		private List<ListViewItem> unfilteredRecipeList;
-		private List<ListViewItem> unfilteredQualityList;
+		//---------------------------------------------------------enabled objects tab
+		//The check boxes only mark objects for the Enable / Disable Checked buttons; the enabled state itself is the status
+		//column. Both are kept in hash sets and neither is ever read back out of the virtual list views, which only know
+		//their rows by index - so a row that the filter moves can never carry a stale state onto a different object.
 
-		private List<ListViewItem> filteredAssemblerList;
-		private List<ListViewItem> filteredMinerList;
-		private List<ListViewItem> filteredPowerList;
-		private List<ListViewItem> filteredBeaconList;
-		private List<ListViewItem> filteredModuleList;
-		private List<ListViewItem> filteredRecipeList;
-		private List<ListViewItem> filteredQualityList;
+		private class ObjectListState
+		{
+			public readonly List<DataObjectBase> All = new List<DataObjectBase>();
+			public readonly List<DataObjectBase> Shown = new List<DataObjectBase>();
+		}
+
+		private readonly Dictionary<ListView, ObjectListState> objectLists = new Dictionary<ListView, ObjectListState>();
+		private readonly Dictionary<DataObjectBase, int> objectIconIndices = new Dictionary<DataObjectBase, int>();
+		private readonly HashSet<DataObjectBase> checkedObjects = new HashSet<DataObjectBase>();
+
+		private ComboBox StatusFilterDropDown;
+		private Button EnableCheckedButton;
+		private Button DisableCheckedButton;
+		private Button UncheckAllButton;
+		private ToolTip enabledObjectsToolTip;
 
         private MouseHoverDetector mhDetector;
         private MainForm mainForm;
@@ -237,36 +245,18 @@ namespace Foreman
 			Options = options;
 
 			InitializeComponent();
-			MainForm.SetDoubleBuffered(AssemblerListView);
-			MainForm.SetDoubleBuffered(MinerListView);
-			MainForm.SetDoubleBuffered(ModuleListView);
-			MainForm.SetDoubleBuffered(RecipeListView);
-			MainForm.SetDoubleBuffered(QualityListView);
 
 			this.mainForm = mainForm;
 			BuildUtilityItemsTab();
 
-			AssemblerListView.Columns[0].Width = AssemblerListView.Width - 32;
-			MinerListView.Columns[0].Width = MinerListView.Width - 32;
-			ModuleListView.Columns[0].Width = ModuleListView.Width - 32;
-			RecipeListView.Columns[0].Width = RecipeListView.Width - 32;
-			QualityListView.Columns[0].Width = QualityListView.Width - 32;
-
-			unfilteredAssemblerList = new List<ListViewItem>();
-			unfilteredMinerList = new List<ListViewItem>();
-			unfilteredPowerList = new List<ListViewItem>();
-			unfilteredBeaconList = new List<ListViewItem>();
-			unfilteredModuleList = new List<ListViewItem>();
-			unfilteredRecipeList = new List<ListViewItem>();
-			unfilteredQualityList = new List<ListViewItem>();
-
-			filteredAssemblerList = new List<ListViewItem>();
-			filteredMinerList = new List<ListViewItem>();
-			filteredPowerList = new List<ListViewItem>();
-			filteredBeaconList = new List<ListViewItem>();
-			filteredModuleList = new List<ListViewItem>();
-			filteredRecipeList = new List<ListViewItem>();
-			filteredQualityList = new List<ListViewItem>();
+			foreach (ListView view in new ListView[] { AssemblerListView, MinerListView, PowerListView, BeaconListView, ModuleListView, RecipeListView, QualityListView })
+			{
+				MainForm.SetDoubleBuffered(view);
+				view.Columns.Add("Status", StatusColumnWidth);
+				view.Columns[0].Width = view.Width - 32 - StatusColumnWidth;
+				objectLists.Add(view, new ObjectListState());
+			}
+			BuildEnabledObjectsControls();
 
 			SelectPresetMenuItem.Click += SelectPresetMenuItem_Click;
 			DeletePresetMenuItem.Click += DeletePresetMenuItem_Click;
@@ -346,7 +336,7 @@ namespace Foreman
 
             //lists
             if (Options.DCache != null)
-                LoadUnfilteredLists();
+                LoadObjectLists();
 			UpdateModList();
             InitializeFilePresetsSection();
 
@@ -424,23 +414,23 @@ namespace Foreman
             RemoveFilePresetButton.Enabled = false;
         }
 
-        private void LoadUnfilteredLists()
+        private void LoadObjectLists()
 		{
 			IconList.Images.Clear();
 			IconList.Images.Add(DataCache.UnknownIcon);
 
-			LoadUnfilteredList(Options.DCache.Assemblers.Values.Where(a => a.EntityType == EntityType.Assembler), unfilteredAssemblerList);
-			LoadUnfilteredList(Options.DCache.Assemblers.Values.Where(a => a.EntityType == EntityType.Miner || a.EntityType == EntityType.OffshorePump), unfilteredMinerList);
-			LoadUnfilteredList(Options.DCache.Assemblers.Values.Where(a => a.EntityType == EntityType.Boiler || a.EntityType == EntityType.BurnerGenerator || a.EntityType == EntityType.Generator || a.EntityType == EntityType.Reactor), unfilteredPowerList);
-			LoadUnfilteredList(Options.DCache.Beacons.Values, unfilteredBeaconList);
-			LoadUnfilteredList(Options.DCache.Modules.Values, unfilteredModuleList);
-			LoadUnfilteredList(Options.DCache.Recipes.Values, unfilteredRecipeList);
-			LoadUnfilteredList(Options.DCache.Qualities.Values, unfilteredQualityList);
+			LoadObjectList(AssemblerListView, Options.DCache.Assemblers.Values.Where(a => a.EntityType == EntityType.Assembler));
+			LoadObjectList(MinerListView, Options.DCache.Assemblers.Values.Where(a => a.EntityType == EntityType.Miner || a.EntityType == EntityType.OffshorePump));
+			LoadObjectList(PowerListView, Options.DCache.Assemblers.Values.Where(a => a.EntityType == EntityType.Boiler || a.EntityType == EntityType.BurnerGenerator || a.EntityType == EntityType.Generator || a.EntityType == EntityType.Reactor));
+			LoadObjectList(BeaconListView, Options.DCache.Beacons.Values);
+			LoadObjectList(ModuleListView, Options.DCache.Modules.Values);
+			LoadObjectList(RecipeListView, Options.DCache.Recipes.Values);
+			LoadObjectList(QualityListView, Options.DCache.Qualities.Values);
 
 			UpdateFilteredLists();
 		}
 
-		private void LoadUnfilteredList(IEnumerable<DataObjectBase> origin, List<ListViewItem> lviList)
+		private void LoadObjectList(ListView view, IEnumerable<DataObjectBase> origin)
 		{
 			IOrderedEnumerable<DataObjectBase> orderedList;
 			if (origin is IEnumerable<Quality>)
@@ -448,54 +438,90 @@ namespace Foreman
 			else
 				orderedList = origin.OrderByDescending(a => a.Available).ThenBy(a => a.FriendlyName);
 
-            foreach (DataObjectBase dObject in orderedList)
+			foreach (DataObjectBase dObject in orderedList)
 			{
-				ListViewItem lvItem = new ListViewItem();
 				if (dObject.Icon != null)
 				{
 					IconList.Images.Add(dObject.Icon);
-					lvItem.ImageIndex = IconList.Images.Count - 1;
+					objectIconIndices[dObject] = IconList.Images.Count - 1;
 				}
-				else
-				{
-					lvItem.ImageIndex = 0;
-				}
-
-				lvItem.Text = dObject.FriendlyName;
-				lvItem.Tag = dObject;
-				lvItem.Name = dObject.Name; //key
-				lvItem.Checked = true; //have to set this to true before (potentially) changing to false in order for the check boxes to appear
-				lvItem.Checked = Options.EnabledObjects.Contains(dObject);
-				lvItem.BackColor = dObject.Available ? AvailableObjectColor : UnavailableObjectColor;
-				lviList.Add(lvItem);
+				objectLists[view].All.Add(dObject);
 			}
 		}
 
 		private void UpdateFilteredLists()
 		{
-			UpdateFilteredList(unfilteredAssemblerList, filteredAssemblerList, AssemblerListView);
-			UpdateFilteredList(unfilteredMinerList, filteredMinerList, MinerListView);
-			UpdateFilteredList(unfilteredPowerList, filteredPowerList, PowerListView);
-			UpdateFilteredList(unfilteredBeaconList, filteredBeaconList, BeaconListView);
-			UpdateFilteredList(unfilteredModuleList, filteredModuleList, ModuleListView);
-			UpdateFilteredList(unfilteredRecipeList, filteredRecipeList, RecipeListView);
-			UpdateFilteredList(unfilteredQualityList, filteredQualityList, QualityListView);
-		}
-
-		private void UpdateFilteredList(List<ListViewItem> unfilteredList, List<ListViewItem> filteredList, ListView owner)
-		{
 			string filterString = FilterTextBox.Text.ToLower();
 			bool showUnavailables = ShowUnavailablesFilterCheckBox.Checked;
+			int statusFilter = StatusFilterDropDown.SelectedIndex; //0 = all, 1 = enabled only, 2 = disabled only
 
-			filteredList.Clear();
+			foreach (KeyValuePair<ListView, ObjectListState> list in objectLists)
+			{
+				list.Value.Shown.Clear();
+				foreach (DataObjectBase dObject in list.Value.All)
+					if ((showUnavailables || dObject.Available) &&
+						(statusFilter == 0 || (statusFilter == 1) == Options.EnabledObjects.Contains(dObject)) &&
+						(string.IsNullOrEmpty(filterString) || dObject.FriendlyName.ToLower().Contains(filterString)))
+						list.Value.Shown.Add(dObject);
 
-			foreach (ListViewItem lvItem in unfilteredList)
-				if ((showUnavailables || ((DataObjectBase)lvItem.Tag).Available) && (string.IsNullOrEmpty(filterString) || lvItem.Text.ToLower().Contains(filterString)))
-					filteredList.Add(lvItem);
+				//a selection is a set of row numbers, so once the rows change it would sit on different objects
+				list.Key.SelectedIndices.Clear();
+				list.Key.VirtualListSize = list.Value.Shown.Count;
+				list.Key.Invalidate();
+			}
+		}
 
+		//the status filter and the checked-object buttons are fitted around the designer's table here, like the file presets box
+		private void BuildEnabledObjectsControls()
+		{
+			groupBox2.Text = "Enabled Objects (remembered for this preset):";
 
-			owner.VirtualListSize = filteredList.Count;
-			owner.Invalidate();
+			StatusFilterDropDown = new ComboBox() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 100, Font = FilterTextBox.Font, Margin = new Padding(0, 2, 10, 2) };
+			StatusFilterDropDown.Items.AddRange(new object[] { "All", "Enabled only", "Disabled only" });
+			StatusFilterDropDown.SelectedIndex = 0;
+			StatusFilterDropDown.SelectedIndexChanged += Filters_Changed;
+
+			EnabledObjectsTable.Controls.Remove(ShowUnavailablesFilterCheckBox);
+			ShowUnavailablesFilterCheckBox.Dock = DockStyle.None;
+			ShowUnavailablesFilterCheckBox.Margin = new Padding(0, 5, 0, 2);
+			FlowLayoutPanel showPanel = new FlowLayoutPanel() { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(2, 0, 7, 0) };
+			showPanel.Controls.Add(StatusFilterDropDown);
+			showPanel.Controls.Add(ShowUnavailablesFilterCheckBox);
+			Label showLabel = new Label() { Text = "Show:", AutoSize = true, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = label4.Font, Margin = label4.Margin };
+			EnabledObjectsTable.Controls.Add(showLabel, 0, 4);
+			EnabledObjectsTable.Controls.Add(showPanel, 1, 4);
+
+			EnableCheckedButton = new Button() { Dock = DockStyle.Fill, Font = EnableAllButton.Font, Margin = new Padding(0, 2, 2, 2), UseVisualStyleBackColor = true };
+			EnableCheckedButton.Click += (s, e) => SetCheckedObjectsEnabled(true);
+			DisableCheckedButton = new Button() { Dock = DockStyle.Fill, Font = EnableAllButton.Font, Margin = new Padding(2), UseVisualStyleBackColor = true };
+			DisableCheckedButton.Click += (s, e) => SetCheckedObjectsEnabled(false);
+			Button checkShownButton = new Button() { Text = "Check Shown", Dock = DockStyle.Fill, Font = EnableAllButton.Font, Margin = new Padding(2), UseVisualStyleBackColor = true };
+			checkShownButton.Click += CheckShownButton_Click;
+			UncheckAllButton = new Button() { Text = "Uncheck All", Dock = DockStyle.Fill, Font = EnableAllButton.Font, Margin = new Padding(2, 2, 0, 2), UseVisualStyleBackColor = true };
+			UncheckAllButton.Click += UncheckAllButton_Click;
+
+			TableLayoutPanel actionTable = new TableLayoutPanel() { ColumnCount = 4, RowCount = 1, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(4, 0, 7, 2) };
+			actionTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30F));
+			actionTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30F));
+			actionTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+			actionTable.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+			actionTable.Controls.Add(EnableCheckedButton, 0, 0);
+			actionTable.Controls.Add(DisableCheckedButton, 1, 0);
+			actionTable.Controls.Add(checkShownButton, 2, 0);
+			actionTable.Controls.Add(UncheckAllButton, 3, 0);
+
+			EnabledObjectsTable.RowCount++;
+			EnabledObjectsTable.RowStyles.Add(new RowStyle());
+			EnabledObjectsTable.Controls.Add(actionTable, 0, EnabledObjectsTable.RowCount - 1);
+			EnabledObjectsTable.SetColumnSpan(actionTable, 2);
+
+			enabledObjectsToolTip = new ToolTip();
+			string howTo = "Tick the objects to change (click their check boxes, or select rows and press Space), then press Enable or Disable Checked.\nPressing OK saves the result with the preset, so every graph that loads it starts the same way.";
+			enabledObjectsToolTip.SetToolTip(EnableCheckedButton, howTo);
+			enabledObjectsToolTip.SetToolTip(DisableCheckedButton, howTo);
+			enabledObjectsToolTip.SetToolTip(checkShownButton, "Tick every object shown on the current tab");
+
+			UpdateCheckedButtons();
 		}
 
 		//PRESETS LIST------------------------------------------------------------------------------------------
@@ -580,6 +606,7 @@ namespace Foreman
 						File.Delete(customjsonPath);
 					if (File.Exists(iconPath))
 						File.Delete(iconPath);
+						SafeIO.DeleteFile(PresetProcessor.GetEnabledChoicesPath(selectedPreset.Name));
 
 					PresetListBox.Items.Remove(selectedPreset);
 					Options.Presets.Remove(selectedPreset);
@@ -604,77 +631,71 @@ namespace Foreman
 
 		private void ListView_KeyDown(object sender, KeyEventArgs e)
 		{
+			ListView view = (ListView)sender;
 			if (e.KeyCode == Keys.A && (e.Modifiers & Keys.Control) != 0)
-				NativeMethods.SelectAllItems(sender as ListView);
+				NativeMethods.SelectAllItems(view);
+			else if (e.KeyCode == Keys.Space && view.SelectedIndices.Count > 0)
+			{
+				ToggleChecked(view, view.FocusedItem?.Index ?? view.SelectedIndices[0]);
+				e.Handled = true;
+				e.SuppressKeyPress = true;
+			}
 		}
 
 		private void ListView_MouseClick(object sender, MouseEventArgs e)
 		{
-			ListViewItem lvi = (sender as ListView).GetItemAt(e.X, e.Y);
-			if (lvi != null && e.X < (lvi.Bounds.Left + 16))
-			{
-				if (lvi.Selected) //check all selected
-				{
-					bool setCheck = !lvi.Checked;
-					foreach (int index in (sender as ListView).SelectedIndices)
-					{
-						lvi = (sender as ListView).Items[index];
-						lvi.Checked = setCheck;
-						if (lvi.Checked)
-							Options.EnabledObjects.Add((DataObjectBase)lvi.Tag);
-						else
-							Options.EnabledObjects.Remove((DataObjectBase)lvi.Tag);
-					}
-				}
-				else
-				{
-					lvi.Checked = !lvi.Checked;
-					if (lvi.Checked)
-						Options.EnabledObjects.Add((DataObjectBase)lvi.Tag);
-					else
-						Options.EnabledObjects.Remove((DataObjectBase)lvi.Tag);
-				}
-				(sender as ListView).Invalidate();
-			}
+			ListView view = (ListView)sender;
+			ListViewHitTestInfo hit = view.HitTest(e.Location);
+			if (hit.Item != null && (hit.Location == ListViewHitTestLocations.StateImage || e.X < hit.Item.Bounds.Left + 16))
+				ToggleChecked(view, hit.Item.Index);
 		}
 
-		private void ListView_MouseDoubleClick(object sender, MouseEventArgs e)
+		//the second click of a double click is reported here instead of as a click, and the check box should still flip on it
+		private void ListView_MouseDoubleClick(object sender, MouseEventArgs e) { ListView_MouseClick(sender, e); }
+
+		//flips the check on one row; if that row is part of the selection, the whole selection follows it
+		private void ToggleChecked(ListView view, int row)
 		{
-			ListViewItem lvi = (sender as ListView).GetItemAt(e.X, e.Y);
-			if (lvi != null && e.X < (lvi.Bounds.Left + 16))
+			List<DataObjectBase> shown = objectLists[view].Shown;
+			if (row < 0 || row >= shown.Count)
+				return;
+
+			bool check = !checkedObjects.Contains(shown[row]);
+			List<int> rows = view.SelectedIndices.Contains(row) ? view.SelectedIndices.Cast<int>().ToList() : new List<int>() { row };
+			foreach (int r in rows.Where(r => r < shown.Count))
 			{
-				if (lvi.Selected) //check all selected
-				{
-					bool setCheck = lvi.Checked;
-					foreach (int index in (sender as ListView).SelectedIndices)
-					{
-						lvi = (sender as ListView).Items[index];
-						lvi.Checked = setCheck;
-						if (lvi.Checked)
-							Options.EnabledObjects.Add((DataObjectBase)lvi.Tag);
-						else
-							Options.EnabledObjects.Remove((DataObjectBase)lvi.Tag);
-					}
-				}
+				if (check)
+					checkedObjects.Add(shown[r]);
 				else
-				{
-					//lvi.Checked = lvi.Checked;
-					if (lvi.Checked)
-						Options.EnabledObjects.Add((DataObjectBase)lvi.Tag);
-					else
-						Options.EnabledObjects.Remove((DataObjectBase)lvi.Tag);
-				}
-				(sender as ListView).Invalidate();
+					checkedObjects.Remove(shown[r]);
 			}
+			view.Invalidate();
+			UpdateCheckedButtons();
 		}
 
-		private void AssemblerListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredAssemblerList[e.ItemIndex]; }
-		private void MinerListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredMinerList[e.ItemIndex]; }
-		private void PowerListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredPowerList[e.ItemIndex]; }
-		private void BeaconListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredBeaconList[e.ItemIndex]; }
-		private void ModuleListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredModuleList[e.ItemIndex]; }
-		private void RecipeListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { e.Item = filteredRecipeList[e.ItemIndex]; }
-		private void QualityListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) {  e.Item = filteredQualityList[e.ItemIndex]; }
+		//a fresh item every time, built from the hash sets - see the note on the enabled objects tab fields
+		private void ListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e)
+		{
+			DataObjectBase dObject = objectLists[(ListView)sender].Shown[e.ItemIndex];
+			bool enabled = Options.EnabledObjects.Contains(dObject);
+
+			ListViewItem lvItem = new ListViewItem(new string[] { dObject.FriendlyName, enabled ? "Enabled" : "Disabled" }, objectIconIndices.TryGetValue(dObject, out int iconIndex) ? iconIndex : 0);
+			lvItem.Tag = dObject;
+			lvItem.Name = dObject.Name;
+			lvItem.BackColor = dObject.Available ? AvailableObjectColor : UnavailableObjectColor;
+			lvItem.ForeColor = enabled ? Color.Black : DisabledObjectTextColor;
+			lvItem.Checked = true; //a new item shows no check box at all until its state has been set once, and setting false first changes nothing
+			lvItem.Checked = checkedObjects.Contains(dObject);
+			e.Item = lvItem;
+		}
+
+		private void AssemblerListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { ListView_RetrieveVirtualItem(sender, e); }
+		private void MinerListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { ListView_RetrieveVirtualItem(sender, e); }
+		private void PowerListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { ListView_RetrieveVirtualItem(sender, e); }
+		private void BeaconListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { ListView_RetrieveVirtualItem(sender, e); }
+		private void ModuleListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { ListView_RetrieveVirtualItem(sender, e); }
+		private void RecipeListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { ListView_RetrieveVirtualItem(sender, e); }
+		private void QualityListView_RetrieveVirtualItem(object sender, RetrieveVirtualItemEventArgs e) { ListView_RetrieveVirtualItem(sender, e); }
 
 		private void RecipeListView_StartHover(object sender, MouseEventArgs e)
 		{
@@ -844,7 +865,7 @@ namespace Foreman
 				DialogResult result = form.ShowDialog();
 
 				if(result == DialogResult.OK)
-					UpdateEnabledStatus();
+					EnabledObjectsModified();
 				else if (result == DialogResult.Abort)
 					MessageBox.Show("Error while reading save file. Try running factorio, opening the save game, saving again, and retrying?");
 			}
@@ -860,7 +881,7 @@ namespace Foreman
 				DialogResult result = form.ShowDialog();
 
 				if (result == DialogResult.OK)
-					UpdateEnabledStatus();
+					EnabledObjectsModified();
 			}
 		}
 
@@ -884,64 +905,62 @@ namespace Foreman
             foreach (Quality quality in Options.DCache.Qualities.Values.Where(r => r.Available))
                 Options.EnabledObjects.Add(quality);
 
-            UpdateEnabledStatus();
+            EnabledObjectsModified();
 		}
 
-		private void UpdateEnabledStatus()
+		//after anything on the tab changes which objects are enabled: the status column and the enabled / disabled filter both follow it
+		private void EnabledObjectsModified()
 		{
-			//this requires a bit of juggling in order to prevent listview (virtual) from throwing a fit. we will ensure filtered lists contain all from unfiltered, then conduct the check updates, then update filtered.
+			Options.EnabledObjectsChanged = true;
+			UpdateFilteredLists();
+			UpdateCheckedButtons();
+		}
 
-			filteredAssemblerList.Clear();
-			filteredAssemblerList.AddRange(unfilteredAssemblerList);
-			AssemblerListView.VirtualListSize = filteredAssemblerList.Count;
+		private void SetCheckedObjectsEnabled(bool enable)
+		{
+			foreach (DataObjectBase dObject in checkedObjects)
+			{
+				if (enable)
+					Options.EnabledObjects.Add(dObject);
+				else
+					Options.EnabledObjects.Remove(dObject);
+			}
+			checkedObjects.Clear();
+			EnabledObjectsModified();
+		}
 
-			filteredBeaconList.Clear();
-			filteredBeaconList.AddRange(unfilteredBeaconList);
-			BeaconListView.VirtualListSize = filteredBeaconList.Count;
+		private void CheckShownButton_Click(object sender, EventArgs e)
+		{
+			if (!(EnabledObjectsTabControl.SelectedTab?.Controls.OfType<ListView>().FirstOrDefault() is ListView view))
+				return;
+			checkedObjects.UnionWith(objectLists[view].Shown);
+			view.Invalidate();
+			UpdateCheckedButtons();
+		}
 
-			filteredMinerList.Clear();
-			filteredMinerList.AddRange(unfilteredMinerList);
-			MinerListView.VirtualListSize = filteredMinerList.Count;
+		private void UncheckAllButton_Click(object sender, EventArgs e)
+		{
+			checkedObjects.Clear();
+			foreach (ListView view in objectLists.Keys)
+				view.Invalidate();
+			UpdateCheckedButtons();
+		}
 
-			filteredModuleList.Clear();
-			filteredModuleList.AddRange(unfilteredModuleList);
-			ModuleListView.VirtualListSize = filteredModuleList.Count;
-
-			filteredPowerList.Clear();
-			filteredPowerList.AddRange(unfilteredPowerList);
-			PowerListView.VirtualListSize = filteredPowerList.Count;
-
-			filteredRecipeList.Clear();
-			filteredRecipeList.AddRange(unfilteredRecipeList);
-			RecipeListView.VirtualListSize = filteredRecipeList.Count;
-
-			filteredQualityList.Clear();
-			filteredQualityList.AddRange(unfilteredQualityList);
-			QualityListView.VirtualListSize = filteredQualityList.Count;
-
-
-			foreach (ListViewItem item in unfilteredAssemblerList)
-				item.Checked = Options.EnabledObjects.Contains((DataObjectBase)item.Tag);
-			foreach (ListViewItem item in unfilteredBeaconList)
-				item.Checked = Options.EnabledObjects.Contains((DataObjectBase)item.Tag);
-			foreach (ListViewItem item in unfilteredMinerList)
-				item.Checked = Options.EnabledObjects.Contains((DataObjectBase)item.Tag);
-			foreach (ListViewItem item in unfilteredModuleList)
-				item.Checked = Options.EnabledObjects.Contains((DataObjectBase)item.Tag);
-			foreach (ListViewItem item in unfilteredPowerList)
-				item.Checked = Options.EnabledObjects.Contains((DataObjectBase)item.Tag);
-			foreach (ListViewItem item in unfilteredRecipeList)
-				item.Checked = Options.EnabledObjects.Contains((DataObjectBase)item.Tag);
-            foreach (ListViewItem item in unfilteredQualityList)
-                item.Checked = Options.EnabledObjects.Contains((DataObjectBase)item.Tag);
-
-
-            UpdateFilteredLists();
+		private void UpdateCheckedButtons()
+		{
+			bool anyChecked = checkedObjects.Count > 0;
+			string count = anyChecked ? " (" + checkedObjects.Count + ")" : "";
+			EnableCheckedButton.Text = "Enable Checked" + count;
+			DisableCheckedButton.Text = "Disable Checked" + count;
+			EnableCheckedButton.Enabled = anyChecked;
+			DisableCheckedButton.Enabled = anyChecked;
+			UncheckAllButton.Enabled = anyChecked;
 		}
 
 		protected override void OnClosed(EventArgs e)
 		{
 			mhDetector.Dispose();
+			enabledObjectsToolTip?.Dispose();
 			base.OnClosed(e);
 		}
 	}

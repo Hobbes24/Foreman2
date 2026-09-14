@@ -33,6 +33,105 @@ namespace Foreman
 
 		}
 
+		//---------------------------------------------------------enabled object choices
+		//What was switched on or off under Settings > Enabled Objects, remembered per preset so that every load of it -
+		//a new graph, a reload, another tab - starts from those choices rather than from the preset's defaults. Only
+		//objects that differ from their default are written, each with its explicit state, so a re-import that moves a
+		//default cannot quietly invert a choice.
+
+		public static string GetEnabledChoicesPath(string presetName)
+		{
+			return Path.Combine(new string[] { Application.StartupPath, "Presets", presetName + ".enabled.json" });
+		}
+
+		private static Dictionary<string, IEnumerable<DataObjectBase>> GetEnabledSections(DataCache cache)
+		{
+			return new Dictionary<string, IEnumerable<DataObjectBase>>()
+			{
+				{ "recipes", cache.Recipes.Values },
+				{ "assemblers", cache.Assemblers.Values.Where(a => a != cache.RocketAssembler) }, //follows the rocket silo
+				{ "beacons", cache.Beacons.Values },
+				{ "modules", cache.Modules.Values },
+				{ "qualities", cache.Qualities.Values.Where(q => q != cache.DefaultQuality) } //can never be disabled
+			};
+		}
+
+		//matches the end of the data cache load: everything starts enabled exactly when it is available, except hand
+		//crafting, which is enabled but deliberately left unavailable so that using it raises a warning
+		private static bool IsEnabledByDefault(DataCache cache, DataObjectBase dObject)
+		{
+			return dObject.Available || dObject == cache.PlayerAssembler;
+		}
+
+		private static void SyncRocketAssembler(DataCache cache)
+		{
+			cache.RocketAssembler.Enabled = cache.Assemblers.TryGetValue("rocket-silo", out Assembler silo) && silo.Enabled;
+		}
+
+		public static void ApplyEnabledChoices(DataCache cache)
+		{
+			string path = GetEnabledChoicesPath(cache.PresetName);
+			if (!SafeIO.FileExists(path))
+				return;
+
+			JObject choices;
+			try { choices = JObject.Parse(SafeIO.ReadAllText(path) ?? "{}"); }
+			catch (Exception ex)
+			{
+				ErrorLogging.LogLine(string.Format("Ignoring the enabled choices for preset '{0}' - {1} could not be parsed: {2}", cache.PresetName, path, ex.Message));
+				return;
+			}
+
+			foreach (KeyValuePair<string, IEnumerable<DataObjectBase>> section in GetEnabledSections(cache))
+			{
+				if (!(choices[section.Key] is JObject sectionChoices))
+					continue;
+				foreach (DataObjectBase dObject in section.Value)
+					if (sectionChoices[dObject.Name] is JValue choice && choice.Type == JTokenType.Boolean)
+						dObject.Enabled = (bool)choice;
+			}
+			SyncRocketAssembler(cache);
+		}
+
+		/// <summary>Records, for the cache's preset, every object whose state in enabledObjects differs from its default.</summary>
+		public static void SaveEnabledChoices(DataCache cache, HashSet<DataObjectBase> enabledObjects)
+		{
+			JObject choices = new JObject();
+			foreach (KeyValuePair<string, IEnumerable<DataObjectBase>> section in GetEnabledSections(cache))
+			{
+				JObject sectionChoices = new JObject();
+				foreach (DataObjectBase dObject in section.Value.OrderBy(o => o.Name, StringComparer.Ordinal))
+				{
+					bool enabled = enabledObjects.Contains(dObject);
+					if (enabled != IsEnabledByDefault(cache, dObject))
+						sectionChoices[dObject.Name] = enabled;
+				}
+				if (sectionChoices.Count > 0)
+					choices[section.Key] = sectionChoices;
+			}
+
+			string path = GetEnabledChoicesPath(cache.PresetName);
+			if (choices.Count == 0)
+				SafeIO.DeleteFile(path); //everything is back at the preset's defaults
+			else
+				SafeIO.WriteAllTextAtomic(path, choices.ToString(Newtonsoft.Json.Formatting.Indented));
+		}
+
+		/// <summary>Copies enabled states by name, for another cache of the same preset (a tab that loaded it on its own).</summary>
+		public static void CopyEnabledStates(DataCache source, DataCache target)
+		{
+			Dictionary<string, IEnumerable<DataObjectBase>> sourceSections = GetEnabledSections(source);
+			foreach (KeyValuePair<string, IEnumerable<DataObjectBase>> section in GetEnabledSections(target))
+			{
+				Dictionary<string, bool> states = sourceSections[section.Key].ToDictionary(o => o.Name, o => o.Enabled);
+				foreach (DataObjectBase dObject in section.Value)
+					if (states.TryGetValue(dObject.Name, out bool enabled))
+						dObject.Enabled = enabled;
+			}
+			target.DefaultQuality.Enabled = true;
+			SyncRocketAssembler(target);
+		}
+
 		public static JObject PrepPreset(Preset preset)
 		{
 			string presetPath = Path.Combine(new string[] { Application.StartupPath, "Presets", preset.Name + ".pjson" });

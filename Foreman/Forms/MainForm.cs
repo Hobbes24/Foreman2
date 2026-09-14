@@ -1196,6 +1196,10 @@ namespace Foreman
                 form.Top  = this.Top  + 50;
                 if (form.ShowDialog() == DialogResult.OK)
                 {
+                    //enabled choices belong to the preset they were made against, so they are written before a preset switch below replaces that cache
+                    if (options.EnabledObjectsChanged && activeViewer.DCache != null)
+                        PresetProcessor.SaveEnabledChoices(activeViewer.DCache, options.EnabledObjects);
+
                     if (options.SelectedPreset != options.Presets[0] || options.DEV_UseRecipeBWFilters != Properties.Settings.Default.UseRecipeBWfilters || options.RequireReload)
                     {
                         Properties.Settings.Default.CurrentPresetName  = form.Options.SelectedPreset.Name;
@@ -1236,6 +1240,17 @@ namespace Foreman
                                 quality.Enabled = options.EnabledObjects.Contains(quality);
                             activeViewer.DCache.DefaultQuality.Enabled = true;
                             activeViewer.DCache.RocketAssembler.Enabled = activeViewer.DCache.Assemblers["rocket-silo"]?.Enabled ?? false;
+
+                            //a tab that loaded this preset by itself holds a separate cache of it, which would otherwise keep the old choices until reloaded
+                            if (options.EnabledObjectsChanged)
+                            {
+                                for (int _ti = 0; _ti < GraphTabControl.RealTabCount; _ti++)
+                                {
+                                    var _tv = GraphTabControl.GetViewer(_ti);
+                                    if (_tv?.DCache != null && _tv.DCache != activeViewer.DCache && _tv.DCache.PresetName == activeViewer.DCache.PresetName)
+                                        PresetProcessor.CopyEnabledStates(activeViewer.DCache, _tv.DCache);
+                                }
+                            }
                         }
                     }
 

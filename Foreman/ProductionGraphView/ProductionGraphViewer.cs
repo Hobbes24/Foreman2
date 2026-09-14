@@ -3358,6 +3358,9 @@ namespace Foreman
                 foreach (Recipe recipe in DCache.Recipes.Values)
                     if (recipe.Available && !recipe.Enabled)
                         recipe.Enabled = true;
+
+                //a graph file only knows what was enabled when it was saved - choices made for the preset since then win
+                PresetProcessor.ApplyEnabledChoices(DCache);
             }
 
             //restore science-pack filter saved with this file (absent in old saves → leave global setting unchanged)

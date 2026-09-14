@@ -370,6 +370,9 @@ namespace Foreman
 				progress.Report(new KeyValuePair<int, string>(100, "Done!"));
 			});
 
+			//the enabled statuses set above are the preset's defaults; lay whatever was chosen for this preset in Settings over them
+			PresetProcessor.ApplyEnabledChoices(this);
+
 			ErrorLogging.LogLine(string.Format("Preset '{0}' loaded in {1} ms (preset json {2} ms, icons+json {3} ms, processing {4} ms).",
 				preset.Name, loadTimer.ElapsedMilliseconds, presetReadMS, dataReadMS, loadTimer.ElapsedMilliseconds - dataReadMS));
 		}
