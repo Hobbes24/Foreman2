@@ -84,8 +84,11 @@ namespace Foreman
 		private static readonly Pen solveIssueBorderPen = new Pen(Color.FromArgb(255, 170, 60), 2);
 		private static readonly Font solveIssueTitleFont = new Font(FontFamily.GenericSansSerif, 10, FontStyle.Bold);
 		private static readonly Font solveIssueDetailFont = new Font(FontFamily.GenericSansSerif, 8.5f);
+		private static readonly Pen solveIssueClosePen = new Pen(Color.FromArgb(255, 240, 220), 2);
+		private static readonly Brush solveIssueCloseHoverBrush = new SolidBrush(Color.FromArgb(90, 255, 240, 220));
 		private const int solveIssueBannerPadding = 8;
 		private const int solveIssueBannerMaxWidth = 620;
+		private const int solveIssueCloseSize = 15;
 		private static readonly Pen selectionPen = new Pen(Color.FromArgb(100, 100, 200), 2);
         private static readonly Pen drawShapePen = new Pen(Color.FromArgb(200, 60, 120, 220), 2) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
 
@@ -105,8 +108,17 @@ namespace Foreman
 
         //likewise the solver-diagnostic banner: it scanned every node in the graph on every frame to work out what to say
         private SolveIssue cachedSolveIssue = SolveIssue.None;
-        private int cachedSolveIssueNodeCount = 0;
+        private readonly List<ReadOnlyBaseNode> solveIssueNodes = new List<ReadOnlyBaseNode>(); //the nodes the banner is complaining about, in the order the banner tours them
         private bool solveIssueDirty = true;
+
+        //the banner is painted over the graph in control space, so its rectangles are recorded on paint and read back
+        //by the mouse handlers. they are cleared whenever the banner is not on screen, so a stale rect cannot eat a click
+        private Rectangle solveIssueBannerBounds = Rectangle.Empty;
+        private Rectangle solveIssueCloseBounds = Rectangle.Empty;
+        private bool solveIssueCloseHovered = false;
+        private bool solveIssueBannerDismissed = false;
+        private bool solveIssueClickConsumed = false;
+        private int solveIssueNodeIndex = -1;
 
         //the two node draw styles cost very different amounts, so a view sitting right on the boundary flipped the
         //entire graph between them on every wheel notch. leaving detailed drawing and returning to it use different
@@ -1793,8 +1805,11 @@ namespace Foreman
 		private void RecalculateSolveIssue()
 		{
 			solveIssueDirty = false;
+			SolveIssue previousIssue = cachedSolveIssue;
+			int previousCount = solveIssueNodes.Count;
+
 			cachedSolveIssue = SolveIssue.None;
-			cachedSolveIssueNodeCount = 0;
+			solveIssueNodes.Clear();
 
 			foreach (ReadOnlyBaseNode node in Graph.Nodes)
 			{
@@ -1803,11 +1818,71 @@ namespace Foreman
 				if (node.SolveIssue > cachedSolveIssue) //enum is ordered least->most severe, so the worst group wins the banner
 				{
 					cachedSolveIssue = node.SolveIssue;
-					cachedSolveIssueNodeCount = 0;
+					solveIssueNodes.Clear();
 				}
 				if (node.SolveIssue == cachedSolveIssue)
-					cachedSolveIssueNodeCount++;
+					solveIssueNodes.Add(node);
 			}
+
+			//Graph.Nodes is a set, so without an explicit order the banner would tour the affected nodes in whatever
+			//order they happen to be stored - and in a different one after every reload. left to right, top to bottom
+			solveIssueNodes.Sort((a, b) => (a.Location.X != b.Location.X) ? a.Location.X.CompareTo(b.Location.X) : a.Location.Y.CompareTo(b.Location.Y));
+
+			//a dismissed banner stays dismissed only for the issue it was dismissed for. a solve that changes what is
+			//wrong, or how many nodes are wrong, is new information and gets to say so
+			if (cachedSolveIssue != previousIssue || solveIssueNodes.Count != previousCount)
+			{
+				solveIssueBannerDismissed = false;
+				solveIssueNodeIndex = -1;
+			}
+		}
+
+		/// <summary>
+		/// Moves the view to the next node the banner is complaining about, wrapping at the end. The node is selected
+		/// on arrival, so it is obvious which of the nodes on screen is the one being pointed at.
+		/// </summary>
+		private void FocusNextSolveIssueNode()
+		{
+			if (solveIssueDirty)
+				RecalculateSolveIssue();
+			if (solveIssueNodes.Count == 0)
+				return;
+
+			//a node can go away between solves, and the element lookup is where that shows up - skip those rather
+			//than letting one stale entry stop the tour
+			for (int attempt = 0; attempt < solveIssueNodes.Count; attempt++)
+			{
+				solveIssueNodeIndex = (solveIssueNodeIndex + 1) % solveIssueNodes.Count;
+				if (nodeElementDictionary.TryGetValue(solveIssueNodes[solveIssueNodeIndex], out BaseNodeElement element))
+				{
+					CenterOnNode(element, FindZoomLevel);
+					return;
+				}
+			}
+		}
+
+		/// <summary>
+		/// The banner sits above the graph in control space, so it gets first refusal on a left click: the X dismisses
+		/// it until the solver reports something different, anywhere else steps to the next affected node.
+		/// Returns true when the click belonged to the banner and nothing else should see it.
+		/// </summary>
+		private bool HandleSolveIssueBannerClick(Point controlPoint)
+		{
+			if (!solveIssueBannerBounds.Contains(controlPoint))
+				return false;
+
+			if (solveIssueCloseBounds.Contains(controlPoint))
+			{
+				solveIssueBannerDismissed = true;
+				solveIssueCloseHovered = false;
+				solveIssueBannerBounds = Rectangle.Empty;
+				solveIssueCloseBounds = Rectangle.Empty;
+				Invalidate();
+				return true;
+			}
+
+			FocusNextSolveIssueNode();
+			return true;
 		}
 
 		//the solver reports 'produced nothing' the same way whether the graph is genuinely idle, was never given a rate, or blew up.
@@ -1818,9 +1893,14 @@ namespace Foreman
 				RecalculateSolveIssue();
 
 			SolveIssue issue = cachedSolveIssue;
-			if (issue == SolveIssue.None)
+			if (issue == SolveIssue.None || solveIssueBannerDismissed)
+			{
+				//nothing on screen to click on
+				solveIssueBannerBounds = Rectangle.Empty;
+				solveIssueCloseBounds = Rectangle.Empty;
 				return;
-			int affectedNodes = cachedSolveIssueNodeCount;
+			}
+			int affectedNodes = solveIssueNodes.Count;
 
 			string title;
 			string detail;
@@ -1840,17 +1920,30 @@ namespace Foreman
 					break;
 			}
 
+			detail += "\nClick this banner to jump to the next affected node.";
+
 			SizeF titleSize = graphics.MeasureString(title, solveIssueTitleFont, solveIssueBannerMaxWidth);
 			SizeF detailSize = graphics.MeasureString(detail, solveIssueDetailFont, solveIssueBannerMaxWidth);
 
-			int width = (int)Math.Max(titleSize.Width, detailSize.Width) + (solveIssueBannerPadding * 2);
+			//the close button lives in the top right corner, so the text has to stop short of it
+			int textWidth = (int)Math.Max(titleSize.Width, detailSize.Width);
+			int width = textWidth + (solveIssueBannerPadding * 3) + solveIssueCloseSize;
 			int height = (int)(titleSize.Height + detailSize.Height) + (solveIssueBannerPadding * 2) + 2;
 			Rectangle bounds = new Rectangle(Math.Max(0, (Width - width) / 2), 10, width, height);
+			Rectangle closeBounds = new Rectangle(bounds.Right - solveIssueBannerPadding - solveIssueCloseSize, bounds.Y + solveIssueBannerPadding, solveIssueCloseSize, solveIssueCloseSize);
 
 			graphics.FillRectangle(solveIssueBgBrush, bounds);
 			graphics.DrawRectangle(solveIssueBorderPen, bounds);
-			graphics.DrawString(title, solveIssueTitleFont, solveIssueTextBrush, new RectangleF(bounds.X + solveIssueBannerPadding, bounds.Y + solveIssueBannerPadding, width - (solveIssueBannerPadding * 2), titleSize.Height));
-			graphics.DrawString(detail, solveIssueDetailFont, solveIssueTextBrush, new RectangleF(bounds.X + solveIssueBannerPadding, bounds.Y + solveIssueBannerPadding + titleSize.Height + 2, width - (solveIssueBannerPadding * 2), detailSize.Height));
+			graphics.DrawString(title, solveIssueTitleFont, solveIssueTextBrush, new RectangleF(bounds.X + solveIssueBannerPadding, bounds.Y + solveIssueBannerPadding, textWidth, titleSize.Height));
+			graphics.DrawString(detail, solveIssueDetailFont, solveIssueTextBrush, new RectangleF(bounds.X + solveIssueBannerPadding, bounds.Y + solveIssueBannerPadding + titleSize.Height + 2, textWidth, detailSize.Height));
+
+			if (solveIssueCloseHovered)
+				graphics.FillRectangle(solveIssueCloseHoverBrush, closeBounds);
+			graphics.DrawLine(solveIssueClosePen, closeBounds.Left + 4, closeBounds.Top + 4, closeBounds.Right - 4, closeBounds.Bottom - 4);
+			graphics.DrawLine(solveIssueClosePen, closeBounds.Right - 4, closeBounds.Top + 4, closeBounds.Left + 4, closeBounds.Bottom - 4);
+
+			solveIssueBannerBounds = bounds;
+			solveIssueCloseBounds = closeBounds;
 		}
 
 		//----------------------------------------------Production Graph events
@@ -1948,6 +2041,16 @@ namespace Foreman
 			mouseDownStartScreenPoint = Control.MousePosition;
 			Point graph_location = ScreenToGraph(e.Location);
 
+			//the solver banner is drawn over the graph, so it takes the click before any element underneath it does.
+			//a drag already in flight keeps the click - finishing that is what the user is in the middle of doing
+			solveIssueClickConsumed = e.Button == MouseButtons.Left
+									&& draggedLinkElement == null
+									&& pendingTextAnnotation == null
+									&& currentDragOperation == DragOperation.None
+									&& HandleSolveIssueBannerClick(e.Location);
+			if (solveIssueClickConsumed)
+				return;
+
             // During text placement mode absorb all mouse-down events — placement is committed on MouseUp
             if (pendingTextAnnotation != null)
                 return;
@@ -1999,6 +2102,15 @@ namespace Foreman
 			downButtons &= ~e.Button;
 
 			ToolTipRenderer.ClearFloatingControls();
+
+			//the matching press went to the banner: the release belongs to it too, or the node under the banner
+			//would be handed a click the user never aimed at it
+			if (solveIssueClickConsumed)
+			{
+				solveIssueClickConsumed = false;
+				return;
+			}
+
 			Point graph_location = ScreenToGraph(e.Location);
 
             // ---- Text placement mode ----
@@ -2252,9 +2364,29 @@ namespace Foreman
                 MouseDownElement = null;
 		}
 
+		//leaving the control upwards passes over the banner's close button, so without this it would be left lit
+		protected override void OnMouseLeave(EventArgs e)
+		{
+			base.OnMouseLeave(e);
+			if (solveIssueCloseHovered)
+			{
+				solveIssueCloseHovered = false;
+				Invalidate();
+			}
+		}
+
 		private void ProductionGraphViewer_MouseMove(object sender, MouseEventArgs e)
 		{
 			downButtons &= Control.MouseButtons; //only care about those buttons that were pressed down on this control. This is also the best place to update mouse changes done outside the control (ex: clicking down, dragging outside the window, letting go, moving mouse back into window)
+
+			//light the banner's close button while the pointer is on it, and repaint only when that changes -
+			//this runs on every pointer sample, so an unconditional Invalidate here would cost a frame each time
+			bool overSolveIssueClose = solveIssueCloseBounds.Contains(e.Location);
+			if (overSolveIssueClose != solveIssueCloseHovered)
+			{
+				solveIssueCloseHovered = overSolveIssueClose;
+				Invalidate();
+			}
 
 			Point graph_location = ScreenToGraph(e.Location);
 
