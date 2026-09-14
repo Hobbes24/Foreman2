@@ -272,6 +272,22 @@ namespace Foreman
 				DirtyStateChanged?.Invoke(this, EventArgs.Empty);
 			}
 		}
+		/// <summary>True once the graph holds anything a user put there: a node, a note or a shape.</summary>
+		public bool HasContent => nodeElements.Count > 0 || annotationElements.Count > 0;
+
+		/// <summary>Raised when HasContent flips. Only the empty/not-empty edges fire, so a graph load raises it once, not per node.</summary>
+		public event EventHandler HasContentChanged;
+
+		private bool lastHasContent = false;
+		private void CheckHasContent()
+		{
+			bool hasContent = HasContent;
+			if (hasContent == lastHasContent)
+				return;
+			lastHasContent = hasContent;
+			HasContentChanged?.Invoke(this, EventArgs.Empty);
+		}
+
 		public void MarkClean() { IsDirty = false; }
 		public void MarkDirty() { IsDirty = true; }
 
@@ -294,6 +310,7 @@ namespace Foreman
 
             selectedNodes.Clear();
             currentSelectionNodes.Clear();
+            CheckHasContent();
         }
 
 		// -------------------------------------------------------Undo/Redo core methods
@@ -366,6 +383,7 @@ namespace Foreman
 			Graph.UpdateNodeValues();
 			Graph.UpdateNodeStates(false);
 			UpdateGraphBounds();
+			CheckHasContent();
 			Invalidate();
 		}
 		private void PerformUndo()
@@ -482,6 +500,7 @@ namespace Foreman
         public void AddAnnotationElement(AnnotationElement element)
         {
             annotationElements.Add(element);
+            CheckHasContent();
             Invalidate();
         }
 
@@ -491,6 +510,7 @@ namespace Foreman
             selectedAnnotations.Remove(element);
             CleanupAnnotationFromGroups(element);
             element.Dispose();
+            CheckHasContent();
             Invalidate();
         }
 
@@ -1886,6 +1906,7 @@ namespace Foreman
                 lastHoveredNode = null;
             solveIssueDirty = true;
             element.Dispose();
+            CheckHasContent();
             Invalidate();
         }
 
@@ -1910,6 +1931,7 @@ namespace Foreman
             nodeElementDictionary.Add(e.node, element);
             nodeElements.Add(element);
             solveIssueDirty = true;
+            CheckHasContent();
             if (!suppressInvalidate)
                 Invalidate();
         }

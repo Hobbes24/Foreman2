@@ -15,6 +15,12 @@ namespace Foreman
         public event EventHandler AddTabRequested;
         public event EventHandler<int> CloseTabRequested;   // arg = real-tab index
 
+        /// <summary>
+        /// Decides whether a real tab (by index) shows a × at all. Null means every tab does. The owner has to call
+        /// Invalidate() when the answer changes, since nothing here can see what the predicate depends on.
+        /// </summary>
+        public Func<int, bool> CanCloseTab { get; set; }
+
         // ── Constants ───────────────────────────────────────────────────────────
         private const string PlusTabKey      = "__PLUS_TAB__";
         private const int    CloseButtonSize = 14;
@@ -124,7 +130,7 @@ namespace Foreman
                 // Check close buttons on real tabs first
                 for (int i = 0; i < RealTabCount; i++)
                 {
-                    if (GetCloseButtonRect(i).Contains(e.Location))
+                    if (HasCloseButton(i) && GetCloseButtonRect(i).Contains(e.Location))
                     {
                         CloseTabRequested?.Invoke(this, i);
                         return;    // suppress normal tab-select from the × click area
@@ -193,12 +199,15 @@ namespace Foreman
 
                 // × close button. the hot tab is tracked in OnMouseMove rather than re-tested against the live cursor
                 // here, so what is drawn always matches what triggered the repaint
-                Rectangle cr    = GetCloseButtonRect(e.Index);
-                bool closeHover = e.Index == _hotCloseTab;
-                using (var xPen = new Pen(closeHover ? Color.Red : fg, 1.5f))
+                if (HasCloseButton(e.Index))
                 {
-                    e.Graphics.DrawLine(xPen, cr.Left, cr.Top,   cr.Right,  cr.Bottom);
-                    e.Graphics.DrawLine(xPen, cr.Right, cr.Top,  cr.Left,   cr.Bottom);
+                    Rectangle cr    = GetCloseButtonRect(e.Index);
+                    bool closeHover = e.Index == _hotCloseTab;
+                    using (var xPen = new Pen(closeHover ? Color.Red : fg, 1.5f))
+                    {
+                        e.Graphics.DrawLine(xPen, cr.Left, cr.Top,   cr.Right,  cr.Bottom);
+                        e.Graphics.DrawLine(xPen, cr.Right, cr.Top,  cr.Left,   cr.Bottom);
+                    }
                 }
             }
         }
@@ -212,7 +221,7 @@ namespace Foreman
             int hot = -1;
             for (int i = 0; i < RealTabCount; i++)
             {
-                if (GetCloseButtonRect(i).Contains(e.Location))
+                if (HasCloseButton(i) && GetCloseButtonRect(i).Contains(e.Location))
                 {
                     hot = i;
                     break;
@@ -247,6 +256,8 @@ namespace Foreman
                 return;
             Invalidate(GetTabRect(tabIndex));
         }
+
+        private bool HasCloseButton(int tabIndex) => CanCloseTab?.Invoke(tabIndex) ?? true;
 
         private Rectangle GetCloseButtonRect(int tabIndex)
         {

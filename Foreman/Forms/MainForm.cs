@@ -120,6 +120,7 @@ namespace Foreman
             GraphTabControl.AddTabRequested      += GraphTabControl_AddTabRequested;
             GraphTabControl.CloseTabRequested    += GraphTabControl_CloseTabRequested;
             GraphTabControl.SelectedIndexChanged += GraphTabControl_SelectedIndexChanged;
+            GraphTabControl.CanCloseTab           = CanCloseTab;
 
             // Populate rate dropdown before any tab is created (SyncToolbarToActiveTab reads it)
             RateOptionsDropDown.Items.AddRange(ProductionGraph.RateUnitNames);
@@ -129,6 +130,7 @@ namespace Foreman
             var firstViewer = new ProductionGraphViewer();
             firstViewer.KeyDown += GraphViewer_KeyDown;
             firstViewer.DirtyStateChanged += Viewer_DirtyStateChanged;
+            firstViewer.HasContentChanged += Viewer_HasContentChanged;
 
             List<Preset> validPresets = GetValidPresetsList();
             if (validPresets != null && validPresets.Count > 0)
@@ -498,14 +500,15 @@ namespace Foreman
                     if (viewer == null) continue;
 
                     // Two states where persisting would replace good data with nothing: a graph that is mid-load
-                    // (cleared, nodes not back yet) and a file-backed tab that is somehow empty. Keep what is
-                    // already stored and try again on the next pass.
+                    // (cleared, content not back yet) and a file-backed tab that is somehow empty. Keep what is
+                    // already stored and try again on the next pass. Notes and shapes count as content, so a graph
+                    // that is only annotations still gets its edits snapshotted
                     bool midLoad     = viewer.IsLoading;
-                    bool emptyBacked = state.SaveFilePath != null && !viewer.Graph.Nodes.Any();
+                    bool emptyBacked = state.SaveFilePath != null && !viewer.HasContent;
                     if (midLoad || emptyBacked)
                     {
                         if (emptyBacked && !midLoad)
-                            ErrorLogging.LogLine($"Tab {i + 1} ('{GetTabBaseTitle(i)}') has a save file but no nodes - keeping the previous snapshot and backup.");
+                            ErrorLogging.LogLine($"Tab {i + 1} ('{GetTabBaseTitle(i)}') has a save file but no nodes, notes or shapes - keeping the previous snapshot and backup.");
                         session.Tabs.Add(new SessionTabInfo
                         {
                             Title               = GetTabBaseTitle(i),
@@ -620,6 +623,7 @@ namespace Foreman
             var viewer = new ProductionGraphViewer();
             viewer.KeyDown += GraphViewer_KeyDown;
             viewer.DirtyStateChanged += Viewer_DirtyStateChanged;
+            viewer.HasContentChanged += Viewer_HasContentChanged;
 
             var srcViewer = ActiveViewer;
             if (srcViewer?.DCache != null)
@@ -646,13 +650,13 @@ namespace Foreman
 
         private void CloseTab(int index)
         {
-            if (GraphTabControl.RealTabCount <= 1)
-            {
-                MessageBox.Show("At least one tab must remain open.", "Cannot close tab",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
             if (!TestTabSavedStatus(index)) return;
+
+            //closing the last tab swaps it for a fresh graph so there is always somewhere to work. the new tab goes in
+            //first, while the closing viewer is still active, so it shares that viewer's loaded data cache
+            if (GraphTabControl.RealTabCount <= 1)
+                CreateNewTab();
+
             tabStates[index].SummaryForm?.Close();
             SessionManager.DeleteSnapshot(tabStates[index].SnapshotFile);
 
@@ -755,7 +759,23 @@ namespace Foreman
             if (viewer != null && viewer.IsDirty)
                 label = "* " + label;
             GraphTabControl.SetTabTitle(tabIndex, label);
+            GraphTabControl.Invalidate();   //a save or a new graph changes SaveFilePath, which CanCloseTab reads
         }
+
+        /// <summary>
+        /// A lone tab that is still an untouched new graph gets no ×: closing it would only swap it for another blank
+        /// graph under a new name. Anything with nodes, notes, shapes or a save file behind it can be closed.
+        /// </summary>
+        private bool CanCloseTab(int tabIndex)
+        {
+            if (GraphTabControl.RealTabCount > 1) return true;
+            if (tabIndex < 0 || tabIndex >= tabStates.Count) return true;
+            var viewer = GraphTabControl.GetViewer(tabIndex);
+            return viewer == null || tabStates[tabIndex].SaveFilePath != null || viewer.HasContent;
+        }
+
+        //fires only on the empty/not-empty edges, so a graph load does not repaint the strip once per node
+        private void Viewer_HasContentChanged(object sender, EventArgs e) => GraphTabControl.Invalidate();
 
         private void GraphTabControl_AddTabRequested(object sender, EventArgs e) => CreateNewTab();
 
@@ -1032,7 +1052,7 @@ namespace Foreman
 
             if (state.SaveFilePath == null)
             {
-                if (viewer.Graph.Nodes.Any())
+                if (viewer.HasContent)
                     return MessageBox.Show(
                         $"Tab \"{tabLabel}\" hasn't been saved!\nIf you continue you will lose it forever!",
                         "Are you sure?", MessageBoxButtons.OKCancel) == DialogResult.OK;
