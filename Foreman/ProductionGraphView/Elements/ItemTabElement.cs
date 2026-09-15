@@ -48,15 +48,20 @@ namespace Foreman
 			HideItemTab = false;
 
 			borderPen = regularBorderPen;
-			//CreateGraphics hands back a live device context that has to be released. it was leaked here, one per item
-			//tab built, and only ever reclaimed by a finalizer - a large graph could put real pressure on the GDI
-			//handle count just by being loaded
-			int textHeight;
-			using (Graphics measure = base.graphViewer.CreateGraphics())
-				textHeight = (int)measure.MeasureString("a", textFont).Height;
 			Width = TabWidth;
-			Height = iconSize + textHeight + border + 3;
+			Height = iconSize + MeasuredTextHeight(base.graphViewer) + border + 3;
 			X = 0; Y = 0;
+		}
+
+		//the font is static, so its line height is the same for every tab. it was measured once per tab built - a device
+		//context acquired and released for each one, which added up when loading a graph with thousands of tabs
+		private static int measuredTextHeight = -1;
+		private static int MeasuredTextHeight(Control measureOn)
+		{
+			if (measuredTextHeight < 0)
+				using (Graphics measure = measureOn.CreateGraphics())
+					measuredTextHeight = (int)measure.MeasureString("a", textFont).Height;
+			return measuredTextHeight;
 		}
 
 		public Point GetConnectionPoint() //in graph coordinates

@@ -8,36 +8,61 @@ namespace Foreman
 {
 	public static class GraphicsStuff
 	{
+		//every node draws its name and counters through DrawText on every frame, and fitting used to mean allocating a
+		//fresh Font and measuring again for each half-point step down - for text that had not changed since the last frame.
+		//the fitted size is remembered per text and box, and the shrunk fonts are shared rather than made and disposed
+		private const float MinFittedFontSize = 1f;
+		private const int MaxCachedTextFits = 4096;
+		private static readonly Dictionary<(string text, Font font, int width, int height, bool singleLine, float dpi), (Font font, int length)> textFitCache = new Dictionary<(string, Font, int, int, bool, float), (Font, int)>();
+		private static readonly Dictionary<(string family, float size, FontStyle style, GraphicsUnit unit), Font> fittedFonts = new Dictionary<(string, float, FontStyle, GraphicsUnit), Font>();
+
+		private static Font GetFittedFont(Font baseFont, float size)
+		{
+			var key = (baseFont.FontFamily.Name, size, baseFont.Style, baseFont.Unit);
+			if (!fittedFonts.TryGetValue(key, out Font font))
+			{
+				font = new Font(baseFont.FontFamily, size, baseFont.Style, baseFont.Unit);
+				fittedFonts.Add(key, font);
+			}
+			return font;
+		}
+
 		public static int DrawText(Graphics graphics, Brush textBrush, StringFormat textFormat, string text, Font baseFont, Rectangle textbox, bool singleLine = false) //returns the width of the actually drawn text
 		{
-			float textLength = 0;
-			Font textFont = new Font(baseFont, baseFont.Style);
-			if (singleLine)
+			var key = (text, baseFont, textbox.Width, textbox.Height, singleLine, graphics.DpiX);
+			if (!textFitCache.TryGetValue(key, out var fit))
 			{
-				textLength = graphics.MeasureString(text, textFont).Width;
-				while (textLength > textbox.Width)
+				Font textFont = GetFittedFont(baseFont, baseFont.Size);
+				float textLength;
+				if (singleLine)
 				{
-					Font newNameFont = new Font(textFont.FontFamily, textFont.Size - 0.5f, textFont.Style);
-					textFont.Dispose();
-					textFont = newNameFont;
 					textLength = graphics.MeasureString(text, textFont).Width;
+					while (textLength > textbox.Width && textFont.Size - 0.5f >= MinFittedFontSize)
+					{
+						textFont = GetFittedFont(baseFont, textFont.Size - 0.5f);
+						textLength = graphics.MeasureString(text, textFont).Width;
+					}
 				}
-			}
-			else
-			{
-				SizeF textSize = graphics.MeasureString(text, textFont, textbox.Width);
-				while (textSize.Height > textbox.Height)
+				else
 				{
-					Font newNameFont = new Font(textFont.FontFamily, textFont.Size - 0.5f, textFont.Style);
-					textFont.Dispose();
-					textFont = newNameFont;
-					textSize = graphics.MeasureString(text, textFont, textbox.Width);
+					SizeF textSize = graphics.MeasureString(text, textFont, textbox.Width);
+					while (textSize.Height > textbox.Height && textFont.Size - 0.5f >= MinFittedFontSize)
+					{
+						textFont = GetFittedFont(baseFont, textFont.Size - 0.5f);
+						textSize = graphics.MeasureString(text, textFont, textbox.Width);
+					}
+					textLength = textSize.Width;
 				}
-				textLength = textSize.Width;
+
+				//counter text changes with every solve, so the cache would otherwise grow for as long as the program runs
+				if (textFitCache.Count >= MaxCachedTextFits)
+					textFitCache.Clear();
+				fit = (textFont, (int)textLength);
+				textFitCache.Add(key, fit);
 			}
-			graphics.DrawString(text, textFont, textBrush, textbox, textFormat);
-			textFont.Dispose();
-			return (int)textLength;
+
+			graphics.DrawString(text, fit.font, textBrush, textbox, textFormat);
+			return fit.length;
 		}
 
 

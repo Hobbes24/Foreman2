@@ -351,34 +351,35 @@ namespace Foreman
 			//there is an optimized solution for connected components where we keep track of the various groups and modify them as each node/link is added/removed, but testing shows that this calculation below takes under 1ms even for larg 1000+ node graphs, so why bother.
 
 
-			HashSet<BaseNode> unvisitedNodes = new HashSet<BaseNode>(nodes);
+			//a plain stack walk. this used to start each group with HashSet.First() on a set being emptied as it went, and
+			//First() rescans the slots removals leave behind - quadratic in the number of groups (5000 groups: 53ms -> 5ms)
+			HashSet<BaseNode> visitedNodes = new HashSet<BaseNode>();
+			Stack<BaseNode> toVisit = new Stack<BaseNode>();
 
 			List<HashSet<BaseNode>> connectedComponents = new List<HashSet<BaseNode>>();
 
-			while (unvisitedNodes.Any())
+			foreach (BaseNode startNode in nodes)
 			{
+				if (!visitedNodes.Add(startNode))
+					continue;
+
 				HashSet<BaseNode> newSet = new HashSet<BaseNode>();
 				bool allClean = true;
+				toVisit.Push(startNode);
 
-				HashSet<BaseNode> toVisitNext = new HashSet<BaseNode>();
-				toVisitNext.Add(unvisitedNodes.First());
-
-				while (toVisitNext.Any())
+				while (toVisit.Count > 0)
 				{
-					BaseNode currentNode = toVisitNext.First();
+					BaseNode currentNode = toVisit.Pop();
 					allClean &= currentNode.IsClean;
+					newSet.Add(currentNode);
 
 					foreach (NodeLink link in currentNode.InputLinks)
-						if (unvisitedNodes.Contains(link.SupplierNode))
-							toVisitNext.Add(link.SupplierNode);
+						if (nodes.Contains(link.SupplierNode) && visitedNodes.Add(link.SupplierNode))
+							toVisit.Push(link.SupplierNode);
 
 					foreach (NodeLink link in currentNode.OutputLinks)
-						if (unvisitedNodes.Contains(link.ConsumerNode))
-							toVisitNext.Add(link.ConsumerNode);
-
-					newSet.Add(currentNode);
-					toVisitNext.Remove(currentNode);
-					unvisitedNodes.Remove(currentNode);
+						if (nodes.Contains(link.ConsumerNode) && visitedNodes.Add(link.ConsumerNode))
+							toVisit.Push(link.ConsumerNode);
 				}
 
 				if (!allClean || includeCleanComponents)

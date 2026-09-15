@@ -287,13 +287,37 @@ namespace Foreman
 				return;
 			}
 
-			using (Pen pen = new Pen(Item.Item.AverageColor, LinkWidth) { EndCap = System.Drawing.Drawing2D.LineCap.Round, StartCap = System.Drawing.Drawing2D.LineCap.Round })
-			{
-				if (graphViewer.ArrowsOnLinks && !graphViewer.DynamicLinkWidth && !iconOnlyDraw)
-					pen.CustomEndCap = arrowCap;
+			DrawCurve(graphics, GetLinkPen(graphViewer.ArrowsOnLinks && !graphViewer.DynamicLinkWidth && !iconOnlyDraw));
+		}
 
-				DrawCurve(graphics, pen);
+		//every visible link needs its pen on every frame, and what goes into one (item colour, width, arrow) almost never
+		//changes between frames - so it is kept and only rebuilt when one of those does, rather than made and disposed each time
+		private Pen linkPen;
+		private Color linkPenColor;
+		private float linkPenWidth;
+		private bool linkPenArrow;
+
+		private Pen GetLinkPen(bool arrow)
+		{
+			Color color = Item.Item.AverageColor;
+			if (linkPen == null || linkPenColor != color || linkPenWidth != LinkWidth || linkPenArrow != arrow)
+			{
+				linkPen?.Dispose();
+				linkPen = new Pen(color, LinkWidth) { EndCap = LineCap.Round, StartCap = LineCap.Round };
+				if (arrow)
+					linkPen.CustomEndCap = arrowCap;
+				linkPenColor = color;
+				linkPenWidth = LinkWidth;
+				linkPenArrow = arrow;
 			}
+			return linkPen;
+		}
+
+		public override void Dispose()
+		{
+			linkPen?.Dispose();
+			linkPen = null;
+			base.Dispose();
 		}
 
 		private void DrawCurve(Graphics graphics, Pen pen)

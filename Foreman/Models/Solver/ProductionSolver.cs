@@ -202,35 +202,37 @@ namespace Foreman
 			return solver.MakeConstraint(low, high);
 		}
 
+		//the names only exist for debugging output, but they were built - several string joins plus a node ToString - on
+		//every lookup, and a node's variable is looked up once per item it handles. they are now built only for a new variable
 		private Variable variableFor(NodeLink inputLink)
 		{
-			return variableFor(inputLink, makeName("link", "S(" + inputLink.ConsumerNode.NodeID + ")", "C(" + inputLink.ConsumerNode.NodeID + ")", inputLink.Item.ToString()));
+			return variableFor(inputLink, () => makeName("link", "S(" + inputLink.ConsumerNode.NodeID + ")", "C(" + inputLink.ConsumerNode.NodeID + ")", inputLink.Item.ToString()));
 		}
 
 		private Variable variableFor(BaseNode node, RateType type = RateType.ACTUAL)
 		{
-			return variableFor(Tuple.Create(node, type), makeName("node", type, node.NodeID, node.ToString()));
+			return variableFor(Tuple.Create(node, type), () => makeName("node", type, node.NodeID, node.ToString()));
 		}
 
 		private Variable VariableForOverflow(BaseNode node, ItemQualityPair item)
 		{
-			return variableFor(Tuple.Create(node, item), makeName("node-overflow", node.NodeID, node.ToString(), item.ToString()));
+			return variableFor(Tuple.Create(node, item), () => makeName("node-overflow", node.NodeID, node.ToString(), item.ToString()));
 		}
 
-		private Variable variableFor(object key, string name)
+		private Variable variableFor(object key, Func<string> name)
 		{
-			if (allVariables.ContainsKey(key))
-				return allVariables[key];
+			if (allVariables.TryGetValue(key, out Variable existing))
+				return existing;
 
-			Variable newVar = solver.MakeNumVar(0.0, double.PositiveInfinity, name + ":" + GetSequence());
+			Variable newVar = solver.MakeNumVar(0.0, double.PositiveInfinity, name() + ":" + GetSequence());
 			allVariables[key] = newVar;
 			return newVar;
 		}
 
 		private double solutionFor(object key)
 		{
-			if (allVariables.ContainsKey(key))
-				return allVariables[key].SolutionValue();
+			if (allVariables.TryGetValue(key, out Variable variable))
+				return variable.SolutionValue();
 			return 0.0;
 		}
 
