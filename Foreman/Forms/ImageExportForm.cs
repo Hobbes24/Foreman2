@@ -81,7 +81,9 @@ namespace Foreman
 
 				float scale = multipliers[ScaleSelectionBox.SelectedIndex];
 
-				Bitmap image = ViewLimitCheckBox.Checked? new Bitmap((int)(graphViewer.Width * scale / graphViewer.ViewScale), (int)(graphViewer.Height * scale / graphViewer.ViewScale)) : new Bitmap((int)(graphViewer.Graph.Bounds.Width * scale), (int)(graphViewer.Graph.Bounds.Height * scale));
+				//disposed rather than left to the finaliser - at export scales this bitmap runs to hundreds of
+				//megabytes of unmanaged memory, and a few exports in a row would hold all of it at once
+				using (Bitmap image = ViewLimitCheckBox.Checked? new Bitmap((int)(graphViewer.Width * scale / graphViewer.ViewScale), (int)(graphViewer.Height * scale / graphViewer.ViewScale)) : new Bitmap((int)(graphViewer.Graph.Bounds.Width * scale), (int)(graphViewer.Graph.Bounds.Height * scale)))
 				using (Graphics graphics = Graphics.FromImage(image))
 				{
 					graphics.ResetTransform();
