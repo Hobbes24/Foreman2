@@ -416,19 +416,20 @@ namespace Foreman
 				//process launch product recipes
 				if (presetItems.Contains("rocket-part") && presetRecipes.ContainsKey("rocket-part") && presetEntities.Contains("rocket-silo"))
 				{
-					foreach (var objJToken in jsonData["items"].Concat(jsonData["fluids"]).Where(t => t["launch_products"] != null))
+					foreach (var objJToken in jsonData["items"].Concat(jsonData["fluids"]).Where(t => t["rocket_launch_products"] != null))
 					{
 						RecipeShort recipe = new RecipeShort(string.Format("§§r:rl:launch-{0}", (string)objJToken["name"]));
 
-						int inputSize = (int)objJToken["stack"];
-						foreach (var productJToken in objJToken["launch_products"])
+						double inputSize = objJToken["stack_size"] != null ? (double)objJToken["stack_size"] : 0;
+						foreach (var productJToken in objJToken["rocket_launch_products"])
 						{
 								double amount = (double)productJToken["amount"];
-								int productStack = (int)(jsonData["items"].First(t => (string)t["name"] == (string)productJToken["name"])["stack"]?? 1);
+								JToken productItemJToken = jsonData["items"].FirstOrDefault(t => (string)t["name"] == (string)productJToken["name"]);
+								double productStack = productItemJToken?["stack_size"] != null ? (double)productItemJToken["stack_size"] : 1;
 								if (amount != 0 && inputSize * amount > productStack)
-									inputSize = (int)(productStack / amount);
+									inputSize = Math.Floor(productStack / amount);
 						}
-						foreach (var productJToken in objJToken["launch_products"])
+						foreach (var productJToken in objJToken["rocket_launch_products"])
 						{
 								double amount = (double)productJToken["amount"];
 								if (amount != 0)

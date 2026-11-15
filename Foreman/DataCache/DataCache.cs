@@ -1813,19 +1813,19 @@ namespace Foreman
 			recipe.Time = 1; //placeholder really...
 
 			//process products - have to calculate what the maximum input size of the launch item is so as not to waste any products (ex: you can launch 2000 science packs, but you will only get 100 fish. so input size must be set to 100 -> 100 science packs to 100 fish)
-			int inputSize = launchItem.StackSize;
+			double inputSize = launchItem.StackSize;
 			Dictionary<ItemPrototype, double> products = new Dictionary<ItemPrototype, double>();
 			Dictionary<ItemPrototype, double> productTemp = new Dictionary<ItemPrototype, double>();
 			foreach (var productJToken in objJToken["rocket_launch_products"].ToList())
 			{
-				ItemPrototype product = (ItemPrototype)items[(string)productJToken["name"]];
+				if (!items.TryGetValue((string)productJToken["name"], out Item productItem))
+					continue;
+				ItemPrototype product = (ItemPrototype)productItem;
 				double amount = (double)productJToken["amount"];
 				if (amount != 0)
 				{
 					if (inputSize * amount > product.StackSize)
-						inputSize = (int)(product.StackSize / amount);
-
-					amount = inputSize * amount;
+						inputSize = Math.Floor(product.StackSize / amount);
 
 					if ((string)productJToken["type"] == "fluid")
 						productTemp.Add(product, productJToken["temperature"] == null ? ((FluidPrototype)product).DefaultTemperature : (double)productJToken["temperature"]);
