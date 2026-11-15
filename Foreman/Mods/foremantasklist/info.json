@@ -3,7 +3,7 @@
   "version": "1.2.0",
   "factorio_version": "2.1",
   "title": "Foreman2 Task List",
-  "author": "you",
+  "author": "Hobbes24",
   "description": "Paste a Foreman2 building list and turn it into a checkable in-game task list, with one-click personal logistic requests.",
   "dependencies": ["base >= 2.0.0"]
 }
