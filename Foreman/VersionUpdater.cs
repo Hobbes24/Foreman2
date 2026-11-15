@@ -365,7 +365,7 @@ namespace Foreman
 
 				original["IncludedQualities"] = qualities;
 				original["MaxQualitySteps"] = 5; //5 is the base number of quality modules in factorio, so its a nice value (using the current max length value could cause issues when combined with those '200 quality' mods)
-				original["DefaultQulity"] = cache.DefaultQuality.Name;
+				original["DefaultQuality"] = cache.DefaultQuality.Name;
 
                 foreach (JToken nodeJToken in original["Nodes"])
 				{
