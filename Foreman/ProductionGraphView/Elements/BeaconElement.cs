@@ -70,10 +70,10 @@ namespace Foreman
 					{
 						if (DisplayedNode.BeaconModules.Count > (x * 4) + y)
 						{
-                            Pen marker = DisplayedNode.BeaconModules[(x * 7) + y].Module.GetProductivityBonus() > 0 ? prodModulePen :
-                                DisplayedNode.BeaconModules[(x * 7) + y].Module.GetQualityBonus() > 0 ? qualityModulePen :
-                                DisplayedNode.BeaconModules[(x * 7) + y].Module.GetConsumptionBonus() < 0 ? effModulePen :
-                                DisplayedNode.BeaconModules[(x * 7) + y].Module.GetSpeedBonus() > 0 ? speedModulePen :
+                            Pen marker = DisplayedNode.BeaconModules[(x * 4) + y].Module.GetProductivityBonus() > 0 ? prodModulePen :
+                                DisplayedNode.BeaconModules[(x * 4) + y].Module.GetQualityBonus() > 0 ? qualityModulePen :
+                                DisplayedNode.BeaconModules[(x * 4) + y].Module.GetConsumptionBonus() < 0 ? effModulePen :
+                                DisplayedNode.BeaconModules[(x * 4) + y].Module.GetSpeedBonus() > 0 ? speedModulePen :
                                 unknownModulePen; 
 							graphics.DrawEllipse(marker, trans.X + moduleOffset.X + (ModuleSpacing * 2) + ModuleIconSize - 5 - (x * 5), trans.Y + moduleOffset.Y + 2 + (y * 5), 2, 2);
 						}
