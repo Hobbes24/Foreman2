@@ -337,6 +337,7 @@ namespace Foreman
 
             selectedNodes.Clear();
             currentSelectionNodes.Clear();
+            nodeGroups.Clear(); //otherwise the groups of the graph being replaced keep its nodes and annotations alive
             CheckHasContent();
         }
 
@@ -362,6 +363,10 @@ namespace Foreman
 			sb.Append(",\"Annotations\":");
 			using (var writer = new JsonTextWriter(new StringWriter(sb)) { Formatting = Formatting.None })
 				new JArray(annotationElements.Select(a => a.ToJson())).WriteTo(writer);
+
+			sb.Append(",\"NodeGroups\":");
+			using (var writer = new JsonTextWriter(new StringWriter(sb)) { Formatting = Formatting.None })
+				GroupsToJson().WriteTo(writer);
 
 			sb.Append("}");
 			return sb.ToString();
@@ -397,7 +402,7 @@ namespace Foreman
 			findResultIndex = -1;
 			lastSearchQuery = "";
 			// Restore graph nodes + links
-			Graph.InsertNodesFromJson(DCache, (JObject)snap["ProductionGraph"], true);
+			ProductionGraph.NewNodeCollection restoredNodes = Graph.InsertNodesFromJson(DCache, (JObject)snap["ProductionGraph"], true);
 			// Restore annotations
 			if (snap["Annotations"] is JArray annotationsArr)
 			{
@@ -407,6 +412,8 @@ namespace Foreman
 					catch (Exception ex) { Console.WriteLine("Undo restore annotation: " + ex.Message); }
 				}
 			}
+			// Restore groups - cleared above, and rebuilt now that their members exist again
+			RestoreGroupsFromJson(snap["NodeGroups"], restoredNodes);
 			Graph.UpdateNodeValues();
 			Graph.UpdateNodeStates(false);
 			UpdateGraphBounds();
@@ -521,6 +528,72 @@ namespace Foreman
 
         private NodeGroup GetGroupForAnnotation(AnnotationElement ann)
             => nodeGroups.FirstOrDefault(g => g.ContainsAnnotation(ann));
+
+        /// <summary>
+        /// Groups as they go into a save or an undo snapshot. Nodes are written by their current id -
+        /// the same id the graph writes them under - and annotations by their position in the annotation
+        /// array written alongside, since neither identity survives a load.
+        /// </summary>
+        private JArray GroupsToJson()
+        {
+            JArray groups = new JArray();
+            foreach (NodeGroup group in nodeGroups)
+            {
+                JArray nodeIDs = new JArray(group.Nodes.Select(n => n.NodeID));
+                JArray annotationIndices = new JArray(group.Annotations
+                    .Select(a => annotationElements.IndexOf(a))
+                    .Where(i => i >= 0));
+
+                if (nodeIDs.Count + annotationIndices.Count < 2) //the floor CreateGroup holds to
+                    continue;
+
+                groups.Add(new JObject { ["Nodes"] = nodeIDs, ["Annotations"] = annotationIndices });
+            }
+            return groups;
+        }
+
+        /// <summary>
+        /// Rebuilds the groups written by <see cref="GroupsToJson"/>. Call after both the nodes and the
+        /// annotations are in place. A member that did not survive the load is simply left out, and a
+        /// group left with fewer than two members is dropped - CreateGroup already holds that floor.
+        /// </summary>
+        private void RestoreGroupsFromJson(JToken groupsToken, ProductionGraph.NewNodeCollection loadedNodes)
+        {
+            if (groupsToken == null || groupsToken.Type == JTokenType.Null) //absent on any save written before groups persisted
+                return;
+
+            try
+            {
+                //the save file holds this as a string (as it does the annotations), a snapshot as a live array
+                JArray groups = groupsToken.Type == JTokenType.String
+                    ? JArray.Parse((string)groupsToken)
+                    : (JArray)groupsToken;
+
+                foreach (JObject groupJson in groups.OfType<JObject>())
+                {
+                    List<ReadOnlyBaseNode> nodes = new List<ReadOnlyBaseNode>();
+                    if (groupJson["Nodes"] != null)
+                        foreach (JToken savedID in groupJson["Nodes"])
+                            if (loadedNodes.oldNodeIDs.TryGetValue((int)savedID, out ReadOnlyBaseNode node))
+                                nodes.Add(node);
+
+                    List<AnnotationElement> annotations = new List<AnnotationElement>();
+                    if (groupJson["Annotations"] != null)
+                        foreach (JToken savedIndex in groupJson["Annotations"])
+                        {
+                            int index = (int)savedIndex;
+                            if (index >= 0 && index < annotationElements.Count)
+                                annotations.Add(annotationElements[index]);
+                        }
+
+                    CreateGroup(nodes, annotations);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Failed to load node groups: " + ex.Message);
+            }
+        }
 
         //----------------------------------------------Annotation add/remove/create
 
@@ -3213,6 +3286,9 @@ namespace Foreman
             //annotations (viewer-side; not part of the graph model)
             info.AddValue("Annotations",
                 new JArray(annotationElements.Select(a => a.ToJson())).ToString(Formatting.None));
+
+            //node groups (viewer-side, and written after the annotations they index into)
+            info.AddValue("NodeGroups", GroupsToJson().ToString(Formatting.None));
         }
 
         public Size ImportNodesFromJson(JObject json, Point origin, bool loadSolverValues)
@@ -3622,6 +3698,9 @@ namespace Foreman
                     Console.WriteLine("Failed to load annotations: " + ex.Message);
                 }
             }
+
+            //node groups last - they refer to the nodes by their saved ids and to the annotations by index
+            RestoreGroupsFromJson(json["NodeGroups"], collection);
 
             //upgrade graph & values
             UpdateGraphBounds();

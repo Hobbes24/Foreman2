@@ -34,7 +34,10 @@ namespace Foreman
 		{
 			public List<ReadOnlyBaseNode> newNodes { get; private set; }
 			public List<ReadOnlyNodeLink> newLinks { get; private set; }
-			public NewNodeCollection() { newNodes = new List<ReadOnlyBaseNode>(); newLinks = new List<ReadOnlyNodeLink>(); }
+			//the saved node id -> the node it became here. ids are regenerated on load, so anything outside
+			//this method that refers to a node by its saved id (node groups, for one) has to come back through this
+			public Dictionary<int, ReadOnlyBaseNode> oldNodeIDs { get; private set; }
+			public NewNodeCollection() { newNodes = new List<ReadOnlyBaseNode>(); newLinks = new List<ReadOnlyNodeLink>(); oldNodeIDs = new Dictionary<int, ReadOnlyBaseNode>(); }
 		}
 
 		//public DataCache DCache { get; private set; }
@@ -568,7 +571,7 @@ namespace Foreman
 			}
 
 			NewNodeCollection newNodeCollection = new NewNodeCollection();
-			Dictionary<int, ReadOnlyBaseNode> oldNodeIndices = new Dictionary<int, ReadOnlyBaseNode>(); //the links between the node index (as imported) and the newly created node (which will now have a different index). Used to link up nodes
+			Dictionary<int, ReadOnlyBaseNode> oldNodeIndices = newNodeCollection.oldNodeIDs; //the links between the node index (as imported) and the newly created node (which will now have a different index). Used to link up nodes, and handed back on the collection so the caller can remap its own saved ids
 
 			try
 			{
