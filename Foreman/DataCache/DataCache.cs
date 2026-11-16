@@ -789,14 +789,27 @@ namespace Foreman
 			item.Weight = (double)objJToken["weight"];
 			item.IngredientToWeightCoefficient = (double)objJToken["ingredient_to_weight_coefficient"];
 
-			if (objJToken["fuel_category"] != null && (double)objJToken["fuel_value"] > 0) //factorio eliminates any 0fuel value fuel from the list (checked)
+			//factorio 2.1 gives an item a set of fuel categories rather than one, so the exporter writes the list
+			//under fuel_categories and keeps the first of them under fuel_category. Either key is read, which is
+			//what lets a preset exported before this change still load.
+			List<string> itemFuelCategories = new List<string>();
+			if (objJToken["fuel_categories"] != null)
+				foreach (JToken fuelCategoryToken in objJToken["fuel_categories"])
+					itemFuelCategories.Add((string)fuelCategoryToken);
+			else if (objJToken["fuel_category"] != null)
+				itemFuelCategories.Add((string)objJToken["fuel_category"]);
+
+			if (itemFuelCategories.Count > 0 && (double)objJToken["fuel_value"] > 0) //factorio eliminates any 0fuel value fuel from the list (checked)
 			{
 				item.FuelValue = (double)objJToken["fuel_value"];
 				item.PollutionMultiplier = (double)objJToken["fuel_emissions_multiplier"];
 
-				if (!fuelCategories.ContainsKey((string)objJToken["fuel_category"]))
-					fuelCategories.Add((string)objJToken["fuel_category"], new List<ItemPrototype>());
-				fuelCategories[(string)objJToken["fuel_category"]].Add(item);
+				foreach (string fuelCategory in itemFuelCategories)
+				{
+					if (!fuelCategories.ContainsKey(fuelCategory))
+						fuelCategories.Add(fuelCategory, new List<ItemPrototype>());
+					fuelCategories[fuelCategory].Add(item);
+				}
 			}
 			if (objJToken["burnt_result"] != null)
 				burnResults.Add(item, (string)objJToken["burnt_result"]);

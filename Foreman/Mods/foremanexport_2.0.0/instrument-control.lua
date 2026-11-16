@@ -74,6 +74,16 @@ local function EntityStat(entity, fieldName, methodName)
 	return nil
 end
 
+-- factorio 2.1 raises 'doesnt contain key X' when a prototype's own class does not carry the field at
+-- all, rather than handing back nil, so an optional field cannot be tested with ~= nil - the test itself
+-- is what throws. Mod sets reach item types that carry no fuel/spoil/plant fields whatsoever (space
+-- exploration is one), which is why every optional read below goes through here.
+local function OptionalField(prototype, fieldName)
+	local ok, value = pcall(function() return prototype[fieldName] end)
+	if ok then return value end
+	return nil
+end
+
 local function ProcessProductList(products)
 	productlist = {}
 	for _, product in pairs(products) do
@@ -351,29 +361,54 @@ local function ExportItems()
 		titem['ingredient_to_weight_coefficient'] = item.ingredient_to_weight_coefficient
 
 
-		if item.fuel_category ~= nil then
-			titem['fuel_category'] = item.fuel_category
-			titem['fuel_value'] = item.fuel_value
-			titem['fuel_emissions_multiplier'] = item.fuel_emissions_multiplier
+		-- factorio 2.1 replaced the item's single fuel_category with a fuel_categories set - the same shape the
+		-- burner prototypes further down already use - and reading the old singular key now raises outright,
+		-- which is what made every import on 2.1 die here. Both forms are handled, and the whole list is written
+		-- out: an item can sit in more than one category now. fuel_category stays alongside it as the first of
+		-- them, so a preset exported here still reads in a foreman that only knows the singular key.
+		local fuelCategories = {}
+		local singleFuelCategory = OptionalField(item, 'fuel_category')
+		if singleFuelCategory ~= nil then
+			table.insert(fuelCategories, singleFuelCategory)
+		else
+			-- an item's set is an array of category names, while the burner prototypes below key theirs BY
+			-- name - so the name is whichever of the two sides is the string
+			for key, value in pairs(OptionalField(item, 'fuel_categories') or {}) do
+				table.insert(fuelCategories, (type(value) == 'string') and value or key)
+			end
 		end
 
-		if item.burnt_result ~= nil then
-			titem['burnt_result'] = item.burnt_result.name
+		-- the block is written only when the value comes with it: foreman reads fuel_value as a plain number as
+		-- soon as it sees a category, so a category without one would fail on the way back in
+		local fuelValue = OptionalField(item, 'fuel_value')
+		if fuelCategories[1] ~= nil and fuelValue ~= nil then
+			titem['fuel_category'] = fuelCategories[1]
+			titem['fuel_categories'] = fuelCategories
+			titem['fuel_value'] = fuelValue
+			titem['fuel_emissions_multiplier'] = OptionalField(item, 'fuel_emissions_multiplier') or 1
 		end
 
-		if item.spoil_result ~= nil then
-			titem['spoil_result'] = item.spoil_result.name
-			titem['q_spoil_time'] = ProcessQualityValue(item.get_spoil_ticks, 1/60)
+		local burntResult = OptionalField(item, 'burnt_result')
+		if burntResult ~= nil then
+			titem['burnt_result'] = burntResult.name
 		end
 
-		if item.plant_result ~= nil and item.plant_result.mineable_properties ~= nil then
-			titem['plant_results'] = ProcessProductList(item.plant_result.mineable_properties.products)
-			titem['plant_growth_time'] = item.plant_result.growth_ticks / 60
+		local spoilResult = OptionalField(item, 'spoil_result')
+		if spoilResult ~= nil then
+			titem['spoil_result'] = spoilResult.name
+			titem['q_spoil_time'] = ProcessQualityValue(OptionalField(item, 'get_spoil_ticks'), 1/60)
 		end
 
-		if item.rocket_launch_products ~= nil and item.rocket_launch_products[1] ~= nil then
+		local plantResult = OptionalField(item, 'plant_result')
+		if plantResult ~= nil and plantResult.mineable_properties ~= nil then
+			titem['plant_results'] = ProcessProductList(plantResult.mineable_properties.products)
+			titem['plant_growth_time'] = plantResult.growth_ticks / 60
+		end
+
+		local rocketLaunchProducts = OptionalField(item, 'rocket_launch_products')
+		if rocketLaunchProducts ~= nil and rocketLaunchProducts[1] ~= nil then
 			titem['rocket_launch_products'] = {}
-			for _, product in pairs(item.rocket_launch_products) do
+			for _, product in pairs(rocketLaunchProducts) do
 				tproduct = {}
 				tproduct['name'] = product.name
 				tproduct['type'] = product.type
@@ -553,8 +588,10 @@ local function ExportEntities()
 				tentity['full_power_temperature'] = ProcessTemperature(entity.maximum_temperature)
 				tentity['max_power_output'] = (EntityStat(entity, 'max_power_output', 'get_max_power_output') or 0) * 60
 
-				tentity['minimum_temperature'] = ProcessTemperature(entity.fluidbox_prototypes[1].minimum_temperature)
-				tentity['maximum_temperature'] = ProcessTemperature(entity.fluidbox_prototypes[1].maximum_temperature)
+				-- a fluid box only carries its temperature window when it is actually constrained, and in 2.1 reading
+				-- the key off one that is not raises - foreman reads both as absent-means-unbounded anyway
+				tentity['minimum_temperature'] = ProcessTemperature(OptionalField(entity.fluidbox_prototypes[1], 'minimum_temperature'))
+				tentity['maximum_temperature'] = ProcessTemperature(OptionalField(entity.fluidbox_prototypes[1], 'maximum_temperature'))
 				if entity.fluidbox_prototypes[1].filter ~= nil then
 					tentity['fluid_ingredient'] = entity.fluidbox_prototypes[1].filter.name
 				end
@@ -619,8 +656,9 @@ local function ExportEntities()
 				if entity.fluid_energy_source_prototype.fluid_box.filter ~= nil then
 					tentity['fuel_filter'] = entity.fluid_energy_source_prototype.fluid_box.filter.name
 				end
-				tentity['minimum_fuel_temperature'] = ProcessTemperature(entity.fluid_energy_source_prototype.fluid_box.minimum_temperature) -- nil is accepted
-				tentity['maximum_fuel_temperature'] = ProcessTemperature(entity.fluid_energy_source_prototype.fluid_box.maximum_temperature) --nil is accepted
+				-- nil is accepted, and in 2.1 an unconstrained fluid box carries no temperature keys at all to read
+				tentity['minimum_fuel_temperature'] = ProcessTemperature(OptionalField(entity.fluid_energy_source_prototype.fluid_box, 'minimum_temperature'))
+				tentity['maximum_fuel_temperature'] = ProcessTemperature(OptionalField(entity.fluid_energy_source_prototype.fluid_box, 'maximum_temperature'))
 
 			elseif entity.electric_energy_source_prototype then
 				tentity['fuel_type'] = 'electricity'
