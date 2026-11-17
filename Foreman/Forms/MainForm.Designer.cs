@@ -58,6 +58,8 @@
             this.IconViewCheckBox = new System.Windows.Forms.CheckBox();
             this.RateOptionsDropDown = new System.Windows.Forms.ComboBox();
             this.label4 = new System.Windows.Forms.Label();
+            this.SurfaceLabel = new System.Windows.Forms.Label();
+            this.SurfaceDropDown = new System.Windows.Forms.ComboBox();
             this.PauseUpdatesCheckbox = new System.Windows.Forms.CheckBox();
             this.GraphSummaryButton = new System.Windows.Forms.Button();
             this.VersionLabel = new System.Windows.Forms.Label();
@@ -486,14 +488,17 @@
             this.GraphOptionsTable.Controls.Add(this.label4, 0, 0);
             this.GraphOptionsTable.Controls.Add(this.PauseUpdatesCheckbox, 0, 3);
             this.GraphOptionsTable.Controls.Add(this.GraphSummaryButton, 0, 1);
+            this.GraphOptionsTable.Controls.Add(this.SurfaceLabel, 0, 4);
+            this.GraphOptionsTable.Controls.Add(this.SurfaceDropDown, 1, 4);
             this.GraphOptionsTable.Location = new System.Drawing.Point(3, 16);
             this.GraphOptionsTable.Margin = new System.Windows.Forms.Padding(3, 3, 3, 0);
             this.GraphOptionsTable.Name = "GraphOptionsTable";
-            this.GraphOptionsTable.RowCount = 4;
+            this.GraphOptionsTable.RowCount = 5;
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 20F));
+            this.GraphOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.GraphOptionsTable.Size = new System.Drawing.Size(184, 93);
             this.GraphOptionsTable.TabIndex = 2;
             // 
@@ -521,6 +526,27 @@
             this.RateOptionsDropDown.Size = new System.Drawing.Size(114, 21);
             this.RateOptionsDropDown.TabIndex = 2;
             this.RateOptionsDropDown.SelectedIndexChanged += new System.EventHandler(this.RateOptionsDropDown_SelectedIndexChanged);
+            // 
+            // SurfaceLabel
+            // 
+            this.SurfaceLabel.AutoSize = true;
+            this.SurfaceLabel.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.SurfaceLabel.Margin = new System.Windows.Forms.Padding(2, 0, 2, 0);
+            this.SurfaceLabel.Name = "SurfaceLabel";
+            this.SurfaceLabel.TabIndex = 9;
+            this.SurfaceLabel.Text = "Surface:";
+            this.SurfaceLabel.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            // 
+            // SurfaceDropDown
+            // 
+            this.SurfaceDropDown.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.SurfaceDropDown.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.SurfaceDropDown.FormattingEnabled = true;
+            this.SurfaceDropDown.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.SurfaceDropDown.Name = "SurfaceDropDown";
+            this.SurfaceDropDown.Size = new System.Drawing.Size(114, 21);
+            this.SurfaceDropDown.TabIndex = 10;
+            this.SurfaceDropDown.SelectedIndexChanged += new System.EventHandler(this.SurfaceDropDown_SelectedIndexChanged);
             // 
             // label4
             // 
@@ -617,6 +643,8 @@
         private System.Windows.Forms.GroupBox ProductionGroupBox;
         private System.Windows.Forms.CheckBox PauseUpdatesCheckbox;
         private System.Windows.Forms.ComboBox RateOptionsDropDown;
+        private System.Windows.Forms.Label SurfaceLabel;
+        private System.Windows.Forms.ComboBox SurfaceDropDown;
         private System.Windows.Forms.GroupBox GridLinesGroupBox;
         private System.Windows.Forms.Button AlignSelectionButton;
         private System.Windows.Forms.CheckBox GridlinesCheckbox;

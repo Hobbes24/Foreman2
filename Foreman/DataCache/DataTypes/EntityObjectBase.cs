@@ -28,6 +28,10 @@ namespace Foreman
 
 		double GetBaseFuelConsumptionRate(Item fuel, Quality quality, double temperature = double.NaN);
 
+		//a machine can be surface locked too, and independently of the recipes it runs: crusher is space
+		//only (gravity 0..0), captive-biter-spawner is nauvis only, heating-tower needs pressure >= 10.
+		IReadOnlyList<SurfaceCondition> SurfaceConditions { get; }
+
 		bool IsMissing { get; }
 
 		double GetSpeed(Quality quality);
@@ -55,6 +59,9 @@ namespace Foreman
 		public IReadOnlyCollection<Item> Fuels { get { return fuels; } }
 		public IReadOnlyCollection<Item> AssociatedItems { get { return associatedItems; } }
 		public IReadOnlyDictionary<string, double> Pollution { get { return pollution; } }
+
+		public IReadOnlyList<SurfaceCondition> SurfaceConditions { get { return surfaceConditions; } }
+		internal IReadOnlyList<SurfaceCondition> surfaceConditions { get; set; }
 
 		internal HashSet<ModulePrototype> modules { get; private set; }
 		internal HashSet<ItemPrototype> fuels { get; private set; }
@@ -94,6 +101,7 @@ namespace Foreman
 		public EntityObjectBasePrototype(DataCache dCache, string name, string friendlyName, EntityType type, EnergySource source, bool isMissing) : base(dCache, name, friendlyName, "-")
 		{
 			availableOverride = false;
+			surfaceConditions = SurfaceCondition.None;
 
 			modules = new HashSet<ModulePrototype>();
 			fuels = new HashSet<ItemPrototype>();

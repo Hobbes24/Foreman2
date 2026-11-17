@@ -157,10 +157,19 @@ namespace Foreman
 
 		private void SetupAssemblerOptions()
 		{
-			CleanTable(AssemblerChoiceTable, nodeData.BaseRecipe.Recipe.Assemblers.Count(a => a.Enabled));
+			//A machine that cannot be built on this tab's surface is not an option for this node. Two guards:
+			//the currently selected machine is always kept in the list, so the node's real state stays visible
+			//and the node warning is what explains it; and if nothing at all passes, the filter is dropped
+			//rather than leaving an empty chooser on a node that could then never be edited.
+			Surface surface = myGraphViewer.Graph.SelectedSurface;
+			List<Assembler> assemblerOptions = nodeData.BaseRecipe.Recipe.Assemblers.Where(a => a.Enabled).ToList();
+			if (surface != null && assemblerOptions.Any(a => surface.Passes(a.SurfaceConditions)))
+				assemblerOptions = assemblerOptions.Where(a => surface.Passes(a.SurfaceConditions) || a == nodeData.SelectedAssembler.Assembler).ToList();
+
+			CleanTable(AssemblerChoiceTable, assemblerOptions.Count);
 
 			AssemblerOptions.Clear();
-			foreach (Assembler assembler in nodeData.BaseRecipe.Recipe.Assemblers.Where(a => a.Enabled))
+			foreach (Assembler assembler in assemblerOptions)
 			{
 				Button button = InitializeBaseButton(assembler, qualitySelectorIndexSet[QualitySelector.SelectedIndex]);
 				button.Click += new EventHandler(AssemblerButton_Click);

@@ -55,6 +55,9 @@ namespace Foreman
             AModulesQualityIsDisabled = 0b_0010_0000_0000_0000_0000,
             BModulesQualityIsDisabled = 0b_0100_0000_0000_0000_0000,
 
+            RecipeNotOnSurface = 0b_1000_0000_0000_0000_0000,
+            AssemblerNotOnSurface = 0b_0001_0000_0000_0000_0000_0000,
+
             TemeratureFluidBurnerInvalidLinks = 0b_0100_0000_0000_0000,
 		}
 		public Errors ErrorSet { get; private set; }
@@ -285,6 +288,16 @@ namespace Foreman
 
 			if (SelectedAssembler.Assembler.IsTemperatureFluidBurner && !LinkChecker.GetTemperatureRange(Fuel as Fluid, ReadOnlyNode, LinkType.Output, false).IsPoint())
 				WarningSet |= Warnings.TemeratureFluidBurnerInvalidLinks;
+
+			//surface conditions, when this tab is planning for one. Presentation only - a node that cannot be
+			//built on the selected surface still solves exactly as before, it just says so.
+			if (MyGraph.SelectedSurface != null)
+			{
+				if (!MyGraph.SelectedSurface.Passes(BaseRecipe.Recipe.SurfaceConditions))
+					WarningSet |= Warnings.RecipeNotOnSurface;
+				if (!MyGraph.SelectedSurface.Passes(SelectedAssembler.Assembler.SurfaceConditions))
+					WarningSet |= Warnings.AssemblerNotOnSurface;
+			}
 
 			if (WarningSet != Warnings.Clean)
 				return NodeState.Warning;
@@ -654,6 +667,10 @@ namespace Foreman
 				output.Add("X> Selected recipe is disabled.");
 			if ((WarningSet & RecipeNode.Warnings.RecipeIsUnavailable) != 0)
 				output.Add("X> Selected recipe is unavailable in regular play.");
+			if ((WarningSet & RecipeNode.Warnings.RecipeNotOnSurface) != 0)
+				output.Add(string.Format("X> Selected recipe cannot be crafted on {0}.", MyNode.MyGraph.SelectedSurface?.FriendlyName));
+			if ((WarningSet & RecipeNode.Warnings.AssemblerNotOnSurface) != 0)
+				output.Add(string.Format("X> Selected assembler cannot be built on {0}.", MyNode.MyGraph.SelectedSurface?.FriendlyName));
 
 			if ((WarningSet & RecipeNode.Warnings.NoAvailableAssemblers) != 0)
 				output.Add("X> No enabled assemblers for this recipe.");

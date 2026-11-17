@@ -156,7 +156,8 @@ namespace Foreman
 				iconJObject["fluids"].Count() +
 				iconJObject["entities"].Count() +
 				iconJObject["groups"].Count() +
-				iconJObject["qualities"].Count();
+				iconJObject["qualities"].Count() +
+				(iconJObject["surfaces"]?.Count() ?? 0); //absent from any preset exported before surfaces were added
 
 			progress.Report(new KeyValuePair<int, string>(startingPercent, "Creating icons."));
 			int counter = 0;
@@ -201,6 +202,15 @@ namespace Foreman
                 if (token.IsCancellationRequested) return false;
                 progress.Report(new KeyValuePair<int, string>(startingPercent + (endingPercent - startingPercent) * counter++ / totalCount, ""));
                 ProcessIcon(iconJToken, 32);
+            }
+            if (iconJObject["surfaces"] != null)
+            {
+                foreach (var iconJToken in iconJObject["surfaces"].ToList())
+                {
+                    if (token.IsCancellationRequested) return false;
+                    progress.Report(new KeyValuePair<int, string>(startingPercent + (endingPercent - startingPercent) * counter++ / totalCount, ""));
+                    ProcessIcon(iconJToken, 64);
+                }
             }
 
             IconCache.SaveIconCache(cachePath, myIconCache);

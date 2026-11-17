@@ -150,6 +150,7 @@
     <Compile Include="DataCache\DataTypes\EntityObjectBase.cs" />
     <Compile Include="DataCache\DataTypes\Fluid.cs" />
     <Compile Include="DataCache\DataTypes\Quality.cs" />
+    <Compile Include="DataCache\DataTypes\Surface.cs" />
     <Compile Include="DataCache\DataTypes\PlantProcess.cs" />
     <Compile Include="DataCache\DataTypes\PlantShort.cs" />
     <Compile Include="DataCache\DataTypes\RecipeShort.cs" />

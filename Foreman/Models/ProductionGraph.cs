@@ -102,6 +102,12 @@ namespace Foreman
 
 		public Quality DefaultAssemblerQuality { get; set; }
 
+		//The surface this tab is planning for, or null for no surface filtering at all - which is what
+		//every graph saved before this existed reads as, and what any preset without surfaces (vanilla,
+		//pyanodons) is stuck with. Presentation only: it hides off-surface recipes in the picker and marks
+		//off-surface nodes with a warning. The solver never sees it, so rates are untouched either way.
+		public Surface SelectedSurface { get; set; }
+
 		public event EventHandler<NodeEventArgs> NodeAdded;
 		public event EventHandler<NodeEventArgs> NodeDeleted;
 		public event EventHandler<NodeLinkEventArgs> LinkAdded;
@@ -548,6 +554,8 @@ namespace Foreman
 			info.AddValue("Solver_LowPriorityPower", LowPriorityPower);
 			info.AddValue("MaxQualitySteps", MaxQualitySteps);
 			info.AddValue("DefaultQuality", DefaultAssemblerQuality.Name);
+			if (SelectedSurface != null)
+				info.AddValue("SelectedSurface", SelectedSurface.Name);
 
 			info.AddValue("IncludedItems", includedItems);
 			info.AddValue("IncludedRecipes", includedRecipeShorts);
@@ -593,6 +601,12 @@ namespace Foreman
 					LowPriorityPower = (double)json["Solver_LowPriorityPower"];
 					MaxQualitySteps = (uint)json["MaxQualitySteps"];
 					DefaultAssemblerQuality = qualityLinks[(string)json["DefaultQuality"]];
+
+					//absent on any graph saved before surfaces existed, and on any graph saved with no surface
+					//picked. A name the current preset does not have (loading a space age graph under pyanodons)
+					//drops to no filter rather than inventing a missing surface - there is nothing to plan against.
+					string surfaceName = (string)json["SelectedSurface"];
+					SelectedSurface = (surfaceName != null && cache.Surfaces.TryGetValue(surfaceName, out Surface savedSurface)) ? savedSurface : null;
 				}
 
 				//utility items - absent on any graph saved before the feature existed, which reads as an empty roster.

@@ -22,6 +22,7 @@ namespace Foreman
 		public IEnumerable<Item> AvailableItems { get { return items.Values.Where(g => g.Available); } }
 		public IEnumerable<Recipe> AvailableRecipes { get { return recipes.Values.Where(g => g.Available); } }
 		public IEnumerable<PlantProcess> AvailablePlantProcesses { get { return plantProcesses.Values.Where(g => g.Available); } }
+		public IEnumerable<Surface> AvailableSurfaces { get { return surfaces.Values.Where(g => g.Available); } }
 
 		//mods: <name, version>
 		//others: <name, object>
@@ -31,6 +32,26 @@ namespace Foreman
 		public IReadOnlyDictionary<string, Group> Groups { get { return groups; } }
 		public IReadOnlyDictionary<string, Subgroup> Subgroups { get { return subgroups; } }
 		public IReadOnlyDictionary<string, Quality> Qualities { get { return qualities; } }
+		public IReadOnlyDictionary<string, Surface> Surfaces { get { return surfaces; } }
+		public IReadOnlyDictionary<string, SurfaceProperty> SurfaceProperties { get { return surfaceProperties; } }
+
+		//Whether a surface selector can change anything in this preset. Having surfaces is not enough:
+		//gravity, pressure and the rest plus the nauvis planet all come from base, so a space exploration
+		//or vanilla 2.0 preset exports one surface and zero conditioned recipes. A selector that cannot
+		//change a single row is worse than no selector, so the UI hides itself on this rather than on
+		//Surfaces.Count. Cached because the recipe scan is over every recipe in the preset (50k+ in py)
+		//and the recipe picker asks on every open.
+		public bool SurfaceFilteringIsUseful
+		{
+			get
+			{
+				if (surfaceFilteringIsUseful == null)
+					surfaceFilteringIsUseful = surfaces.Count > 0 &&
+						(recipes.Values.Any(r => r.SurfaceConditions.Count > 0) ||
+						 assemblers.Values.Any(a => a.SurfaceConditions.Count > 0));
+				return surfaceFilteringIsUseful.Value;
+			}
+		}
 		public IReadOnlyDictionary<string, Item> Items { get { return items; } }
 		public IReadOnlyDictionary<string, Recipe> Recipes { get { return recipes; } }
 		public IReadOnlyDictionary<string, PlantProcess> PlantProcesses { get { return plantProcesses; } }
@@ -67,6 +88,9 @@ namespace Foreman
 		private Dictionary<string, Group> groups;
 		private Dictionary<string, Subgroup> subgroups;
 		private Dictionary<string, Quality> qualities;
+		private Dictionary<string, Surface> surfaces;
+		private Dictionary<string, SurfaceProperty> surfaceProperties;
+		private bool? surfaceFilteringIsUseful;
 		private Dictionary<string, Item> items;
 		private Dictionary<string, Recipe> recipes;
 		private Dictionary<string, PlantProcess> plantProcesses;
@@ -124,6 +148,8 @@ namespace Foreman
 			groups = new Dictionary<string, Group>();
 			subgroups = new Dictionary<string, Subgroup>();
 			qualities = new Dictionary<string, Quality>();
+			surfaces = new Dictionary<string, Surface>();
+			surfaceProperties = new Dictionary<string, SurfaceProperty>();
 			items = new Dictionary<string, Item>();
 			recipes = new Dictionary<string, Recipe>();
 			plantProcesses = new Dictionary<string, PlantProcess>();
@@ -265,6 +291,15 @@ namespace Foreman
 				foreach (QualityPrototype quality in qualities.Values.Cast<QualityPrototype>())
 					ProcessQualityLink(quality, nextQualities);
 				PostProcessQuality();
+
+				//both sections are absent from every preset exported before surfaces were added, and stay
+				//absent for any game without space age - so a missing key is normal, not a broken preset.
+				if (jsonData["surface_properties"] != null)
+					foreach (var objJToken in jsonData["surface_properties"].ToList())
+						ProcessSurfaceProperty(objJToken);
+				if (jsonData["surfaces"] != null)
+					foreach (var objJToken in jsonData["surfaces"].ToList())
+						ProcessSurface(objJToken, iconCache);
 
 				foreach (var objJToken in jsonData["fluids"].ToList())
 					ProcessFluid(objJToken, iconCache, fuelCategories);
@@ -678,6 +713,58 @@ namespace Foreman
 			groups.Add(group.Name, group);
 		}
 
+		//recipes and entities carry surface conditions in the same shape. An absent key means no conditions,
+		//which is the overwhelming majority, so the empty case returns a shared empty list rather than
+		//allocating thousands of them. min and max are each optional and become infinities.
+		private static IReadOnlyList<SurfaceCondition> ReadSurfaceConditions(JToken objJToken)
+		{
+			if (objJToken["surface_conditions"] == null)
+				return SurfaceCondition.None;
+
+			List<SurfaceCondition> conditions = new List<SurfaceCondition>();
+			foreach (JToken conditionJToken in objJToken["surface_conditions"].ToList())
+			{
+				conditions.Add(new SurfaceCondition(
+					(string)conditionJToken["property"],
+					conditionJToken["min"] != null ? (double)conditionJToken["min"] : double.NegativeInfinity,
+					conditionJToken["max"] != null ? (double)conditionJToken["max"] : double.PositiveInfinity));
+			}
+			return conditions.Count == 0 ? SurfaceCondition.None : (IReadOnlyList<SurfaceCondition>)conditions;
+		}
+
+		private void ProcessSurfaceProperty(JToken objJToken)
+		{
+			SurfaceProperty sProperty = new SurfaceProperty(
+				(string)objJToken["name"],
+				(string)objJToken["localised_name"] ?? (string)objJToken["name"],
+				(double)objJToken["default_value"],
+				objJToken["is_time"] != null && (bool)objJToken["is_time"]);
+
+			surfaceProperties[sProperty.Name] = sProperty;
+		}
+
+		private void ProcessSurface(JToken objJToken, Dictionary<string, IconColorPair> iconCache)
+		{
+			SurfacePrototype surface = new SurfacePrototype(
+				this,
+				(string)objJToken["name"],
+				(string)objJToken["localised_name"] ?? (string)objJToken["name"],
+				(string)objJToken["order"] ?? "",
+				(string)objJToken["type"] ?? "planet");
+
+			surface.Available = !(objJToken["hidden"] != null && (bool)objJToken["hidden"]);
+			surface.Enabled = surface.Available;
+
+			if (objJToken["properties"] != null)
+				foreach (JProperty property in objJToken["properties"].Cast<JProperty>())
+					surface.propertyOverrides[property.Name] = (double)property.Value;
+
+			if (iconCache.ContainsKey((string)objJToken["icon_name"]))
+				surface.SetIconAndColor(iconCache[(string)objJToken["icon_name"]]);
+
+			surfaces[surface.Name] = surface;
+		}
+
 		private void ProcessQuality(JToken objJToken, Dictionary<string, IconColorPair> iconCache, Dictionary<Quality, string> nextQualities)
 		{
 			QualityPrototype quality = new QualityPrototype(
@@ -949,6 +1036,8 @@ namespace Foreman
 				recipe.SetIconAndColor(iconCache[(string)objJToken["icon_name"]]);
 			else if (iconCache.ContainsKey((string)objJToken["icon_alt_name"]))
 				recipe.SetIconAndColor(iconCache[(string)objJToken["icon_alt_name"]]);
+
+			recipe.surfaceConditions = ReadSurfaceConditions(objJToken);
 
 			recipe.HasProductivityResearch = (objJToken["prod_research"] != null && (bool)objJToken["prod_research"]);
 			recipe.MaxProductivityBonus = objJToken["maximum_productivity"] == null ? 1000 : (double)objJToken["maximum_productivity"];
@@ -1239,6 +1328,8 @@ namespace Foreman
 					esource,
 					false);
 			}
+
+			entity.surfaceConditions = ReadSurfaceConditions(objJToken);
 
 			//icons
 			if (iconCache.ContainsKey((string)objJToken["icon_name"]))

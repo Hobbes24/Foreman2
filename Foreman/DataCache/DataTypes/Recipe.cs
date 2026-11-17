@@ -45,8 +45,11 @@ namespace Foreman
 		string GetProductFriendlyName(Item item);
 		bool TestIngredientConnection(Recipe provider, Item ingredient);
 
+		//surface conditions a surface must satisfy for this recipe to be craftable on it. Empty for almost
+		//every recipe; in space age the 36 that have them are the planet science packs and planet buildings.
+		IReadOnlyList<SurfaceCondition> SurfaceConditions { get; }
+
 		//trash items (spoiled items from spoiling of items already inside assembler) are ignored
-		//planet conditions are ignored
 	}
 
 	public class RecipePrototype : DataObjectBasePrototype, Recipe
@@ -88,6 +91,9 @@ namespace Foreman
 
 		internal HashSet<TechnologyPrototype> myUnlockTechnologies { get; private set; }
 
+		public IReadOnlyList<SurfaceCondition> SurfaceConditions { get { return surfaceConditions; } }
+		internal IReadOnlyList<SurfaceCondition> surfaceConditions { get; set; }
+
 		public bool IsMissing { get; private set; }
 
         public bool AllowConsumptionBonus { get; internal set; }
@@ -108,6 +114,7 @@ namespace Foreman
         public RecipePrototype(DataCache dCache, string name, string friendlyName, SubgroupPrototype subgroup, string order, bool isMissing = false) : base(dCache, name, friendlyName, order)
 		{
 			RecipeID = lastRecipeID++;
+			surfaceConditions = SurfaceCondition.None;
 
 			mySubgroup = subgroup;
 			subgroup.recipes.Add(this);

@@ -52,6 +52,9 @@ namespace Foreman
             this.TechTierSelectorTable = new System.Windows.Forms.TableLayoutPanel();
             this.TechTierLabel = new System.Windows.Forms.Label();
             this.TechTierButton = new System.Windows.Forms.Button();
+            this.SurfaceSelectorTable = new System.Windows.Forms.TableLayoutPanel();
+            this.SurfaceLabel = new System.Windows.Forms.Label();
+            this.SurfaceButton = new System.Windows.Forms.Button();
             this.OtherNodeOptionsATable = new System.Windows.Forms.TableLayoutPanel();
             this.AddSupplyButton = new System.Windows.Forms.Button();
             this.AddPassthroughButton = new System.Windows.Forms.Button();
@@ -65,6 +68,7 @@ namespace Foreman
             this.tableLayoutPanel2.SuspendLayout();
             this.QualitySelectorTable.SuspendLayout();
             this.TechTierSelectorTable.SuspendLayout();
+            this.SurfaceSelectorTable.SuspendLayout();
             this.OtherNodeOptionsATable.SuspendLayout();
             this.IRTable.SuspendLayout();
             this.SuspendLayout();
@@ -188,12 +192,14 @@ namespace Foreman
             this.TopOptionsTable.Controls.Add(this.ShowHiddenCheckBox, 2, 1);
             this.TopOptionsTable.Controls.Add(this.QualitySelectorTable, 1, 3);
             this.TopOptionsTable.Controls.Add(this.TechTierSelectorTable, 1, 4);
+            this.TopOptionsTable.Controls.Add(this.SurfaceSelectorTable, 1, 5);
             this.TopOptionsTable.Dock = System.Windows.Forms.DockStyle.Fill;
             this.TopOptionsTable.ForeColor = System.Drawing.Color.White;
             this.TopOptionsTable.Location = new System.Drawing.Point(3, 5);
             this.TopOptionsTable.Name = "TopOptionsTable";
             this.TopOptionsTable.Padding = new System.Windows.Forms.Padding(0, 0, 0, 6);
-            this.TopOptionsTable.RowCount = 5;
+            this.TopOptionsTable.RowCount = 6;
+            this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
             this.TopOptionsTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
@@ -390,6 +396,45 @@ namespace Foreman
             this.TechTierSelectorTable.TabIndex = 11;
             this.TechTierSelectorTable.Visible = false;
             // 
+            // SurfaceSelectorTable
+            // 
+            this.SurfaceSelectorTable.AutoSize = true;
+            this.SurfaceSelectorTable.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
+            this.SurfaceSelectorTable.ColumnCount = 2;
+            this.TopOptionsTable.SetColumnSpan(this.SurfaceSelectorTable, 2);
+            this.SurfaceSelectorTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 80F));
+            this.SurfaceSelectorTable.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle());
+            this.SurfaceSelectorTable.Controls.Add(this.SurfaceButton, 1, 0);
+            this.SurfaceSelectorTable.Controls.Add(this.SurfaceLabel, 0, 0);
+            this.SurfaceSelectorTable.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.SurfaceSelectorTable.Margin = new System.Windows.Forms.Padding(0, 0, 0, 0);
+            this.SurfaceSelectorTable.Name = "SurfaceSelectorTable";
+            this.SurfaceSelectorTable.RowCount = 1;
+            this.SurfaceSelectorTable.RowStyles.Add(new System.Windows.Forms.RowStyle());
+            this.SurfaceSelectorTable.TabIndex = 14;
+            this.SurfaceSelectorTable.Visible = false;
+            // 
+            // SurfaceLabel
+            // 
+            this.SurfaceLabel.Anchor = System.Windows.Forms.AnchorStyles.Right;
+            this.SurfaceLabel.AutoSize = true;
+            this.SurfaceLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.SurfaceLabel.Name = "SurfaceLabel";
+            this.SurfaceLabel.TabIndex = 15;
+            this.SurfaceLabel.Text = "Surface:";
+            // 
+            // SurfaceButton
+            // 
+            this.SurfaceButton.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.SurfaceButton.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.SurfaceButton.BackColor = System.Drawing.Color.DimGray;
+            this.SurfaceButton.ForeColor = System.Drawing.Color.White;
+            this.SurfaceButton.Margin = new System.Windows.Forms.Padding(3, 2, 3, 2);
+            this.SurfaceButton.Name = "SurfaceButton";
+            this.SurfaceButton.TabIndex = 16;
+            this.SurfaceButton.Text = "All Surfaces";
+            this.SurfaceButton.UseVisualStyleBackColor = false;
+            // 
             // TechTierLabel
             // 
             this.TechTierLabel.Anchor = System.Windows.Forms.AnchorStyles.Right;
@@ -563,6 +608,8 @@ namespace Foreman
             this.QualitySelectorTable.PerformLayout();
             this.TechTierSelectorTable.ResumeLayout(false);
             this.TechTierSelectorTable.PerformLayout();
+            this.SurfaceSelectorTable.ResumeLayout(false);
+            this.SurfaceSelectorTable.PerformLayout();
             this.OtherNodeOptionsATable.ResumeLayout(false);
             this.OtherNodeOptionsATable.PerformLayout();
             this.IRTable.ResumeLayout(false);
@@ -603,5 +650,8 @@ namespace Foreman
         protected System.Windows.Forms.TableLayoutPanel TechTierSelectorTable;
         protected System.Windows.Forms.Label TechTierLabel;
         protected System.Windows.Forms.Button TechTierButton;
+        protected System.Windows.Forms.TableLayoutPanel SurfaceSelectorTable;
+        protected System.Windows.Forms.Label SurfaceLabel;
+        protected System.Windows.Forms.Button SurfaceButton;
     }
 }

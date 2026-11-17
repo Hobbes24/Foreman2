@@ -569,6 +569,11 @@ namespace Foreman
         private static HashSet<string> enabledSciencePacks;  // null = all packs (no filter). stores Item.Name keys
         private static List<Item> sciencePackValues;          // ordered list of science packs, maps listbox index → Item
         private ToolStripDropDown techTierDropDown;
+        //Per-picker escape hatch for the surface filter. Off-surface recipes are hidden rather than greyed,
+        //so without a way to switch the filter off there would be no way to deliberately place a node for a
+        //surface you are not planning on. Deliberately NOT static, unlike the science pack filter: ignoring
+        //the surface is a one-off action, not a preference, and it resets the next time the picker opens.
+        private bool ignoreSurfaceFilter;
         private CheckedListBox techTierListBox;
 
         public RecipeChooserPanel(ProductionGraphViewer parent, Point originPoint, ItemQualityPair item, fRange tempRange, NewNodeType nodeType) : base(parent, originPoint)
@@ -580,6 +585,12 @@ namespace Foreman
             enabledSciencePacks = LoadTechTierSettings();
             TechTierButton.Click += TechTierButton_Click;
             UpdateTechTierButtonText();
+
+            //a preset with nothing conditioned on a surface (vanilla, pyanodons, space exploration) can filter
+            //nothing, so the row never appears at all
+            SurfaceSelectorTable.Visible = DCache.SurfaceFilteringIsUseful;
+            SurfaceButton.Click += SurfaceButton_Click;
+            UpdateSurfaceButtonText();
 
             if (!item)
             {
@@ -833,6 +844,51 @@ namespace Foreman
             }
         }
 
+        private Surface FilterSurface { get { return ignoreSurfaceFilter ? null : PGViewer.Graph.SelectedSurface; } }
+
+        private bool PassesSurfaceFilter(Recipe recipe, bool ignoreAssemblerStatus)
+        {
+            Surface surface = FilterSurface;
+            if (surface == null)
+                return true;
+
+            if (!surface.Passes(recipe.SurfaceConditions))
+                return false;
+
+            //A recipe whose machines all fail the surface is not craftable here either, and that is the half
+            //a recipe-only filter gets wrong: crusher is space platform only, captive-biter-spawner is nauvis
+            //only. Respects the existing ignore-assembler-status checkbox, same as the other assembler checks.
+            if (ignoreAssemblerStatus || recipe.Assemblers.Count == 0)
+                return true;
+            return recipe.Assemblers.Any(a => surface.Passes(a.SurfaceConditions));
+        }
+
+        private void SurfaceButton_Click(object sender, EventArgs e)
+        {
+            if (PGViewer.Graph.SelectedSurface == null)
+                return;
+
+            ignoreSurfaceFilter = !ignoreSurfaceFilter;
+            UpdateSurfaceButtonText();
+            UpdateIRButtons();
+        }
+
+        private void UpdateSurfaceButtonText()
+        {
+            Surface graphSurface = PGViewer.Graph.SelectedSurface;
+            if (graphSurface == null)
+            {
+                SurfaceButton.Text = "All Surfaces";
+                SurfaceButton.Enabled = false;
+                return;
+            }
+
+            SurfaceButton.Enabled = true;
+            SurfaceButton.Text = ignoreSurfaceFilter
+                ? graphSurface.FriendlyName + " (ignored)"
+                : graphSurface.FriendlyName;
+        }
+
         private bool PassesSciencePackFilter(Recipe recipe)
         {
             if (enabledSciencePacks == null)
@@ -889,7 +945,7 @@ namespace Foreman
 						(includeSuppliers && includeFuel && KeyItem.Item.FuelOrigin != null && r.Assemblers.Any(a => a.Fuels.Contains(KeyItem.Item.FuelOrigin) && (a.Enabled || ignoreAssemblerStatus))))) //producers of item (as fuel remains) -> check assembler status here as well for same reason
 					{
                         //quick hidden / enabled / available assembler check (done prior to name check for speed)
-                        if ((recipe.Enabled || showHidden) && (recipe.Assemblers.Any(a => a.Enabled) || ignoreAssemblerStatus) && (recipe.Available || ShowUnavailable) && PassesSciencePackFilter(recipe))
+                        if ((recipe.Enabled || showHidden) && (recipe.Assemblers.Any(a => a.Enabled) || ignoreAssemblerStatus) && (recipe.Available || ShowUnavailable) && PassesSciencePackFilter(recipe) && PassesSurfaceFilter(recipe, ignoreAssemblerStatus))
                         {
 							//name check - have to check recipe name along with all ingredients and products (both friendly name and base name) - if selected
 							if (recipe.LFriendlyName.Contains(filterString) ||

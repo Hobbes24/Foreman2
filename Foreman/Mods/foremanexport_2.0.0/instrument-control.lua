@@ -241,6 +241,90 @@ local function ExportTurdUpgrades()
 	etable['turd_upgrades'] = tturds
 end
 
+-- surface_conditions is an array of {property, min, max} with min and max each optional. Both recipes
+-- and entities carry it (crusher is gravity 0..0, aka a space platform only; captive-biter-spawner is
+-- pressure 1000..1000, aka nauvis only), so it is read in one place. Returns nil when there are no
+-- conditions, which is the case for all but a few dozen prototypes - leaving the key off keeps the
+-- preset small.
+local function ReadSurfaceConditions(prototype)
+	if prototype.surface_conditions == nil then return nil end
+
+	local tconditions = {}
+	for _, condition in pairs(prototype.surface_conditions) do
+		local tcondition = {}
+		tcondition['property'] = condition.property
+		if condition.min ~= nil then tcondition['min'] = condition.min end
+		if condition.max ~= nil then tcondition['max'] = condition.max end
+		table.insert(tconditions, tcondition)
+	end
+
+	if #tconditions == 0 then return nil end
+	return tconditions
+end
+
+-- A surface lists only the properties it differs from the defaults on, so the overrides are handed over
+-- as they are and the reader fills the rest in from the property defaults.
+local function ReadSurface(prototype)
+	tsurface = {}
+	tsurface['name'] = prototype.name
+	tsurface['type'] = prototype.type
+	tsurface['icon_name'] = 'icon.s.'..prototype.name
+	tsurface['order'] = prototype.order
+	tsurface['hidden'] = prototype.hidden
+
+	tsurface['properties'] = {}
+	if prototype.surface_properties ~= nil then
+		for property, value in pairs(prototype.surface_properties) do
+			tsurface['properties'][property] = value
+		end
+	end
+
+	tsurface['lid'] = '$'..localindex
+	ExportLocalisedString(prototype.localised_name, localindex)
+	localindex = localindex + 1
+
+	return tsurface
+end
+
+-- Two prototype tables carry surface properties and both are needed. Planets live in
+-- prototypes.space_location alongside non-planet space locations, and reading surface_properties off a
+-- non-planet raises, so the type is checked first. The space platform is not a planet at all - it is a
+-- 'surface' prototype - and without it the thruster fuel recipes (gravity 0..0) would be craftable
+-- nowhere. Both tables are absent in a game without space age, hence the nil guards.
+local function ExportSurfaces()
+	tproperties = {}
+	if prototypes.surface_property ~= nil then
+		for _, sproperty in pairs(prototypes.surface_property) do
+			tproperty = {}
+			tproperty['name'] = sproperty.name
+			tproperty['default_value'] = sproperty.default_value
+			tproperty['is_time'] = sproperty.is_time
+
+			tproperty['lid'] = '$'..localindex
+			ExportLocalisedString(sproperty.localised_name, localindex)
+			localindex = localindex + 1
+
+			table.insert(tproperties, tproperty)
+		end
+	end
+	etable['surface_properties'] = tproperties
+
+	tsurfaces = {}
+	if prototypes.space_location ~= nil then
+		for _, location in pairs(prototypes.space_location) do
+			if location.type == 'planet' then
+				table.insert(tsurfaces, ReadSurface(location))
+			end
+		end
+	end
+	if prototypes.surface ~= nil then
+		for _, surface in pairs(prototypes.surface) do
+			table.insert(tsurfaces, ReadSurface(surface))
+		end
+	end
+	etable['surfaces'] = tsurfaces
+end
+
 local function ExportRecipes()
 	trecipes = {}
 	-- factorio 2.1 replaced LuaRecipePrototype's single 'category' with a 'categories' array, and reading the
@@ -280,19 +364,14 @@ local function ExportRecipes()
 
 		trecipe['allowed_effects'] = recipe.allowed_effects
 
-		if recipe.allowed_module_categories ~= nil then
-			trecipe['allowed_module_categories'] = {}
-			for name, _ in pairs(trecipe['allowed_module_categories']) do
-				table.insert(trecipe['allowed_module_categories'], name)
-			end	
-		end
+		-- allowed_module_categories is a set keyed by category name, and the reader on the other side takes
+		-- the property names straight off it - so hand the table over as it is. Rebuilding it was the bug:
+		-- the loop walked the empty table it had just created, so every recipe exported an empty set and the
+		-- reader read that as 'no restriction'. The entity export further down already passes it through.
+		trecipe['allowed_module_categories'] = recipe.allowed_module_categories
 
-		if recipe.surface_conditions ~= nil then
-			trecipe['surface_conditions'] = {}
-			for name, _ in pairs(trecipe['surface_conditions']) do
-				table.insert(trecipe['surface_conditions'], name)
-			end	
-		end
+		-- the old loop here had the same slip as allowed_module_categories above and always exported nothing.
+		trecipe['surface_conditions'] = ReadSurfaceConditions(recipe)
 
 		if recipe.trash ~= nil then
 			trecipe['trash'] = {}
@@ -546,6 +625,10 @@ local function ExportEntities()
 				tentity['allowed_effects'] = entity.allowed_effects ~= nil and entity.allowed_effects or {}
 
 				tentity['allowed_module_categories'] = entity.allowed_module_categories
+
+				-- a machine can be surface locked as well as a recipe, and the two do not have to agree:
+				-- a recipe craftable on aquilo is of no use if its only assembler cannot be built there.
+				tentity['surface_conditions'] = ReadSurfaceConditions(entity)
 			end
 
 			tentity['items_to_place_this'] = {}
@@ -810,6 +893,7 @@ script.on_nth_tick(1,
 		ExportRecipes()
 
 		ExportQuality()
+		ExportSurfaces()
 
 		ExportItems()
 		ExportFluids()

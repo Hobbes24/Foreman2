@@ -71,6 +71,7 @@ output['fluids'] = data.raw.fluid
 output['groups'] = data.raw['item-group']
 output['entities'] = {}
 output['qualities'] = data.raw.quality
+output['surfaces'] = {}
 
 --depreciated: 'item-with-inventory', 'item-with-label', 'item-with-tags'
 for _, section in ipairs({ 'ammo', 'armor', 'capsule', 'gun', 'item', 'item-with-entity-data', 'module', 'rail-planner', 'repair-tool', 'selection-tool', 'spider-vehicle', 'spidertron-remote', 'tool', 'upgrade-item' }) do
@@ -81,6 +82,18 @@ for _, section in ipairs({ 'ammo', 'armor', 'capsule', 'gun', 'item', 'item-with
 	else
 		for name, obj in pairs(data.raw[section]) do
 			output['items'][name] = obj
+		end
+	end
+end
+
+-- planets and the space platform both carry surface properties but are different prototype types,
+-- and neither exists in a game without space age.
+for _, section in ipairs({'planet', 'surface'}) do
+	if data.raw[section] == nil then
+		log('FOREMAN: no surface prototypes of type '..section)
+	else
+		for name, obj in pairs(data.raw[section]) do
+			output['surfaces'][name] = obj
 		end
 	end
 end
@@ -176,7 +189,20 @@ if output.qualities ~= nil then
 		counter = counter - 1 if counter > 0 then ExportLine('},', 2) else ExportLine('}', 2) end
 	end
 end
-ExportLine(']', 1)	
+ExportLine('],', 1)	
+
+ExportLine('"surfaces": [', 1)
+if output.surfaces ~= nil then
+	counter = 0 for _,_ in pairs(output.surfaces) do counter = counter + 1 end
+	for _, data in pairs(output.surfaces) do
+		ExportLine('{', 2)
+		ExportParameter('name', data.name, false, ',', 3)
+		ExportParameter('icon_name', "icon.s."..data.name, false, ',', 3)
+		ExportIcon(data.icon, data.icon_size, data.icons)
+		counter = counter - 1 if counter > 0 then ExportLine('},', 2) else ExportLine('}', 2) end
+	end
+end
+ExportLine(']', 1)
 
 
 ExportLine('}', 0)

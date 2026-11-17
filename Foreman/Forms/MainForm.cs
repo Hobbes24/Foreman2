@@ -688,6 +688,7 @@ namespace Foreman
             try
             {
                 RateOptionsDropDown.SelectedIndex    = (int)v.Graph.SelectedRateUnit;
+                PopulateSurfaceDropDown(v);
                 PauseUpdatesCheckbox.Checked         = v.Graph.PauseUpdates;
                 IconViewCheckBox.Checked             = v.IconsOnly;
                 GridlinesCheckbox.Checked            = state.ShowGridlines;
@@ -1411,6 +1412,53 @@ namespace Foreman
         }
 
 		//---------------------------------------------------------Production Graph properties
+
+        //The surface a tab is planning for. Rebuilt per tab rather than once, because a viewer carries its
+        //own DCache and a preset without surfaces (vanilla, pyanodons) must not offer the control at all.
+        //Index 0 is always "All Surfaces", which is a null SelectedSurface and means no filtering.
+        private readonly List<Surface> surfaceDropDownIndexSet = new List<Surface>();
+
+        private void PopulateSurfaceDropDown(ProductionGraphViewer v)
+        {
+            surfaceDropDownIndexSet.Clear();
+            SurfaceDropDown.Items.Clear();
+
+            SurfaceDropDown.Items.Add("All Surfaces");
+            surfaceDropDownIndexSet.Add(null);
+
+            //the cast gets Comparer<DataObjectBase>, which is where the prototype order comparison lives
+            foreach (Surface surface in v.DCache.AvailableSurfaces.OrderBy(x => (DataObjectBase)x))
+            {
+                SurfaceDropDown.Items.Add(surface.FriendlyName);
+                surfaceDropDownIndexSet.Add(surface);
+            }
+
+            //Surfaces.Count > 1 is not the test - see DataCache.SurfaceFilteringIsUseful. A preset can export
+            //a surface from base with nothing conditioned on it, and offering a choice that changes nothing
+            //just invites the question of why it does not work.
+            bool anySurfaces = surfaceDropDownIndexSet.Count > 1 && v.DCache.SurfaceFilteringIsUseful;
+            SurfaceLabel.Visible = anySurfaces;
+            SurfaceDropDown.Visible = anySurfaces;
+
+            int index = surfaceDropDownIndexSet.IndexOf(v.Graph.SelectedSurface);
+            SurfaceDropDown.SelectedIndex = index < 0 ? 0 : index;
+        }
+
+        private void SurfaceDropDown_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_suppressToolbarEvents) return;
+            var v = ActiveViewer;
+            if (v == null) return;
+            if (SurfaceDropDown.SelectedIndex < 0 || SurfaceDropDown.SelectedIndex >= surfaceDropDownIndexSet.Count) return;
+
+            v.Graph.SelectedSurface = surfaceDropDownIndexSet[SurfaceDropDown.SelectedIndex];
+            v.MarkDirty();
+
+            //states only - surfaces never reach the solver, so there is nothing to re-solve and the rates of
+            //every node stay exactly as they were.
+            v.Graph.UpdateNodeStates(true);
+            v.Invalidate();
+        }
 
         private void RateOptionsDropDown_SelectedIndexChanged(object sender, EventArgs e)
         {
