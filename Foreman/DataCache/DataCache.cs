@@ -33,7 +33,7 @@ namespace Foreman
 		public IReadOnlyDictionary<string, Quality> Qualities { get { return qualities; } }
 		public IReadOnlyDictionary<string, Item> Items { get { return items; } }
 		public IReadOnlyDictionary<string, Recipe> Recipes { get { return recipes; } }
-		public IReadOnlyDictionary<string, PlantProcess> PlantProcesses { get { return PlantProcesses; } }
+		public IReadOnlyDictionary<string, PlantProcess> PlantProcesses { get { return plantProcesses; } }
 		public IReadOnlyDictionary<string, Assembler> Assemblers { get { return assemblers; } }
 		public IReadOnlyDictionary<string, Module> Modules { get { return modules; } }
 		public IReadOnlyDictionary<string, Beacon> Beacons { get { return beacons; } }

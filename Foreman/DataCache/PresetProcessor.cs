@@ -459,104 +459,15 @@ namespace Foreman
 
 		public static async Task<PresetErrorPackage> TestPreset(Preset preset, Dictionary<string, string> modList, List<string> itemList, List<string> entityList, List<string> qualityList, List<RecipeShort> recipeShorts, List<PlantShort> plantShorts)
 		{
-            //try
-            //{
-            //return await TestPresetThroughDataCache(preset, modList, itemList, entityList, qualityList, recipeShorts);
-            return await TestPresetStreamlined(preset, modList, itemList, entityList, qualityList, recipeShorts, plantShorts);
-			//}
-			//catch
-			//{
-			//	return null;
-			//}
-		}
-
-		//full load of data cache and comparison. This is naturally slower than the streamlined version, since we load all the extras that arent necessary for comparison (like energy types, technologies, availability calculations, etc)
-		//but on the +ve side any changes to preset json format is incorporated into data cache and requires no update to this function.
-		private static async Task<PresetErrorPackage> TestPresetThroughDataCache(Preset preset, Dictionary<string, string> modList, List<string> itemList, List<string> entityList, List<string> qualityList, List<RecipeShort> recipeShorts, List<PlantShort> plantShorts)
-		{
-			string presetPath = Path.Combine(new string[] { Application.StartupPath, "Presets", preset.Name + ".pjson" });
-			if (!File.Exists(presetPath))
-				return null;
-
-			DataCache presetCache = new DataCache(Properties.Settings.Default.UseRecipeBWfilters);
-			await presetCache.LoadAllData(preset, null, false);
-
-			//compare to provided mod/item/recipe sets (recipes have a chance of existing in multitudes - aka: missing recipes)
-			PresetErrorPackage errors = new PresetErrorPackage(preset);
-			foreach (var mod in modList)
-			{
-				errors.RequiredMods.Add(mod.Key + "|" + mod.Value);
-
-				if (!presetCache.IncludedMods.ContainsKey(mod.Key))
-					errors.MissingMods.Add(mod.Key + "|" + mod.Value);
-				else if (presetCache.IncludedMods[mod.Key] != mod.Value)
-					errors.WrongVersionMods.Add(mod.Key + "|" + mod.Value + "|" + presetCache.IncludedMods[mod.Key]);
-			}
-			foreach (var mod in presetCache.IncludedMods)
-				if (!modList.ContainsKey(mod.Key))
-					errors.AddedMods.Add(mod.Key + "|" + mod.Value);
-
-			foreach (string itemName in itemList)
-			{
-				errors.RequiredItems.Add(itemName);
-
-				if (!presetCache.Items.ContainsKey(itemName))
-					errors.MissingItems.Add(itemName);
-			}
-
-			foreach (RecipeShort recipeS in recipeShorts)
-			{
-				errors.RequiredRecipes.Add(recipeS.Name);
-				if (recipeS.isMissing)
-				{
-					if (presetCache.Recipes.ContainsKey(recipeS.Name) && recipeS.Equals(presetCache.Recipes[recipeS.Name]))
-						errors.ValidMissingRecipes.Add(recipeS.Name);
-					else
-						errors.IncorrectRecipes.Add(recipeS.Name);
-				}
-				else
-				{
-					if (!presetCache.Recipes.ContainsKey(recipeS.Name))
-						errors.MissingRecipes.Add(recipeS.Name);
-					else if (!recipeS.Equals(presetCache.Recipes[recipeS.Name]))
-						errors.IncorrectRecipes.Add(recipeS.Name);
-				}
-			}
-
-			foreach (PlantShort plantS in plantShorts)
-			{
-				errors.RequiredPlanting.Add(plantS.Name);
-                if (plantS.isMissing)
-                {
-                    if (presetCache.PlantProcesses.ContainsKey(plantS.Name) && plantS.Equals(presetCache.PlantProcesses[plantS.Name]))
-                        errors.ValidMissingPlanting.Add(plantS.Name);
-                    else
-                        errors.IncorrectPlanting.Add(plantS.Name);
-                }
-				else
-                {
-                    if (!presetCache.PlantProcesses.ContainsKey(plantS.Name))
-                        errors.MissingPlanting.Add(plantS.Name);
-                    else if (!plantS.Equals(presetCache.PlantProcesses[plantS.Name]))
-                        errors.IncorrectPlanting.Add(plantS.Name);
-                }
-            }
-
-			foreach (string qualityName in qualityList)
-			{
-				errors.RequiredQualities.Add(qualityName);
-
-                if (!presetCache.Qualities.ContainsKey(qualityName))
-                    errors.MissingQualities.Add(qualityName);
-            }
-
-            return errors;
+			return await TestPresetStreamlined(preset, modList, itemList, entityList, qualityList, recipeShorts, plantShorts);
 		}
 
 		//this preset comparer loads a 'light' version of the preset - basically loading the items and entities as strings only (no data), and only the minimal info for recipes (name, ingredients + amounts, products + amounts)
 		//this speeds things up such that the comparison takes around 150ms for a large preset like seablock (10x vanilla), instead of 250ms as for a full datacache load.
 		//still, this is only really helpful if you are using 10 presets (1.5 sec load inatead of 2.5 sec) or more, but hey; i will keep it.
-		//any changes to preset json style have to be reflected here though (unlike for a full data cache loader above, which just incorporates any changes to data cache as long as they dont impact the outputs)
+		//any changes to preset json style have to be reflected here. A full DataCache-based comparer used to sit
+		//above this one and got that for free, but its call was commented out, so it never ran - and two faults
+		//sat in it unnoticed, one of them a self-referential property that killed the process. It was removed.
 		private static async Task<PresetErrorPackage> TestPresetStreamlined(Preset preset, Dictionary<string, string> modList, List<string> itemList, List<string> entityList, List<string> qualityList, List<RecipeShort> recipeShorts, List<PlantShort> plantShorts)
 		{
 			PresetSnapshot snapshot = await Task.Run(() => GetPresetSnapshot(preset));
