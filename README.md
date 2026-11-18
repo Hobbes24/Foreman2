@@ -10,6 +10,20 @@
 
 ---
 
+### 🪐 Surface Filtering — Plan a Tab Against a Planet or Platform *(2.4.0)*
+A tab can be set to a planet or space platform, and the recipe picker then only offers what can actually be built there.
+- **Graph Options → Surface** sets the surface per tab; the default **All Surfaces** filters nothing, so nothing changes until you pick one
+- Recipes whose surface conditions fail are **hidden** from the item/recipe picker, the same way the science-pack filter hides recipes you cannot reach yet
+- The picker says which surface it is filtering for, and that button toggles the filter off — **"Vulcanus (ignored)"** — when you need to see everything anyway
+- Both halves are checked: a recipe is also hidden when every machine that could craft it is unbuildable there. Crusher is space-platform only, captive-biter-spawner is Nauvis only, and a recipe-only filter gets those wrong
+- The assembler dropdown in the recipe panel is filtered the same way, with the node's current choice always left in the list
+- Existing nodes that fail the tab's surface get a **warning badge**, never a deletion: *"Selected recipe cannot be crafted on Vulcanus"*
+- **Rate math is unchanged** — the solver never learns about surfaces, so every saved graph still solves to byte-identical rates
+- The selection is saved with the graph by name; a graph saved without one, or one naming a surface the preset does not have, gets no filter
+- Preset data behind it: the exporter sends `surfaces` and `surface_properties`, and recipes and entities carry their own surface conditions
+
+---
+
 ### 📋 Copy for Factorio — Inline Feedback *(2.4.0)*
 Copying the building list no longer interrupts with a dialog you have to dismiss every time.
 - The **"Copy for Factorio"** button reports on itself: it flashes **"Copied 42 lines"** for just over a second, then returns to its normal caption
@@ -328,6 +342,8 @@ Right-click any item tab on a node to copy the item's internal or friendly name 
 - Annotations are full first-class citizens: they serialize to JSON with the graph, participate in selection, copy/paste, grouping, and undo.
 - Tab state (open files, scroll positions, active tab, gridline settings) serializes to a sidecar file alongside the graph JSON.
 - The companion Factorio mod uses `storage` (not the Factorio 1.x `global`), `player.set_controller{type = defines.controllers.remote}` for map navigation (replacing removed `open_map`/`zoom_to_world`), and tag scanning via `force.find_chart_tags()` with a `"[F2] "` prefix since `LuaCustomChartTag` no longer has an `id` property in Factorio 2.0.
+- A **headless preset harness** lives in `tools\` (`run-harness.ps1` driving `HarnessMain.cs`). It loads a preset through the real `DataCache` with no window and prints a deterministic, diffable report, so a change to `DataCache` or to preset handling can be checked by diffing a before/after run rather than by opening the GUI and looking at a graph. `-PresetDir` points it at a folder of your own, which is how a reader can be exercised against data no installed preset carries yet. It does not yet solve a saved graph, so computed rates are still covered by nothing automatic.
+- The surface filter deliberately never feeds `Available` or `Enabled`. `Available` is computed once at load in `ProcessAvailableStatuses` as a transitive fixpoint shared by every tab off one `DataCache`, so routing a per-tab surface into it would cascade-delete most of the tree globally; `Enabled` is persisted per preset on disk. The filter therefore lives in the picker, beside the science-pack filter, and stays presentation-only.
 - WinForms Designer limitations with `TableLayoutPanel`: layout changes to forms with filling `TableLayoutPanel` controls must be made directly in `Designer.cs` rather than through the Visual Studio Designer UI.
 - File access goes through `SafeIO` rather than `System.IO` directly. The guiding rule is that a storage failure should never be fatal: an unreachable network share, a removed drive, or a locked `user.config` degrades to a no-op or a fallback location instead of an unhandled exception.
 - Gutters are a **presentation-layer** concept living in `PassthroughNodeElement`. A gutter changes only how a passthrough node is drawn and where its links attach — it carries no rate semantics, so the solver is entirely unaware of it and throughput results are identical with or without gutters.
